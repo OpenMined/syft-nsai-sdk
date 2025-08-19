@@ -1,10 +1,22 @@
 [project]
 name = "syft-nsai-sdk"
 version = "0.1.0"
-description = "Syft NSAI SDK"
-requires-python = ">=3.9"
+description = "Python SDK for discovering and using AI models across the SyftBox network"
 readme = "README.md"
+requires-python = ">=3.9"
+license = {file = "LICENSE"}
+authors = [
+    {name = "SyftBox Team", email = "support@syftbox.net"},
+]
+maintainers = [
+    {name = "SyftBox Team", email = "support@syftbox.net"},
+]
+
 dependencies = [
+    "httpx>=0.24.0",
+    "pydantic>=2.0.0",
+    "rich>=13.0.0",
+    "typer>=0.9.0",
     "syft-core>=0.2.7",
     "fastsyftbox>=0.1.19",
     "ipython>=8.18.1",
@@ -25,8 +37,23 @@ dependencies = [
     "pandas>=2.3.1",
 ]
 
+[project.urls]
+Homepage = "https://syftbox.openmined.org"
+Documentation = "https://docs.syftbox.openmined.org/nsai-sdk"
+Repository = "https://github.com/OpenMined/syftbox-nsai-sdk"
+"Bug Tracker" = "https://github.com/OpenMined/syftbox-nsai-sdk/issues"
+Changelog = "https://github.com/OpenMined/syftbox-nsai-sdk/blob/main/CHANGELOG.md"
+
 [project.scripts]
-syft-sdk = "main:cli_app"
+syftbox-sdk = "syft_nsai_sdk.cli:main"
+
+[tool.hatch.version]
+path = "syft_nsai_sdk/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["syft_nsai_sdk"]
+
+testpaths = ["tests"]
 
 [tool.uv]
 dev-dependencies = [

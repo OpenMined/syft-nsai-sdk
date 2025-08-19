@@ -1,75 +1,208 @@
 """
-SyftBox SDK
+SyftBox NSAI SDK
 
-SDK for discovering and interacting with models in the SyftBox ecosystem.
-Assumes ~/.syftbox/config.json exists for authentication.
+A Python SDK for discovering and using AI models across the SyftBox network.
 """
 
-from typing import Dict, List, Optional, Any
-
-# Import the classes first
-from .sdk import SyftBoxSDK
-from .models import ModelObject  
-from .types import ServiceInfo, ModelMetadata
-from .config import SyftBoxConfig
-
-# Version info
 __version__ = "0.1.0"
-__author__ = "OpenMined"
+__author__ = "SyftBox Team"
+__email__ = "support@syftbox.net"
 
-# Global SDK instance - lazy initialization to avoid import issues
-_sdk = None
+# Main client class
+from .main import SyftBoxClient
 
-def _get_sdk():
-    """Get or create the global SDK instance."""
-    global _sdk
-    if _sdk is None:
-        _sdk = SyftBoxSDK()
-    return _sdk
+# Core types and enums
+from .core.types import (
+    ServiceType,
+    ModelStatus, 
+    HealthStatus,
+    QualityPreference,
+    PricingChargeType,
+    ModelInfo,
+    ServiceInfo,
+    ChatMessage,
+    ChatRequest,
+    ChatResponse,
+    SearchRequest, 
+    SearchResponse,
+    DocumentResult,
+    TransactionToken,
+)
 
-# Public API - Convenience functions
-def find_models(name: Optional[str] = None, 
-               tags: Optional[List[str]] = None,
-               owners: Optional[List[str]] = None) -> List[ModelObject]:
-    """Find models matching criteria."""
-    return _get_sdk().find_models(name=name, tags=tags, owners=owners)
+# Exceptions
+from .core.exceptions import (
+    SyftBoxSDKError,
+    SyftBoxNotFoundError,
+    ConfigurationError,
+    ModelNotFoundError,
+    ServiceNotSupportedError,
+    ServiceUnavailableError,
+    NetworkError,
+    RPCError,
+    PollingTimeoutError,
+    PollingError,
+    AuthenticationError,
+    PaymentError,
+    ValidationError,
+    HealthCheckError,
+)
 
-def get_models(owners: Optional[List[str]] = None) -> List[ModelObject]:
-    """Get all available models."""
-    return _get_sdk().get_models(owners=owners)
+# Configuration utilities
+from .core.config import (
+    SyftBoxConfig,
+    get_config,
+    is_syftbox_available,
+    get_installation_instructions,
+)
 
-def get_model(name: str, owner: Optional[str] = None) -> Optional[ModelObject]:
-    """Get specific model by name.""" 
-    return _get_sdk().get_model(name=name, owner=owner)
+# Service clients (for advanced usage)
+from .services.chat import ChatService, ConversationManager
+from .services.search import SearchService, BatchSearchService
+from .services.health import HealthMonitor
 
-def display_models(models: List[ModelObject]) -> None:
-    """Display models in table format."""
-    return _get_sdk().display_models(models)
+# Filtering utilities
+from .discovery.filters import (
+    ModelFilter,
+    FilterCriteria,
+    FilterBuilder,
+    create_chat_models_filter,
+    create_search_models_filter,
+    create_free_models_filter,
+    create_premium_models_filter,
+    create_healthy_models_filter,
+    create_owner_models_filter,
+    create_tag_models_filter,
+)
 
-def status() -> Dict[str, Any]:
-    """Show SDK status."""
-    return _get_sdk().status()
+# Convenience functions
+from .main import (
+    quick_chat,
+    quick_search,
+    list_available_models,
+)
 
-def current_user() -> Optional[str]:
-    """Get current authenticated user."""
-    return _get_sdk().current_user
+# Formatting utilities
+from .utils.formatting import (
+    format_models_table,
+    format_model_details,
+    format_search_results,
+    format_chat_conversation,
+    format_health_summary,
+    format_statistics,
+)
 
-def is_authenticated() -> bool:
-    """Check if authenticated."""
-    return _get_sdk().is_authenticated
 
-# Export everything
+# Package-level convenience functions
+def create_client(**kwargs) -> SyftBoxClient:
+    """Create a SyftBoxClient with optional configuration.
+    
+    Args:
+        **kwargs: Configuration options for the client
+        
+    Returns:
+        SyftBoxClient instance
+    """
+    return SyftBoxClient(**kwargs)
+
+
+def check_installation() -> bool:
+    """Check if SyftBox is properly installed and configured.
+    
+    Returns:
+        True if SyftBox is available, False otherwise
+    """
+    return is_syftbox_available()
+
+
+def get_setup_instructions() -> str:
+    """Get instructions for setting up SyftBox.
+    
+    Returns:
+        Setup instructions as string
+    """
+    return get_installation_instructions()
+
+
+# Package metadata
 __all__ = [
-    "find_models",
-    "get_models", 
-    "get_model",
-    "display_models",
-    "status",
-    "current_user",
-    "is_authenticated",
-    "SyftBoxSDK",
-    "ModelObject",
-    "ServiceInfo", 
-    "ModelMetadata",
+    # Version info
+    "__version__",
+    "__author__", 
+    "__email__",
+    
+    # Main client
+    "SyftBoxClient",
+    "create_client",
+    
+    # Core types
+    "ServiceType",
+    "ModelStatus",
+    "HealthStatus", 
+    "QualityPreference",
+    "PricingChargeType",
+    "ModelInfo",
+    "ServiceInfo",
+    "ChatMessage",
+    "ChatRequest",
+    "ChatResponse",
+    "SearchRequest",
+    "SearchResponse", 
+    "DocumentResult",
+    "TransactionToken",
+    
+    # Exceptions
+    "SyftBoxSDKError",
+    "SyftBoxNotFoundError",
+    "ConfigurationError",
+    "ModelNotFoundError",
+    "ServiceNotSupportedError",
+    "ServiceUnavailableError",
+    "NetworkError",
+    "RPCError",
+    "PollingTimeoutError",
+    "PollingError",
+    "AuthenticationError",
+    "PaymentError",
+    "ValidationError",
+    "HealthCheckError",
+    
+    # Configuration
     "SyftBoxConfig",
+    "get_config",
+    "is_syftbox_available",
+    "get_installation_instructions",
+    "check_installation",
+    "get_setup_instructions",
+    
+    # Services
+    "ChatService",
+    "ConversationManager",
+    "SearchService",
+    "BatchSearchService", 
+    "HealthMonitor",
+    
+    # Filtering
+    "ModelFilter",
+    "FilterCriteria",
+    "FilterBuilder",
+    "create_chat_models_filter",
+    "create_search_models_filter",
+    "create_free_models_filter",
+    "create_premium_models_filter",
+    "create_healthy_models_filter",
+    "create_owner_models_filter",
+    "create_tag_models_filter",
+    
+    # Convenience functions
+    "quick_chat",
+    "quick_search",
+    "list_available_models",
+    
+    # Formatting
+    "format_models_table",
+    "format_model_details",
+    "format_search_results",
+    "format_chat_conversation",
+    "format_health_summary",
+    "format_statistics",
 ]
