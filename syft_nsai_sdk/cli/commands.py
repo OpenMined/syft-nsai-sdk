@@ -4,6 +4,8 @@ CLI commands for SyftBox NSAI SDK
 import asyncio
 import json
 import sys
+import os
+from dotenv import load_dotenv
 from typing import Optional, List
 from pathlib import Path
 
@@ -364,15 +366,17 @@ def account_balance():
 @app.command()
 def setup_accounting():
     """Setup accounting service credentials interactively."""
+    # TODO: Implement interactive setup
     client = get_client()
     
     async def setup():
         try:
+            load_dotenv()
             console.print("[bold blue]Setting up SyftBox Accounting Service[/bold blue]")
             console.print("This will configure payment credentials for using paid models.\n")
             
             # Get service URL
-            default_url = "https://accounting.syftbox.net"
+            default_url = os.getenv("SYFTBOX_ACCOUNTING_URL", "")
             service_url = typer.prompt(f"Accounting service URL", default=default_url)
             
             # Check if user has existing account
@@ -384,7 +388,7 @@ def setup_accounting():
                 password = typer.prompt("Password", hide_input=True)
                 
                 with console.status("[bold blue]Verifying credentials..."):
-                    await client.setup_accounting(email, password)
+                    await client.setup_accounting(email, password, service_url)
                 
                 console.print("[green]✅ Accounting configured successfully![/green]")
                 
@@ -399,7 +403,7 @@ def setup_accounting():
                 organization = typer.prompt("Organization (optional)", default="")
                 password = typer.prompt("Password (leave empty for auto-generated)", hide_input=True, default="")
                 
-                # This would need implementation in the main client
+                # TODO: This would need implementation in the main client
                 console.print("[yellow]Account creation via CLI not yet implemented.[/yellow]")
                 console.print("Please create an account at the accounting service web interface first.")
                 

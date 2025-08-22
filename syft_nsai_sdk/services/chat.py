@@ -1,13 +1,19 @@
 """
 Chat service client for SyftBox models
 """
-from typing import List, Optional, Dict, Any
+import json
 import uuid
 import logging
+from typing import List, Optional, Dict, Any
 
 from ..core.types import (
-    ModelInfo, ChatMessage, ChatRequest, ChatResponse, ChatUsage, 
-    GenerationOptions, ServiceType
+    ModelInfo, 
+    ChatMessage, 
+    ChatRequest, 
+    ChatResponse, 
+    ChatUsage, 
+    GenerationOptions, 
+    ServiceType
 )
 from ..core.exceptions import ServiceNotSupportedError, RPCError, ValidationError, raise_service_not_supported
 from ..networking.rpc_client import SyftBoxRPCClient
@@ -34,7 +40,7 @@ class ChatService:
         """
         self.model_info = model_info
         self.rpc_client = rpc_client
-        
+
         # Validate that model supports chat
         if not model_info.supports_service(ServiceType.CHAT):
             raise_service_not_supported(model_info.name, "chat", model_info)
@@ -62,7 +68,7 @@ class ChatService:
         
         # Build RPC payload with all parameters
         payload = {
-            "userEmail": self.rpc_client.from_email,
+            "user_email": self.rpc_client._accounting_credentials.get('email', ''),
             "model": self.model_info.name,
             "messages": messages
         }

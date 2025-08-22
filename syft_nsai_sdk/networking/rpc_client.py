@@ -11,7 +11,7 @@ import logging
 from ..core.exceptions import NetworkError, RPCError, PollingTimeoutError, PollingError
 from ..core.types import ModelInfo
 from ..core.exceptions import PaymentError, AuthenticationError
-
+from ..utils.spinner import AsyncSpinner
 from syft_accounting_sdk import UserClient, ServiceException
 
 logger = logging.getLogger(__name__)
@@ -21,13 +21,14 @@ class SyftBoxRPCClient:
     """Client for making RPC calls to SyftBox models via cache server."""
     
     def __init__(self, 
-                cache_server_url: str = "https://syftbox.net",
-                from_email: str = "nsai@openmined.org",
-                timeout: float = 30.0,
-                max_poll_attempts: int = 20,
-                poll_interval: float = 2.0,
-                accounting_service_url: Optional[str] = None,
-                accounting_credentials: Optional[Dict[str, str]] = None,):
+            cache_server_url: str = "https://syftbox.net",
+            from_email: str = None,
+            timeout: float = 30.0,
+            max_poll_attempts: int = 20,
+            poll_interval: float = 2.0,
+            accounting_service_url: Optional[str] = None,
+            accounting_credentials: Optional[Dict[str, str]] = None,
+        ):
         """Initialize RPC client.
         
         Args:
@@ -105,139 +106,50 @@ class SyftBoxRPCClient:
             # Extract recipient email for accounting token
             recipient_email = syft_url.split('//')[1].split('/')[0]
             
-            # Create accounting token for authentication
-            accounting_token = self.accounting_client.create_transaction_token(
+            # Create accounting token for authentication and update payload
+            transaction_token = self.accounting_client.create_transaction_token(
                 recipientEmail=recipient_email
             )
+            payload["transaction_token"] = transaction_token
             
             # Build request headers with accounting token
             request_headers = {
                 "Content-Type": "application/json",
                 "Accept": "application/json",
-                "Authorization": f"Bearer {accounting_token}",  # ← ADDED: Accounting token auth
+                # "Authorization": f"Bearer {transaction_token}",
                 "x-syft-from": self.from_email,
                 **(headers or {})
             }
             
             # Build request URL - NO ENCODING!
             request_url = f"{self.cache_server_url}/api/v1/send/msg"
+
+            # Build query parameters
             params = {
-                "x-syft-url": syft_url,  # ← FIXED: No URL encoding (was: quote(syft_url, safe=''))
+                "x-syft-url": syft_url,
                 "x-syft-from": self.from_email
             }
-            
+
             # Add raw parameter if specified in headers
             if headers and headers.get("x-syft-raw"):
                 params["x-syft-raw"] = headers["x-syft-raw"]
             
             logger.debug(f"Making RPC call to {syft_url}")
             
-            # Make the request
-            response = await self.client.post(
-                request_url,
-                params=params,
-                headers=request_headers,
-                json=payload
-            )
-            
-            # Handle response
-            if response.status_code == 200:
-                # Immediate response
-                data = response.json()
-                logger.debug(f"Got immediate response from {syft_url}")
-                return data
-            
-            elif response.status_code == 202:
-                # Async response - need to poll
-                data = response.json()
-                request_id = data.get("request_id")
-                
-                if not request_id:
-                    raise RPCError("Received 202 but no request_id", syft_url)
-                
-                logger.debug(f"Got async response, polling with request_id: {request_id}")
-                
-                # Extract poll URL from response
-                poll_url_path = None
-                if "data" in data and "poll_url" in data["data"]:
-                    poll_url_path = data["data"]["poll_url"]
-                elif "location" in response.headers:
-                    poll_url_path = response.headers["location"]
-                
-                if not poll_url_path:
-                    raise RPCError("Async response but no poll URL found", syft_url)
-                
-                # Poll for the actual response
-                return await self._poll_for_response(poll_url_path, syft_url, request_id)
-            
+            # Serialize payload to JSON string and set Content-Length
+            if payload:
+                payload_json = json.dumps(payload)
+                request_headers["Content-Length"] = str(len(payload_json.encode('utf-8')))
             else:
-                # Error response
-                try:
-                    error_data = response.json()
-                    error_msg = error_data.get("message", f"HTTP {response.status_code}")
-                    logger.info(f"Got error response from {error_msg}")
-                except:
-                    error_msg = f"HTTP {response.status_code}: {response.text}"
-                    logger.debug(f"Got error message from {error_msg}")
-                raise NetworkError(
-                    f"RPC call failed: {error_msg}",
-                    syft_url,
-                    response.status_code
-                )
-        
-        except httpx.TimeoutException:
-            raise NetworkError(f"Request timeout after {self.timeout}s", syft_url)
-        except httpx.RequestError as e:
-            raise NetworkError(f"Request failed: {e}", syft_url)
-        except json.JSONDecodeError as e:
-            raise RPCError(f"Invalid JSON response: {e}", syft_url)
+                payload_json = None
     
-    async def call_rpc1(self, syft_url: str, payload: Optional[Dict[str, Any]] = None, 
-                      headers: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
-        """Make an RPC call to a SyftBox model.
-        
-        Args:
-            syft_url: The syft:// URL to call
-            payload: JSON payload to send (optional)
-            headers: Additional headers (optional)
-            
-        Returns:
-            Response data from the model
-            
-        Raises:
-            NetworkError: For HTTP/network issues
-            RPCError: For RPC-specific errors
-            PollingTimeoutError: When polling times out
-        """
-        try:
-            # Build request headers
-            request_headers = {
-                "Content-Type": "application/json",
-                "Accept": "application/json",
-                "x-syft-from": self.from_email,
-                **(headers or {})
-            }
-            
-            # Build request URL
-            encoded_syft_url = quote(syft_url, safe='')
-            request_url = f"{self.cache_server_url}/api/v1/send/msg"
-            params = {
-                "x-syft-url": encoded_syft_url,
-                "x-syft-from": self.from_email
-            }
-            
-            # Add raw parameter if specified in headers
-            if headers and headers.get("x-syft-raw"):
-                params["x-syft-raw"] = headers["x-syft-raw"]
-            
-            logger.debug(f"Making RPC call to {syft_url}")
-            
             # Make the request
             response = await self.client.post(
                 request_url,
                 params=params,
                 headers=request_headers,
-                json=payload
+                # json=payload,
+                data=payload_json,
             )
             
             # Handle response
@@ -310,97 +222,104 @@ class SyftBoxRPCClient:
         """
         # Build full poll URL
         poll_url = urljoin(self.cache_server_url, poll_url_path.lstrip('/'))
-        
-        for attempt in range(1, self.max_poll_attempts + 1):
-            try:
-                logger.debug(f"Polling attempt {attempt}/{self.max_poll_attempts} for {request_id}")
-                
-                response = await self.client.get(
-                    poll_url,
-                    headers={
-                        "Accept": "application/json",
-                        "Content-Type": "application/json"
-                    }
-                )
-                
-                if response.status_code == 200:
-                    # Success - parse response
-                    try:
-                        data = response.json()
-                    except json.JSONDecodeError:
-                        raise PollingError("Invalid JSON in polling response", syft_url, poll_url)
+
+        # Start spinner if enabled
+        spinner = AsyncSpinner("Waiting for model response")
+        await spinner.start_async()
+        try:
+            for attempt in range(1, self.max_poll_attempts + 1):
+                try:
+                    logger.debug(f"Polling attempt {attempt}/{self.max_poll_attempts} for {request_id}")
                     
-                    # Check response format
-                    if "response" in data:
-                        logger.debug(f"Polling complete for {request_id}")
-                        return data["response"]
-                    elif "status" in data:
-                        if data["status"] == "pending":
-                            # Still processing, continue polling
-                            pass
-                        elif data["status"] == "error":
-                            error_msg = data.get("message", "Unknown error during processing")
-                            raise RPCError(f"Model error: {error_msg}", syft_url)
+                    response = await self.client.get(
+                        poll_url,
+                        headers={
+                            "Accept": "application/json",
+                            "Content-Type": "application/json"
+                        }
+                    )
+                    
+                    if response.status_code == 200:
+                        # Success - parse response
+                        try:
+                            data = response.json()
+                        except json.JSONDecodeError:
+                            raise PollingError("Invalid JSON in polling response", syft_url, poll_url)
+                        
+                        # Check response format
+                        if "response" in data:
+                            logger.debug(f"Polling complete for {request_id}")
+                            return data["response"]
+                        elif "status" in data:
+                            if data["status"] == "pending":
+                                # Still processing, continue polling
+                                pass
+                            elif data["status"] == "error":
+                                error_msg = data.get("message", "Unknown error during processing")
+                                raise RPCError(f"Model error: {error_msg}", syft_url)
+                            else:
+                                # Other status, return as-is
+                                return data
                         else:
-                            # Other status, return as-is
+                            # Assume data is the response
                             return data
+                    
+                    elif response.status_code == 202:
+                        # Still processing
+                        try:
+                            data = response.json()
+                            if data.get("error") == "timeout":
+                                # Normal polling timeout, continue
+                                pass
+                            else:
+                                logger.debug(f"202 response: {data}")
+                        except json.JSONDecodeError:
+                            pass
+                    
+                    elif response.status_code == 404:
+                        # Request not found
+                        try:
+                            data = response.json()
+                            error_msg = data.get("message", "Request not found")
+                        except:
+                            error_msg = "Request not found"
+                        raise PollingError(f"Polling failed: {error_msg}", syft_url, poll_url)
+                    
+                    elif response.status_code == 500:
+                        # Server error
+                        try:
+                            data = response.json()
+                            if data.get("error") == "No response exists. Polling timed out":
+                                # This is a normal timeout, continue polling
+                                pass
+                            else:
+                                raise PollingError(f"Server error: {data.get('message', 'Unknown')}", syft_url, poll_url)
+                        except json.JSONDecodeError:
+                            raise PollingError("Server error during polling", syft_url, poll_url)
+                    
                     else:
-                        # Assume data is the response
-                        return data
+                        # Other error
+                        raise PollingError(f"Polling failed with status {response.status_code}", syft_url, poll_url)
+                    
+                    # Wait before next attempt
+                    if attempt < self.max_poll_attempts:
+                        await asyncio.sleep(self.poll_interval)
                 
-                elif response.status_code == 202:
-                    # Still processing
-                    try:
-                        data = response.json()
-                        if data.get("error") == "timeout":
-                            # Normal polling timeout, continue
-                            pass
-                        else:
-                            logger.debug(f"202 response: {data}")
-                    except json.JSONDecodeError:
-                        pass
-                
-                elif response.status_code == 404:
-                    # Request not found
-                    try:
-                        data = response.json()
-                        error_msg = data.get("message", "Request not found")
-                    except:
-                        error_msg = "Request not found"
-                    raise PollingError(f"Polling failed: {error_msg}", syft_url, poll_url)
-                
-                elif response.status_code == 500:
-                    # Server error
-                    try:
-                        data = response.json()
-                        if data.get("error") == "No response exists. Polling timed out":
-                            # This is a normal timeout, continue polling
-                            pass
-                        else:
-                            raise PollingError(f"Server error: {data.get('message', 'Unknown')}", syft_url, poll_url)
-                    except json.JSONDecodeError:
-                        raise PollingError("Server error during polling", syft_url, poll_url)
-                
-                else:
-                    # Other error
-                    raise PollingError(f"Polling failed with status {response.status_code}", syft_url, poll_url)
-                
-                # Wait before next attempt
-                if attempt < self.max_poll_attempts:
-                    await asyncio.sleep(self.poll_interval)
+                except httpx.TimeoutException:
+                    logger.warning(f"Polling timeout on attempt {attempt} for {request_id}")
+                    if attempt == self.max_poll_attempts:
+                        raise PollingTimeoutError(syft_url, attempt, self.max_poll_attempts)
+                except httpx.RequestError as e:
+                    logger.warning(f"Polling request error on attempt {attempt}: {e}")
+                    if attempt == self.max_poll_attempts:
+                        raise PollingError(f"Network error during polling: {e}", syft_url, poll_url)
             
-            except httpx.TimeoutException:
-                logger.warning(f"Polling timeout on attempt {attempt} for {request_id}")
-                if attempt == self.max_poll_attempts:
-                    raise PollingTimeoutError(syft_url, attempt, self.max_poll_attempts)
-            except httpx.RequestError as e:
-                logger.warning(f"Polling request error on attempt {attempt}: {e}")
-                if attempt == self.max_poll_attempts:
-                    raise PollingError(f"Network error during polling: {e}", syft_url, poll_url)
-        
-        # Max attempts reached
-        raise PollingTimeoutError(syft_url, self.max_poll_attempts, self.max_poll_attempts)
-    
+            # Max attempts reached
+            raise PollingTimeoutError(syft_url, self.max_poll_attempts, self.max_poll_attempts)
+        finally:
+            # Always stop spinner, even if an exception occurs
+            await spinner.stop_async("Response received")
+
     async def call_health(self, model_info: ModelInfo) -> Dict[str, Any]:
         """Call the health endpoint of a model.
         
@@ -483,27 +402,6 @@ class SyftBoxRPCClient:
         
         return self._accounting_client
     
-    @property
-    def accounting_client1(self):
-        """Get or create accounting client."""
-        if self._accounting_client is None:
-            if not self._accounting_credentials:
-                from ..core.exceptions import AuthenticationError
-                raise AuthenticationError("No accounting credentials configured")
-            
-            try:
-                from syft_accounting_sdk import UserClient, ServiceException
-                self._accounting_client = UserClient(
-                    url=self._accounting_credentials["service_url"],
-                    email=self._accounting_credentials["email"],
-                    password=self._accounting_credentials["password"]
-                )
-            except ServiceException as e:
-                from ..core.exceptions import AuthenticationError
-                raise AuthenticationError(f"Failed to create accounting client: {e}")
-        
-        return self._accounting_client
-    
     async def create_transaction_token(self, recipient_email: str) -> str:
         """Create a transaction token for paying a model owner.
         
@@ -520,25 +418,6 @@ class SyftBoxRPCClient:
             return token
         except ServiceException as e:
             raise PaymentError(f"Failed to create transaction token: {e}")
-        
-    async def create_transaction_token1(self, recipient_email: str) -> str:
-        """Create a transaction token for paying a model owner.
-        
-        Args:
-            recipient_email: Email of the model owner to pay
-            
-        Returns:
-            Transaction token string
-        """
-        try:
-            from syft_accounting_sdk import ServiceException
-            token = self.accounting_client.create_transaction_token(
-                recipientEmail=recipient_email
-            )
-            return token
-        except ServiceException as e:
-            from ..core.exceptions import PaymentError
-            raise PaymentError(f"Failed to create transaction token: {e}")
     
     async def get_account_balance(self) -> float:
         """Get current account balance.
@@ -550,20 +429,6 @@ class SyftBoxRPCClient:
             user_info = self.accounting_client.get_user_info()
             return user_info.balance
         except ServiceException as e:
-            raise PaymentError(f"Failed to get account balance: {e}")
-        
-    async def get_account_balance1(self) -> float:
-        """Get current account balance.
-        
-        Returns:
-            Account balance
-        """
-        try:
-            from syft_accounting_sdk import ServiceException
-            user_info = self.accounting_client.get_user_info()
-            return user_info.balance
-        except ServiceException as e:
-            from ..core.exceptions import PaymentError
             raise PaymentError(f"Failed to get account balance: {e}")
     
     def configure(self, **kwargs):

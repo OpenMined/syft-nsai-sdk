@@ -449,6 +449,7 @@ WORKDIR /app
 # Set environment variables for accounting
 ENV SYFTBOX_ACCOUNTING_EMAIL=${ACCOUNTING_EMAIL}
 ENV SYFTBOX_ACCOUNTING_PASSWORD=${ACCOUNTING_PASSWORD}
+ENV SYFTBOX_ACCOUNTING_URL=${ACCOUNTING_URL}
 
 CMD ["python", "app.py"]
 ```
@@ -464,7 +465,7 @@ services:
     environment:
       - SYFTBOX_ACCOUNTING_EMAIL=${ACCOUNTING_EMAIL}
       - SYFTBOX_ACCOUNTING_PASSWORD=${ACCOUNTING_PASSWORD}
-      - SYFTBOX_ACCOUNTING_URL=https://accounting.syftbox.net
+      - SYFTBOX_ACCOUNTING_URL=${ACCOUNTING_URL}
     volumes:
       - syftbox_data:/root/.syftbox
     networks:
@@ -616,7 +617,7 @@ export SYFTBOX_CONFIG_PATH="/path/to/.syftbox/config.json"
 # Accounting configuration
 export SYFTBOX_ACCOUNTING_EMAIL="user@example.com"
 export SYFTBOX_ACCOUNTING_PASSWORD="your_password"
-export SYFTBOX_ACCOUNTING_URL="https://accounting.syftbox.net"
+export SYFTBOX_ACCOUNTING_URL="service_url"
 
 # SDK configuration
 export SYFTBOX_CACHE_SERVER_URL="https://syftbox.net"

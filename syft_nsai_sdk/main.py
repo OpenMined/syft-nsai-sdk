@@ -47,12 +47,12 @@ class SyftBoxClient:
     """Main client for discovering and using SyftBox AI models."""
     
     def __init__(self, 
-                 syftbox_config_path: Optional[Path] = None,
-                 user_email: Optional[str] = None,
-                 cache_server_url: Optional[str] = None,
-                 accounting_credentials: Optional[Dict[str, str]] = None,
-                 auto_setup_accounting: bool = True,
-                 auto_health_check_threshold: int = 10):
+                syftbox_config_path: Optional[Path] = None,
+                user_email: str = "guest@syft.org",
+                cache_server_url: Optional[str] = None,
+                accounting_credentials: Optional[Dict[str, str]] = None,
+                auto_setup_accounting: bool = True,
+                auto_health_check_threshold: int = 10):
         """Initialize SyftBox client.
         
         Args:
@@ -71,7 +71,7 @@ class SyftBoxClient:
         self.config = get_config(syftbox_config_path)
         
         # Set up RPC client
-        from_email = "guest@syft.org" or user_email or self.config.email
+        from_email = user_email
         server_url = cache_server_url or self.config.cache_server_url
         
         self.rpc_client = SyftBoxRPCClient(
@@ -92,14 +92,18 @@ class SyftBoxClient:
         
         # Optional health monitor
         self._health_monitor: Optional[HealthMonitor] = None
-        
+
         # Try to load accounting config
         if accounting_credentials:
             self._configure_accounting(accounting_credentials)
         else:
             self._load_existing_accounting_config()
-        
-        logger.info(f"SyftBoxClient initialized for {from_email}")
+
+        # Load user email from config if not provided
+        if from_email:
+            logger.info(f"SyftBoxClient initialized for {from_email}")
+        else:
+            logger.info("SyftBoxClient initialized in guest mode (no user email provided)")
     
     async def close(self):
         """Close client and cleanup resources."""
@@ -158,7 +162,7 @@ class SyftBoxClient:
             try:
                 service_type_enum = ServiceType(service_type.lower())
             except ValueError:
-                print(f"❌ Invalid service_type: {service_type}")
+                logger.error(f"❌ Invalid service_type: {service_type}")
                 return []
         
         # Apply filters
@@ -801,11 +805,11 @@ class SyftBoxClient:
         import json
         import os
         
-        # 1. Try environment variables
+        # Try environment variables
         email = os.getenv("SYFTBOX_ACCOUNTING_EMAIL")
         password = os.getenv("SYFTBOX_ACCOUNTING_PASSWORD")
         service_url = os.getenv('SYFTBOX_ACCOUNTING_URL')
-        logger.info(f"Using email: {email}, service URL: {service_url}")
+
         if email and password:
             self._configure_accounting({
                 "email": email,
@@ -814,7 +818,7 @@ class SyftBoxClient:
             })
             return
         
-        # 2. Try separate accounting config file
+        # Try separate accounting config file
         accounting_config_path = Path.home() / ".syftbox" / "accounting.json"
         if accounting_config_path.exists():
             try:
@@ -825,7 +829,7 @@ class SyftBoxClient:
                     self._configure_accounting({
                         "email": config["email"],
                         "password": config["password"],
-                        "service_url": config.get("service_url", "https://accounting.syftbox.net")
+                        "service_url": config.get("service_url", "")
                     })
                     return
             except Exception as e:
@@ -857,7 +861,7 @@ class SyftBoxClient:
             self._accounting_configured = False
             return False
     
-    async def setup_accounting(self, email: str, password: str, service_url: str = None, organization: Optional[str] = None):
+    async def setup_accounting(self, email: str, password: str, service_url: Optional[str] = None, organization: Optional[str] = None):
         """Setup accounting credentials.
         
         Args:
@@ -933,36 +937,6 @@ class SyftBoxClient:
             raise
         except Exception as e:
             raise AuthenticationError(f"Setup failed: {e}")
-    
-    async def setup_accounting1(self, email: str, password: str, service_url: str = None):
-        """Setup accounting credentials.
-        
-        Args:
-            email: Accounting service email
-            password: Accounting service password  
-            service_url: Accounting service URL
-        """
-        from syft_accounting_sdk import UserClient, ServiceException
-        
-        try:
-            # Test credentials by creating client
-            user_client = UserClient(url=service_url, email=email, password=password)
-            # Test with a simple call
-            user_client.get_user_info()
-            
-            # Configure if successful
-            self._configure_accounting({
-                "email": email,
-                "password": password,
-                "service_url": service_url
-            })
-            
-            # Save credentials for future use
-            await self._save_accounting_config(service_url, email, password)
-            
-            logger.info("Accounting credentials configured successfully")
-        except ServiceException as e:
-            raise AuthenticationError(f"Invalid accounting credentials: {e}")
     
     async def _save_accounting_config(self, service_url: str, email: str, password: str):
         """Save accounting config to file."""
