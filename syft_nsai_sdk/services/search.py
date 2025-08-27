@@ -1,12 +1,17 @@
 """
 Search service client for SyftBox models
 """
-from typing import List, Optional, Dict, Any
 import uuid
 import logging
+from typing import List, Optional, Dict, Any
 
 from ..core.types import (
-    ModelInfo, SearchRequest, SearchResponse, SearchOptions, DocumentResult, ServiceType
+    ModelInfo, 
+    SearchRequest, 
+    SearchResponse, 
+    SearchOptions, 
+    DocumentResult, 
+    ServiceType
 )
 from ..core.exceptions import ServiceNotSupportedError, RPCError, ValidationError, raise_service_not_supported
 from ..networking.rpc_client import SyftBoxRPCClient
@@ -188,6 +193,150 @@ class SearchService:
         return payload
     
     def _parse_rpc_response(self, response_data: Dict[str, Any], original_query: str) -> SearchResponse:
+        """Parse RPC response into SearchResponse object.
+        
+        Handles the actual SyftBox response format for search:
+        {
+        "request_id": "...",
+        "data": {
+            "message": {
+            "body": {
+                "results": [
+                {"id": "...", "content": "...", "score": 0.95, "metadata": {...}},
+                ...
+                ],
+                "cost": 0.1
+            }
+            }
+        }
+        }
+        
+        Args:
+            response_data: Raw response data from RPC call
+            original_query: The original search query
+            
+        Returns:
+            Parsed SearchResponse object
+        """
+        
+        try:
+            # Extract the actual response body from SyftBox nested structure
+            if "data" in response_data and "message" in response_data["data"]:
+                message_data = response_data["data"]["message"]
+                
+                if "body" in message_data and isinstance(message_data["body"], dict):
+                    # This is the actual response content
+                    body = message_data["body"]
+                    
+                    # Extract results
+                    results = []
+                    results_data = body.get("results", [])
+                    
+                    if isinstance(results_data, list):
+                        for result_data in results_data:
+                            if isinstance(result_data, dict):
+                                result = DocumentResult(
+                                    id=result_data.get("id", str(uuid.uuid4())),
+                                    score=float(result_data.get("score", 0.0)),
+                                    content=result_data.get("content", ""),
+                                    metadata=result_data.get("metadata"),
+                                    embedding=result_data.get("embedding")
+                                )
+                                results.append(result)
+                            else:
+                                # Handle string results
+                                result = DocumentResult(
+                                    id=str(uuid.uuid4()),
+                                    score=1.0,
+                                    content=str(result_data),
+                                    metadata=None
+                                )
+                                results.append(result)
+                    
+                    return SearchResponse(
+                        id=body.get("id", str(uuid.uuid4())),
+                        query=body.get("query", original_query),
+                        results=results,
+                        cost=body.get("cost"),
+                        provider_info=body.get("providerInfo")
+                    )
+            
+            # Handle legacy/direct formats (backwards compatibility)
+            if "results" in response_data:
+                # Direct format
+                results_data = response_data["results"]
+                results = []
+                
+                for result_data in results_data:
+                    result = DocumentResult(
+                        id=result_data.get("id", str(uuid.uuid4())),
+                        score=float(result_data.get("score", 0.0)),
+                        content=result_data.get("content", ""),
+                        metadata=result_data.get("metadata"),
+                        embedding=result_data.get("embedding")
+                    )
+                    results.append(result)
+                
+                return SearchResponse(
+                    id=response_data.get("id", str(uuid.uuid4())),
+                    query=response_data.get("query", original_query),
+                    results=results,
+                    cost=response_data.get("cost"),
+                    provider_info=response_data.get("providerInfo")
+                )
+            
+            elif isinstance(response_data, list):
+                # Array of results
+                results = []
+                
+                for result_data in response_data:
+                    if isinstance(result_data, dict):
+                        result = DocumentResult(
+                            id=result_data.get("id", str(uuid.uuid4())),
+                            score=float(result_data.get("score", 1.0)),
+                            content=result_data.get("content", str(result_data)),
+                            metadata=result_data.get("metadata")
+                        )
+                        results.append(result)
+                    else:
+                        # Simple string result
+                        result = DocumentResult(
+                            id=str(uuid.uuid4()),
+                            score=1.0,
+                            content=str(result_data),
+                            metadata=None
+                        )
+                        results.append(result)
+                
+                return SearchResponse(
+                    id=str(uuid.uuid4()),
+                    query=original_query,
+                    results=results
+                )
+            
+            else:
+                # Last resort - treat as single result
+                logger.warning(f"Unexpected search response format, using fallback parsing: {response_data}")
+                
+                result = DocumentResult(
+                    id=str(uuid.uuid4()),
+                    score=1.0,
+                    content=str(response_data),
+                    metadata=None
+                )
+                
+                return SearchResponse(
+                    id=str(uuid.uuid4()),
+                    query=original_query,
+                    results=[result]
+                )
+                
+        except Exception as e:
+            logger.error(f"Failed to parse search response: {e}")
+            logger.error(f"Response data: {response_data}")
+            raise RPCError(f"Failed to parse search response: {e}")
+    
+    def _parse_rpc_response1(self, response_data: Dict[str, Any], original_query: str) -> SearchResponse:
         """Parse RPC response into SearchResponse object.
         
         Args:

@@ -4,7 +4,7 @@ Main SyftBox NSAI SDK client
 import os
 import asyncio
 import logging
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Union
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -17,7 +17,8 @@ from .core.types import (
     ChatMessage, 
     ChatResponse, 
     SearchResponse, 
-    FilterDict
+    FilterDict,
+    DocumentResult,
 )
 from .core.exceptions import (
     AuthenticationError, 
@@ -118,17 +119,19 @@ class SyftBoxClient:
         await self.close()
 
     # ======================
-    # MODEL DISCOVERY (UNCHANGED - WORKS WELL)
+    # MODEL DISCOVERY
     # ======================
+    
     # Model Discovery Methods
     def discover_models(self,
-                       service_type: Optional[str] = None,
-                       owner: Optional[str] = None,
-                       tags: Optional[List[str]] = None,
-                       max_cost: Optional[float] = None,
-                       health_check: str = "auto",
-                       include_disabled: bool = False,
-                       **filter_kwargs) -> List[ModelInfo]:
+                    service_type: Optional[str] = None,
+                    owner: Optional[str] = None,
+                    tags: Optional[List[str]] = None,
+                    max_cost: Optional[float] = None,
+                    free_only: bool = False,  # NEW PARAMETER
+                    health_check: str = "auto",
+                    include_disabled: bool = False,
+                    **filter_kwargs) -> List[ModelInfo]:
         """Discover available models with filtering and optional health checking.
         
         Args:
@@ -136,6 +139,7 @@ class SyftBoxClient:
             owner: Filter by owner email
             tags: Filter by tags (any match)
             max_cost: Maximum cost per request
+            free_only: Only return free models (cost = 0)  # NEW PARAMETER DOCS
             health_check: Health checking mode ("auto", "always", "never")
             include_disabled: Include models with disabled services
             **filter_kwargs: Additional filter criteria
@@ -156,7 +160,7 @@ class SyftBoxClient:
                 logger.debug(f"Failed to parse {metadata_path}: {e}")
                 continue
 
-                # CONVERT STRING TO ENUM
+        # CONVERT STRING TO ENUM
         service_type_enum = None
         if service_type:
             try:
@@ -171,6 +175,7 @@ class SyftBoxClient:
             owner=owner,
             has_any_tags=tags,
             max_cost=max_cost,
+            free_only=free_only,  # NEW PARAMETER USAGE
             enabled_only=not include_disabled,
             **filter_kwargs
         )
@@ -612,11 +617,607 @@ class SyftBoxClient:
         
         return "\n".join(examples)
     
+
+    # ======================
+    # RAG COORDINATION METHODS
+    # ======================
+    async def chat_with_search_context(self,
+                                    search_models: Union[str, List[str], List[Dict[str, str]]],
+                                    chat_model: str,
+                                    prompt: str,
+                                    chat_owner: Optional[str] = None,
+                                    max_search_results: int = 3,
+                                    search_similarity_threshold: Optional[float] = None,
+                                    context_format: str = "frontend",  # "frontend" or "simple"
+                                    **chat_kwargs) -> ChatResponse:
+        """Perform search across multiple models then chat with context injection.
+        
+        This method replicates the frontend pattern where users can:
+        1. Chat only (if no search_models provided)
+        2. Search + Chat (if search_models provided - becomes RAG workflow)
+        
+        Args:
+            search_models: Search models to query (OPTIONAL). Can be:
+                        - None or [] for chat-only
+                        - Single model name: "model-name"
+                        - List of names: ["model1", "model2"] 
+                        - List with owners: [{"name": "model1", "owner": "user@email.com"}]
+            chat_model: Name of chat model for final response (REQUIRED)
+            prompt: User's question/prompt
+            chat_owner: Owner of chat model (if ambiguous)
+            max_search_results: Max results per search model (ignored if no search)
+            search_similarity_threshold: Minimum similarity score (ignored if no search)
+            context_format: How to format context ("frontend" matches web app, "simple" is cleaner)
+            **chat_kwargs: Additional parameters for chat request (temperature, max_tokens, etc.)
+            
+        Returns:
+            ChatResponse with or without search context
+            
+        Example:
+            # Chat only (like frontend with no data sources selected)
+            response = await client.chat_with_search_context(
+                search_models=[],  # No search - just chat
+                chat_model="gpt-assistant", 
+                prompt="What is machine learning?"
+            )
+            
+            # RAG workflow (like frontend with data sources selected)
+            response = await client.chat_with_search_context(
+                search_models=["legal-docs", "company-policies"],
+                chat_model="gpt-assistant", 
+                prompt="What are our remote work policies?",
+                max_search_results=5,
+                temperature=0.7
+            )
+        """
+        logger.info(f"🔄 Starting RAG workflow: search → chat")
+        
+        # Normalize search models to list of dicts
+        search_model_specs = self._normalize_model_specs(search_models)
+        
+        if not search_model_specs:
+            # No search models - do chat only (like frontend with no data sources)
+            logger.info(f"💬 Chat-only mode: no search models specified")
+            
+            # Find and validate chat model
+            chat_model_info = self.find_model(chat_model, chat_owner)
+            if not chat_model_info:
+                raise ModelNotFoundError(f"Chat model '{chat_model}' not found" + 
+                                    (f" for owner '{chat_owner}'" if chat_owner else ""))
+            
+            if not chat_model_info.supports_service(ServiceType.CHAT):
+                raise ValidationError(f"Model '{chat_model}' does not support chat service")
+            
+            # Direct chat without search context
+            chat_service = ChatService(chat_model_info, self.rpc_client)
+            
+            # Build simple messages (just system + user)
+            messages = [
+                ChatMessage(
+                    role="system",
+                    content=(
+                        "You are a helpful AI assistant. Use your general knowledge to provide "
+                        "comprehensive and helpful responses to user questions."
+                    )
+                ),
+                ChatMessage(role="user", content=prompt)
+            ]
+            
+            chat_response = await chat_service.send_conversation(
+                messages=messages,
+                **chat_kwargs
+            )
+            
+            # Add metadata indicating this was chat-only
+            if chat_response.provider_info is None:
+                chat_response.provider_info = {}
+            
+            chat_response.provider_info.update({
+                "rag_workflow": False,
+                "chat_only": True,
+                "search_models_used": [],
+                "search_results_count": 0,
+                "context_injected": False
+            })
+            
+            logger.info(f"✅ Chat-only completed - Cost: ${chat_response.cost:.4f}")
+            return chat_response
+        
+        # Step 1: Search across specified models (RAG mode)
+        logger.info(f"🔍 RAG mode: searching {len(search_model_specs)} models for context")
+        search_responses = []
+        
+        for model_spec in search_model_specs:
+            model_name = model_spec["name"]
+            owner = model_spec.get("owner")
+            
+            try:
+                search_response = await self.search(
+                    model_name=model_name,
+                    query=prompt,  # Use the prompt as search query
+                    owner=owner,
+                    limit=max_search_results,
+                    similarity_threshold=search_similarity_threshold
+                )
+                search_responses.append(search_response)
+                logger.debug(f"✅ Search completed: {model_name} returned {len(search_response.results)} results")
+                
+            except Exception as e:
+                logger.warning(f"⚠️ Search failed for {model_name}: {e}")
+                # Continue with other models - graceful degradation
+                continue
+        
+        # Step 2: Aggregate and format search results
+        all_results = []
+        total_search_cost = 0.0
+        
+        for response in search_responses:
+            all_results.extend(response.results)
+            total_search_cost += response.cost or 0.0
+        
+        logger.info(f"📊 Aggregated {len(all_results)} total results from {len(search_responses)} successful searches")
+        
+        # Step 3: Format context for chat injection
+        if all_results:
+            context_message = self._format_search_context(all_results, context_format)
+            logger.debug(f"📝 Formatted context: {len(context_message)} characters")
+        else:
+            context_message = None
+            logger.info("⚠️ No search results found - proceeding with chat only")
+        
+        # Step 4: Build enhanced message sequence
+        messages = [
+            ChatMessage(
+                role="system",
+                content=(
+                    "You are a helpful AI assistant that can answer questions using both provided sources "
+                    "and your general knowledge.\n\n"
+                    "When sources are provided, use them as your primary information and supplement with "
+                    "your general knowledge when helpful. If you don't know the answer from the sources, "
+                    "you can still use your general knowledge to provide a helpful response.\n\n"
+                    "When no sources are provided, rely on your general knowledge to answer the question comprehensively."
+                )
+            )
+        ]
+        
+        # Add context if we have search results
+        if context_message:
+            messages.append(
+                ChatMessage(
+                    role="system", 
+                    content=f"Here is relevant source context to help answer the user's question:\n\n{context_message}"
+                )
+            )
+        
+        # Add user prompt
+        messages.append(ChatMessage(role="user", content=prompt))
+        
+        # Step 5: Send to chat model
+        logger.info(f"💬 Sending enhanced prompt to chat model: {chat_model}")
+        
+        # Find and validate chat model
+        chat_model_info = self.find_model(chat_model, chat_owner)
+        if not chat_model_info:
+            raise ModelNotFoundError(f"Chat model '{chat_model}' not found" + 
+                                (f" for owner '{chat_owner}'" if chat_owner else ""))
+        
+        if not chat_model_info.supports_service(ServiceType.CHAT):
+            raise ValidationError(f"Model '{chat_model}' does not support chat service")
+        
+        # Create chat service and send enhanced conversation
+        chat_service = ChatService(chat_model_info, self.rpc_client)
+        
+        try:
+            chat_response = await chat_service.send_conversation(
+                messages=messages,
+                **chat_kwargs
+            )
+            
+            # Enhance response with RAG metadata
+            if chat_response.provider_info is None:
+                chat_response.provider_info = {}
+            
+            chat_response.provider_info.update({
+                "rag_workflow": True,
+                "search_models_used": [spec["name"] for spec in search_model_specs],
+                "search_results_count": len(all_results),
+                "total_search_cost": total_search_cost,
+                "context_injected": context_message is not None
+            })
+            
+            # Add combined cost
+            chat_response.cost = (chat_response.cost or 0.0) + total_search_cost
+            
+            logger.info(f"✅ RAG workflow completed - Total cost: ${chat_response.cost:.4f}")
+            return chat_response
+            
+        except Exception as e:
+            logger.error(f"❌ Chat request failed in RAG workflow: {e}")
+            raise
+
+    async def search_multiple_models(self,
+                                    model_names: Union[List[str], List[Dict[str, str]]],
+                                    query: str,
+                                    limit_per_model: int = 3,
+                                    total_limit: Optional[int] = None,
+                                    similarity_threshold: Optional[float] = None,
+                                    remove_duplicates: bool = True,
+                                    sort_by_score: bool = True,
+                                    **search_kwargs) -> SearchResponse:
+        """Search across multiple models and aggregate results.
+        
+        Args:
+            model_names: List of model names or model specs with owners
+            query: Search query
+            limit_per_model: Max results per individual model
+            total_limit: Max results in final aggregated response (None = no limit)
+            similarity_threshold: Minimum similarity score
+            remove_duplicates: Remove duplicate content based on content hash
+            sort_by_score: Sort final results by similarity score (descending)
+            **search_kwargs: Additional parameters for search requests
+            
+        Returns:
+            SearchResponse with aggregated results from all models
+            
+        Example:
+            # Search multiple data sources
+            results = await client.search_multiple_models(
+                model_names=["legal-docs", "company-wiki", "slack-archive"],
+                query="vacation policy changes",
+                limit_per_model=5,
+                total_limit=10
+            )
+        """
+        logger.info(f"🔍 Multi-model search across {len(model_names)} models")
+        
+        # Normalize model specs
+        model_specs = self._normalize_model_specs(model_names)
+        
+        all_results = []
+        total_cost = 0.0
+        successful_models = []
+        failed_models = []
+        
+        # Search each model
+        for model_spec in model_specs:
+            model_name = model_spec["name"]
+            owner = model_spec.get("owner")
+            
+            try:
+                response = await self.search(
+                    model_name=model_name,
+                    query=query,
+                    owner=owner,
+                    limit=limit_per_model,
+                    similarity_threshold=similarity_threshold,
+                    **search_kwargs
+                )
+                
+                all_results.extend(response.results)
+                total_cost += response.cost or 0.0
+                successful_models.append(model_name)
+                
+                logger.debug(f"✅ {model_name}: {len(response.results)} results")
+                
+            except Exception as e:
+                logger.warning(f"⚠️ Search failed for {model_name}: {e}")
+                failed_models.append({"model": model_name, "error": str(e)})
+                continue
+        
+        # Remove duplicates if requested
+        if remove_duplicates:
+            all_results = self._remove_duplicate_results(all_results)
+            logger.debug(f"🔄 Deduplication: {len(all_results)} unique results remain")
+        
+        # Sort by score if requested
+        if sort_by_score:
+            all_results.sort(key=lambda r: r.score, reverse=True)
+        
+        # Apply total limit
+        if total_limit and len(all_results) > total_limit:
+            all_results = all_results[:total_limit]
+            logger.debug(f"✂️ Limited to top {total_limit} results")
+        
+        # Create aggregated response
+        aggregated_response = SearchResponse(
+            id=f"multi-search-{hash(query) % 10000}",
+            query=query,
+            results=all_results,
+            cost=total_cost,
+            provider_info={
+                "multi_model_search": True,
+                "successful_models": successful_models,
+                "failed_models": failed_models,
+                "total_models_searched": len(successful_models),
+                "deduplication_applied": remove_duplicates,
+                "sorted_by_score": sort_by_score
+            }
+        )
+        
+        logger.info(f"📊 Multi-search completed: {len(all_results)} results from {len(successful_models)}/{len(model_specs)} models")
+        
+        return aggregated_response
+    
+    async def search_then_chat(self,
+                            search_model: str,
+                            chat_model: str,
+                            prompt: str,
+                            search_owner: Optional[str] = None,
+                            chat_owner: Optional[str] = None,
+                            **kwargs) -> ChatResponse:
+        """Simplified single-model search then chat workflow.
+        
+        Args:
+            search_model: Name of model to search
+            chat_model: Name of model to chat with
+            prompt: User prompt (used for both search and chat)
+            search_owner: Owner of search model
+            chat_owner: Owner of chat model
+            **kwargs: Additional parameters for both search and chat
+            
+        Returns:
+            ChatResponse with search context
+            
+        Example:
+            response = await client.search_then_chat(
+                search_model="company-docs",
+                chat_model="assistant-gpt",
+                prompt="How do I submit expenses?"
+            )
+        """
+        return await self.chat_with_search_context(
+            search_models=[{"name": search_model, "owner": search_owner} if search_owner else search_model],
+            chat_model=chat_model,
+            prompt=prompt,
+            chat_owner=chat_owner,
+            **kwargs
+        )
+
+    # ======================
+    # HELPER METHODS
+    # Add these private methods to support RAG coordination
+    # ======================
+
+    def _normalize_model_specs(self, models: Union[str, List[str], List[Dict[str, str]]]) -> List[Dict[str, str]]:
+        """Normalize various model specification formats to list of dicts.
+        
+        Args:
+            models: Models in various formats
+            
+        Returns:
+            List of model specs with 'name' and optional 'owner' keys
+        """
+        if isinstance(models, str):
+            # Single model name
+            return [{"name": models}]
+        
+        elif isinstance(models, list):
+            normalized = []
+            for model in models:
+                if isinstance(model, str):
+                    # List of model names
+                    normalized.append({"name": model})
+                elif isinstance(model, dict):
+                    # List of model specs
+                    if "name" not in model:
+                        raise ValidationError(f"Model spec missing 'name' key: {model}")
+                    normalized.append(model)
+                else:
+                    raise ValidationError(f"Invalid model specification: {model}")
+            return normalized
+        
+        else:
+            raise ValidationError(f"Invalid models format: {type(models)}")
+
+
+    def _format_search_context(self, results: List[DocumentResult], format_type: str = "frontend") -> str:
+        """Format search results as context for chat injection.
+        
+        Args:
+            results: Search results to format
+            format_type: "frontend" (matches web app) or "simple"
+            
+        Returns:
+            Formatted context string
+        """
+        if not results:
+            return ""
+        
+        if format_type == "frontend":
+            # Match the exact frontend pattern: [filename]\nContent
+            formatted_parts = []
+            for result in results:
+                filename = result.metadata.get("filename", "unknown") if result.metadata else "unknown"
+                formatted_parts.append(f"[{filename}]\n{result.content}")
+            
+            return "\n\n".join(formatted_parts)
+        
+        elif format_type == "simple":
+            # Cleaner format for direct SDK usage
+            formatted_parts = []
+            for i, result in enumerate(results, 1):
+                source = result.metadata.get("filename", f"Source {i}") if result.metadata else f"Source {i}"
+                formatted_parts.append(f"## {source}\n{result.content}")
+            
+            return "\n\n".join(formatted_parts)
+        
+        else:
+            raise ValidationError(f"Unknown context format: {format_type}")
+
+
+    def _remove_duplicate_results(self, results: List[DocumentResult]) -> List[DocumentResult]:
+        """Remove duplicate results based on content similarity.
+        
+        Args:
+            results: List of search results
+            
+        Returns:
+            Deduplicated list of results
+        """
+        if not results:
+            return results
+        
+        # Simple deduplication based on content hash
+        seen_hashes = set()
+        unique_results = []
+        
+        for result in results:
+            content_hash = hash(result.content.strip().lower())
+            if content_hash not in seen_hashes:
+                seen_hashes.add(content_hash)
+                unique_results.append(result)
+        
+        return unique_results
+
+
+    # This method was replaced by get_rag_cost_estimate() for better transparency
+
+
+    # ======================
+    # CONVENIENCE METHODS  
+    # Add these for transparent RAG operations
+    # ======================
+
+    def get_rag_cost_estimate(self,
+                            search_models: Union[str, List[str], List[Dict[str, str]]],
+                            chat_model: str,
+                            chat_owner: Optional[str] = None) -> Dict[str, Any]:
+        """Get cost estimate for RAG workflow before execution.
+        
+        Provides transparent cost breakdown so users can make informed decisions
+        about which models to use (matching the frontend's cost preview).
+        
+        Args:
+            search_models: Search models to estimate
+            chat_model: Chat model to estimate
+            chat_owner: Owner of chat model
+            
+        Returns:
+            Dictionary with cost breakdown and model details
+            
+        Example:
+            # Preview costs before RAG workflow
+            estimate = client.get_rag_cost_estimate(
+                search_models=["docs-1", "docs-2"],
+                chat_model="premium-chat"
+            )
+            print(f"Total cost: ${estimate['total_cost']}")
+            print(f"Models: {estimate['model_summary']}")
+        """
+        search_model_specs = self._normalize_model_specs(search_models)
+        
+        breakdown = {
+            "search_models": [],
+            "chat_model": None,
+            "search_cost": 0.0,
+            "chat_cost": 0.0, 
+            "total_cost": 0.0,
+            "model_summary": {
+                "search_count": len(search_model_specs),
+                "search_names": [spec["name"] for spec in search_model_specs],
+                "chat_name": chat_model
+            }
+        }
+        
+        # Get search model costs
+        for spec in search_model_specs:
+            model = self.find_model(spec["name"], spec.get("owner"))
+            if model:
+                search_service = model.get_service_info(ServiceType.SEARCH)
+                if search_service:
+                    model_cost = search_service.pricing
+                    breakdown["search_cost"] += model_cost
+                    breakdown["search_models"].append({
+                        "name": model.name,
+                        "owner": model.owner,
+                        "cost": model_cost,
+                        "charge_type": search_service.charge_type.value
+                    })
+        
+        # Get chat model cost
+        chat_model_info = self.find_model(chat_model, chat_owner)
+        if chat_model_info:
+            chat_service = chat_model_info.get_service_info(ServiceType.CHAT)
+            if chat_service:
+                breakdown["chat_cost"] = chat_service.pricing
+                breakdown["chat_model"] = {
+                    "name": chat_model_info.name,
+                    "owner": chat_model_info.owner,
+                    "cost": chat_service.pricing,
+                    "charge_type": chat_service.charge_type.value
+                }
+        
+        breakdown["total_cost"] = breakdown["search_cost"] + breakdown["chat_cost"]
+        
+        return breakdown
+
+
+    def preview_rag_workflow(self,
+                            search_models: Union[str, List[str], List[Dict[str, str]]],
+                            chat_model: str,
+                            chat_owner: Optional[str] = None) -> str:
+        """Preview RAG workflow with model details and costs.
+        
+        Provides a human-readable preview of the RAG workflow showing exactly
+        which models will be used and their costs (transparency like frontend).
+        
+        Args:
+            search_models: Search models for the workflow
+            chat_model: Chat model for the workflow  
+            chat_owner: Owner of chat model
+            
+        Returns:
+            Formatted preview string
+            
+        Example:
+            preview = client.preview_rag_workflow(
+                search_models=["legal-docs", "hr-policies"],
+                chat_model="gpt-assistant"
+            )
+            print(preview)
+        """
+        estimate = self.get_rag_cost_estimate(search_models, chat_model, chat_owner)
+        
+        lines = [
+            "📋 RAG Workflow Preview",
+            "=" * 30,
+            "",
+            f"🔍 Search Phase ({len(estimate['search_models'])} models):"
+        ]
+        
+        if estimate["search_models"]:
+            for model in estimate["search_models"]:
+                cost_str = f"${model['cost']:.4f}" if model['cost'] > 0 else "Free"
+                lines.append(f"  • {model['name']} by {model['owner']} - {cost_str}")
+            lines.append(f"  Subtotal: ${estimate['search_cost']:.4f}")
+        else:
+            lines.append("  • No valid search models found")
+        
+        lines.extend([
+            "",
+            "💬 Chat Phase:"
+        ])
+        
+        if estimate["chat_model"]:
+            chat = estimate["chat_model"]
+            cost_str = f"${chat['cost']:.4f}" if chat['cost'] > 0 else "Free"
+            lines.append(f"  • {chat['name']} by {chat['owner']} - {cost_str}")
+        else:
+            lines.append("  • Chat model not found")
+        
+        lines.extend([
+            "",
+            f"💰 Total Estimated Cost: ${estimate['total_cost']:.4f}",
+            "",
+            "To execute: client.chat_with_search_context(...)"
+        ])
+        
+        return "\n".join(lines)
+    
     # ======================
     # UPDATED SERVICE CLASSES
     # ======================
 
-    
     def get_chat_service(self, model_name: str) -> ChatService:
         """Get a chat service for a specific model.
         
@@ -647,7 +1248,83 @@ class SyftBoxClient:
         
         return SearchService(model, self.rpc_client)
     
-    def create_conversation(self, model_name: str) -> ConversationManager:
+    def create_conversation(self, model_name: str, owner: Optional[str] = None) -> ConversationManager:
+        """Create a conversation manager for a chat model.
+        
+        Args:
+            model_name: Name of the chat model
+            owner: Owner email (required if model name is ambiguous)
+            
+        Returns:
+            ConversationManager instance
+        """
+        # Find and validate model
+        model = self.find_model(model_name, owner)
+        if not model:
+            if owner:
+                raise ModelNotFoundError(f"Model '{model_name}' not found for owner '{owner}'")
+            else:
+                raise ModelNotFoundError(f"Model '{model_name}' not found")
+        
+        if not model.supports_service(ServiceType.CHAT):
+            raise ValidationError(f"Model '{model_name}' does not support chat service")
+        
+        # Create chat service and conversation manager
+        chat_service = ChatService(model, self.rpc_client)
+        return ConversationManager(chat_service)
+    
+    def create_conversation3(self, 
+                            model_name: str, 
+                            owner: Optional[str] = None, 
+                            auto_pay: bool = True
+                        ) -> ConversationManager:
+        """Create a conversation manager for a chat model."""
+        
+        # Find and validate model
+        model = self.find_model(model_name, owner)
+        if not model:
+            if owner:
+                raise ModelNotFoundError(f"Model '{model_name}' not found for owner '{owner}'")
+            else:
+                raise ModelNotFoundError(f"Model '{model_name}' not found")
+        
+        if not model.supports_service(ServiceType.CHAT):
+            raise ValidationError(f"Model '{model_name}' does not support chat service")
+        
+        # Create chat service
+        chat_service = ChatService(model, self.rpc_client)
+        logger.info(f"Chat service created for model: {chat_service}")
+        
+        # Return enhanced conversation manager with auto-payment
+        if auto_pay:
+            return EnhancedConversationManager(chat_service, self)
+        else:
+            return ConversationManager(chat_service)
+    
+    def create_conversation2(self, model_name: str, owner: Optional[str] = None) -> ConversationManager:
+        """Create a conversation manager for a chat model.
+        
+        Args:
+            model_name: Name of the chat model
+            owner: Owner email (required if model name is ambiguous)
+            
+        Returns:
+            ConversationManager instance
+        """
+        model = self.find_model(model_name, owner)
+        if not model:
+            if owner:
+                raise ModelNotFoundError(f"Model '{model_name}' not found for owner '{owner}'")
+            else:
+                raise ModelNotFoundError(f"Model '{model_name}' not found")
+        
+        if not model.supports_service(ServiceType.CHAT):
+            raise ValidationError(f"Model '{model_name}' does not support chat service")
+        
+        chat_service = ChatService(model, self.rpc_client)
+        return ConversationManager(chat_service)
+    
+    def create_conversation1(self, model_name: str) -> ConversationManager:
         """Create a conversation manager for a chat model.
         
         Args:
@@ -1235,6 +1912,41 @@ class SyftBoxClient:
             lines.append("")  # Empty line between owners
         
         return "\n".join(lines)
+
+class EnhancedConversationManager(ConversationManager):
+    """Enhanced ConversationManager with automatic payment handling."""
+    
+    def __init__(self, chat_service: ChatService, client: SyftBoxClient):  # No quotes needed
+        super().__init__(chat_service)
+        self.client = client
+        self._auto_pay = True
+    
+    async def send_message(self, message: str, **kwargs) -> ChatResponse:
+        """Send a message with automatic payment handling."""
+        
+        # Check if model requires payment and handle automatically
+        if self._auto_pay and self.chat_service.pricing > 0:
+            try:
+                # Create transaction token automatically
+                token = await self.client.rpc_client.create_transaction_token(
+                    self.chat_service.model_info.owner
+                )
+                kwargs['transaction_token'] = token
+                
+            except Exception as e:
+                logger.warning(f"Failed to create transaction token: {e}")
+                # Continue without token - let the service handle the error
+        
+        # Call parent implementation
+        return await super().send_message(message, **kwargs)
+    
+    def disable_auto_pay(self):
+        """Disable automatic payment for this conversation."""
+        self._auto_pay = False
+    
+    def enable_auto_pay(self):
+        """Enable automatic payment for this conversation."""
+        self._auto_pay = True
 
 # ======================
 # CONVENIENCE FUNCTIONS (UPDATED)

@@ -193,8 +193,10 @@ class ChatService:
         Returns:
             Dictionary payload for RPC call
         """
+        logger.info(f"Building RPC payload for chat request: {request}")
+        user_email = self.rpc_client._accounting_credentials.get('email', '')
         payload = {
-            "userEmail": request.user_email,
+            "userEmail": user_email,
             "model": request.model,
             "messages": [
                 {
@@ -229,6 +231,140 @@ class ChatService:
         return payload
     
     def _parse_rpc_response(self, response_data: Dict[str, Any]) -> ChatResponse:
+        """Parse RPC response into ChatResponse object.
+        
+        Handles the actual SyftBox response format:
+        {
+        "request_id": "...",
+        "data": {
+            "message": {
+            "body": {
+                "cost": 0.3,
+                "message": {"content": "...", "role": "assistant"},
+                "usage": {"completionTokens": 113, ...},
+                "model": "claude-sonnet-3.5"
+            }
+            }
+        }
+        }
+        
+        Args:
+            response_data: Raw response data from RPC call
+            
+        Returns:
+            Parsed ChatResponse object
+        """
+        
+        try:
+            # Extract the actual response body from SyftBox nested structure
+            if "data" in response_data and "message" in response_data["data"]:
+                message_data = response_data["data"]["message"]
+                
+                if "body" in message_data and isinstance(message_data["body"], dict):
+                    # This is the actual response content
+                    body = message_data["body"]
+                    
+                    # Extract message content
+                    if "message" in body and isinstance(body["message"], dict):
+                        msg_content = body["message"]
+                        message = ChatMessage(
+                            role=msg_content.get("role", "assistant"),
+                            content=msg_content.get("content", ""),
+                            name=msg_content.get("name")
+                        )
+                    else:
+                        # Fallback if message structure is different
+                        message = ChatMessage(
+                            role="assistant",
+                            content=str(body.get("content", body))
+                        )
+                    
+                    # Extract usage information
+                    usage_data = body.get("usage", {})
+                    usage = ChatUsage(
+                        prompt_tokens=usage_data.get("promptTokens", 0),
+                        completion_tokens=usage_data.get("completionTokens", 0),
+                        total_tokens=usage_data.get("totalTokens", 0)
+                    )
+                    
+                    return ChatResponse(
+                        id=body.get("id", str(uuid.uuid4())),
+                        model=body.get("model", self.model_info.name),
+                        message=message,
+                        usage=usage,
+                        cost=body.get("cost"),
+                        provider_info=body.get("providerInfo")
+                    )
+            
+            # Handle legacy/direct response formats (backwards compatibility)
+            if "message" in response_data:
+                # Direct format
+                message_data = response_data["message"]
+                message = ChatMessage(
+                    role=message_data.get("role", "assistant"),
+                    content=message_data.get("content", ""),
+                    name=message_data.get("name")
+                )
+                
+                usage_data = response_data.get("usage", {})
+                usage = ChatUsage(
+                    prompt_tokens=usage_data.get("promptTokens", 0),
+                    completion_tokens=usage_data.get("completionTokens", 0),
+                    total_tokens=usage_data.get("totalTokens", 0)
+                )
+                
+                return ChatResponse(
+                    id=response_data.get("id", str(uuid.uuid4())),
+                    model=response_data.get("model", self.model_info.name),
+                    message=message,
+                    usage=usage,
+                    cost=response_data.get("cost"),
+                    provider_info=response_data.get("providerInfo")
+                )
+            
+            elif "content" in response_data:
+                # Simple content format
+                message = ChatMessage(
+                    role="assistant",
+                    content=response_data["content"]
+                )
+                
+                usage = ChatUsage(prompt_tokens=0, completion_tokens=0, total_tokens=0)
+                
+                return ChatResponse(
+                    id=str(uuid.uuid4()),
+                    model=self.model_info.name,
+                    message=message,
+                    usage=usage,
+                    cost=response_data.get("cost"),
+                    provider_info=response_data.get("providerInfo")
+                )
+            
+            else:
+                # Last resort - treat whole response as string content
+                # But log this so we can debug new formats
+                logger.warning(f"Unexpected response format, using fallback parsing: {response_data}")
+                
+                message = ChatMessage(
+                    role="assistant",
+                    content=str(response_data)
+                )
+                
+                usage = ChatUsage(prompt_tokens=0, completion_tokens=0, total_tokens=0)
+                
+                return ChatResponse(
+                    id=str(uuid.uuid4()),
+                    model=self.model_info.name,
+                    message=message,
+                    usage=usage
+                )
+                
+        except Exception as e:
+            logger.error(f"Failed to parse chat response: {e}")
+            logger.error(f"Response data: {response_data}")
+            raise RPCError(f"Failed to parse chat response: {e}")
+    
+    def _parse_rpc_response1(self, response_data: Dict[str, Any]) -> ChatResponse:
         """Parse RPC response into ChatResponse object.
         
         Args:

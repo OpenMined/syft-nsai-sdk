@@ -24,8 +24,8 @@ class SyftBoxRPCClient:
             cache_server_url: str = "https://syftbox.net",
             from_email: str = None,
             timeout: float = 30.0,
-            max_poll_attempts: int = 20,
-            poll_interval: float = 2.0,
+            max_poll_attempts: int = 30,
+            poll_interval: float = 3.0,
             accounting_service_url: Optional[str] = None,
             accounting_credentials: Optional[Dict[str, str]] = None,
         ):
@@ -103,6 +103,10 @@ class SyftBoxRPCClient:
             PollingTimeoutError: When polling times out
         """
         try:
+            # Initialize payload if None
+            if payload is None:
+                payload = {}
+
             # Extract recipient email for accounting token
             recipient_email = syft_url.split('//')[1].split('/')[0]
             
@@ -111,7 +115,8 @@ class SyftBoxRPCClient:
                 recipientEmail=recipient_email
             )
             payload["transaction_token"] = transaction_token
-            
+            payload["stream"] = False
+
             # Build request headers with accounting token
             request_headers = {
                 "Content-Type": "application/json",
@@ -238,7 +243,8 @@ class SyftBoxRPCClient:
                             "Content-Type": "application/json"
                         }
                     )
-                    
+                    # logger.info(f"Response: {response.json()}")
+
                     if response.status_code == 200:
                         # Success - parse response
                         try:
@@ -366,6 +372,8 @@ class SyftBoxRPCClient:
             email: User email
             password: User password
         """
+
+        self.accounting_service_url = service_url
         self._accounting_credentials = {
             "service_url": service_url,
             "email": email,
@@ -385,7 +393,14 @@ class SyftBoxRPCClient:
     def accounting_client(self) -> UserClient:
         """Get or create accounting client."""
         if self._accounting_client is None:
-            if not self.accounting_service_url:
+            # Try to get service URL from multiple sources
+            service_url = self.accounting_service_url
+            
+            # Fallback to credentials if service_url not set
+            if not service_url and self._accounting_credentials:
+                service_url = self._accounting_credentials.get("service_url")
+            
+            if not service_url:
                 raise AuthenticationError("No accounting service URL configured")
             
             if not self._accounting_credentials:
@@ -393,7 +408,7 @@ class SyftBoxRPCClient:
             
             try:
                 self._accounting_client = UserClient(
-                    url=self.accounting_service_url,
+                    url=service_url,
                     email=self._accounting_credentials["email"],
                     password=self._accounting_credentials["password"]
                 )
