@@ -142,19 +142,20 @@ class SyftBoxRPCClient:
             logger.debug(f"Making RPC call to {syft_url}")
             
             # Serialize payload to JSON string and set Content-Length
-            if payload:
-                payload_json = json.dumps(payload)
-                request_headers["Content-Length"] = str(len(payload_json.encode('utf-8')))
-            else:
-                payload_json = None
+            # if payload:
+            #     payload_json = json.dumps(payload)
+            #     request_headers["Content-Length"] = str(len(payload_json.encode('utf-8')))
+            # else:
+            #     payload_json = None
     
             # Make the request
+            # logger.info(f"payload_json: {payload_json}")
             response = await self.client.post(
                 request_url,
                 params=params,
                 headers=request_headers,
-                # json=payload,
-                data=payload_json,
+                json=payload,
+                # data=payload_json,
             )
             
             # Handle response

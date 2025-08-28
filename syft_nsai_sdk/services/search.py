@@ -6,7 +6,8 @@ import logging
 from typing import List, Optional, Dict, Any
 
 from ..core.types import (
-    ModelInfo, 
+    ModelInfo,
+    PricingChargeType, 
     SearchRequest, 
     SearchResponse, 
     SearchOptions, 
@@ -18,9 +19,7 @@ from ..networking.rpc_client import SyftBoxRPCClient
 
 logger = logging.getLogger(__name__)
 
-
 class SearchService:
-    """Updated search service with explicit parameter handling."""
     """Service client for document search models."""
     
     def __init__(self, model_info: ModelInfo, rpc_client: SyftBoxRPCClient):
@@ -53,14 +52,15 @@ class SearchService:
         if "query" not in params:
             raise ValidationError("'query' parameter is required")
         
-        # Extract standard parameters
+        # Extract standard parameters (make copy to avoid mutating input)
+        params = params.copy()
         query = params.pop("query")
         limit = params.pop("limit", 3)
         similarity_threshold = params.pop("similarity_threshold", None)
         
-        # Build RPC payload
+        # Build RPC payload with consistent authentication
         payload = {
-            "userEmail": self.rpc_client.from_email,
+            "userEmail": self.rpc_client._accounting_credentials.get('email', ''),
             "query": query,
             "options": {"limit": limit}
         }
@@ -336,88 +336,6 @@ class SearchService:
             logger.error(f"Response data: {response_data}")
             raise RPCError(f"Failed to parse search response: {e}")
     
-    def _parse_rpc_response1(self, response_data: Dict[str, Any], original_query: str) -> SearchResponse:
-        """Parse RPC response into SearchResponse object.
-        
-        Args:
-            response_data: Raw response data from RPC call
-            original_query: The original search query
-            
-        Returns:
-            Parsed SearchResponse object
-        """
-        try:
-            # Handle different response formats
-            if "results" in response_data:
-                # Standard format
-                results_data = response_data["results"]
-                results = []
-                
-                for result_data in results_data:
-                    result = DocumentResult(
-                        id=result_data.get("id", str(uuid.uuid4())),
-                        score=float(result_data.get("score", 0.0)),
-                        content=result_data.get("content", ""),
-                        metadata=result_data.get("metadata"),
-                        embedding=result_data.get("embedding")
-                    )
-                    results.append(result)
-                
-                return SearchResponse(
-                    id=response_data.get("id", str(uuid.uuid4())),
-                    query=response_data.get("query", original_query),
-                    results=results,
-                    cost=response_data.get("cost"),
-                    provider_info=response_data.get("providerInfo")
-                )
-            
-            elif isinstance(response_data, list):
-                # Array of results
-                results = []
-                
-                for result_data in response_data:
-                    if isinstance(result_data, dict):
-                        result = DocumentResult(
-                            id=result_data.get("id", str(uuid.uuid4())),
-                            score=float(result_data.get("score", 1.0)),
-                            content=result_data.get("content", str(result_data)),
-                            metadata=result_data.get("metadata")
-                        )
-                        results.append(result)
-                    else:
-                        # Simple string result
-                        result = DocumentResult(
-                            id=str(uuid.uuid4()),
-                            score=1.0,
-                            content=str(result_data),
-                            metadata=None
-                        )
-                        results.append(result)
-                
-                return SearchResponse(
-                    id=str(uuid.uuid4()),
-                    query=original_query,
-                    results=results
-                )
-            
-            else:
-                # Fallback - treat as single result
-                result = DocumentResult(
-                    id=str(uuid.uuid4()),
-                    score=1.0,
-                    content=str(response_data),
-                    metadata=None
-                )
-                
-                return SearchResponse(
-                    id=str(uuid.uuid4()),
-                    query=original_query,
-                    results=[result]
-                )
-                
-        except Exception as e:
-            raise RPCError(f"Failed to parse search response: {e}")
-    
     @property
     def pricing(self) -> float:
         """Get pricing for search service."""
@@ -431,25 +349,19 @@ class SearchService:
         return search_service.charge_type.value if search_service else "per_request"
     
     def estimate_cost(self, query_count: int = 1, result_limit: int = 3) -> float:
-        """Estimate cost for search requests.
-        
-        Args:
-            query_count: Number of queries to perform
-            result_limit: Number of results per query
+        """Estimate cost for search requests."""
+        search_service_info = self.model_info.get_service_info(ServiceType.SEARCH)
+        if not search_service_info:
+            return 0.0
             
-        Returns:
-            Estimated cost
-        """
-        base_cost = self.pricing
-        
-        if self.charge_type == "per_request":
-            return base_cost * query_count
-        elif self.charge_type == "per_token":
-            # Rough estimation for search - depends on query and result size
-            estimated_tokens = query_count * (20 + result_limit * 100)  # Very rough
-            return base_cost * estimated_tokens
+        if search_service_info.charge_type == PricingChargeType.PER_REQUEST:
+            return search_service_info.pricing * query_count
+        elif search_service_info.charge_type == PricingChargeType.PER_TOKEN:
+            # Use actual per-token pricing from model info
+            estimated_tokens = query_count * (20 + result_limit * 100)  # Still rough estimate
+            return search_service_info.pricing * estimated_tokens
         else:
-            return base_cost * query_count
+            return search_service_info.pricing
 
 
 class BatchSearchService:

@@ -75,11 +75,9 @@ from .discovery.filters import (
 )
 
 # Convenience functions
-from .main import (
-    quick_chat,
-    quick_search,
-    list_available_models,
-)
+# from .main import (
+#     list_available_models,
+# )
 
 # Formatting utilities
 from .utils.formatting import (
@@ -192,11 +190,6 @@ __all__ = [
     "create_healthy_models_filter",
     "create_owner_models_filter",
     "create_tag_models_filter",
-    
-    # Convenience functions
-    "quick_chat",
-    "quick_search",
-    "list_available_models",
     
     # Formatting
     "format_models_table",

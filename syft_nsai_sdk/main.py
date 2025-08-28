@@ -8,7 +8,12 @@ from typing import List, Optional, Dict, Any, Union
 from pathlib import Path
 from dotenv import load_dotenv
 
-from .core.config import SyftBoxConfig, get_config, is_syftbox_available, get_installation_instructions
+from .core.config import (
+    SyftBoxConfig, 
+    get_config, 
+    is_syftbox_available, 
+    get_installation_instructions
+)
 from .core.types import (
     ModelInfo, 
     ServiceType, 
@@ -118,10 +123,6 @@ class SyftBoxClient:
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         await self.close()
 
-    # ======================
-    # MODEL DISCOVERY
-    # ======================
-    
     # Model Discovery Methods
     def discover_models(self,
                     service_type: Optional[str] = None,
@@ -240,8 +241,54 @@ class SyftBoxClient:
         else:
             return self.discover_models(has_any_tags=tags, health_check="never")
     
-    # Model Selection Methods
+    # Display Methods 
+    def list_models(self, 
+                   service_type: Optional[ServiceType] = None,
+                   health_check: str = "auto",
+                   format: str = "table") -> str:
+        """List available models in a user-friendly format.
+        
+        Args:
+            service_type: Optional service type filter
+            health_check: Health checking mode ("auto", "always", "never")
+            format: Output format ("table", "json", "summary")
+            
+        Returns:
+            Formatted string with model information
+        """
+        models = self.discover_models(
+            service_type=service_type,
+            health_check=health_check
+        )
+        
+        if format == "table":
+            return format_models_table(models)
+        elif format == "json":
+            import json
+            model_dicts = [self._model_to_dict(model) for model in models]
+            return json.dumps(model_dicts, indent=2)
+        elif format == "summary":
+            return self._format_models_summary(models)
+        else:
+            return [self._model_to_dict(model) for model in models]
     
+    def show_model_details(self, model_name: str, owner: Optional[str] = None) -> str:
+        """Show detailed information about a specific model.
+        
+        Args:
+            model_name: Name of the model
+            owner: Optional owner to narrow search
+            
+        Returns:
+            Formatted model details
+        """
+        model = self.find_model(model_name, owner)
+        if not model:
+            return f"Model '{model_name}' not found"
+        
+        return format_model_details(model)
+    
+    # Model Selection Methods
     def find_best_chat_model(self,
                             preference: QualityPreference = QualityPreference.BALANCED,
                             max_cost: Optional[float] = None,
@@ -294,11 +341,7 @@ class SyftBoxClient:
         
         return self._select_best_model(models, preference)
 
-    # ======================
-    # EXPLICIT MODEL USAGE - NEW DESIGN
-    # ======================
     # Service Usage Methods
-    
     async def chat(self,
                    model_name: str,
                    prompt: str,
@@ -424,11 +467,7 @@ class SyftBoxClient:
         
         return await search_service.search_with_params(search_params)
 
-    # ======================
-    # CONVENIENCE METHODS FOR DISCOVERY + USAGE
-    # ======================
     # Service Factory Methods
-
     async def chat_with_best(self, 
                             prompt: str,
                             max_cost: Optional[float] = None,
@@ -513,42 +552,110 @@ class SyftBoxClient:
             **search_params
         )
     
-    # ======================
-    # MODEL-SPECIFIC PARAMETER HELPERS
-    # ======================
-
+    # Model Parameters
     def get_model_parameters(self, model_name: str, owner: Optional[str] = None) -> Dict[str, Any]:
-        """Get available parameters for a specific model.
-        
-        Args:
-            model_name: Name of the model
-            owner: Owner email if needed
-            
-        Returns:
-            Dictionary of available parameters and their descriptions
-        """
+        """Get available parameters for a specific model."""
         model = self.find_model(model_name, owner)
         if not model:
             raise ModelNotFoundError(f"Model '{model_name}' not found")
         
-        # Parse parameters from OpenAPI schema or RPC schema
         parameters = {}
         
-        if model.endpoints:
-            # Extract from OpenAPI spec
-            chat_endpoint = model.endpoints.get("paths", {}).get("/chat", {})
-            if "requestBody" in chat_endpoint:
-                # Parse OpenAPI schema to extract parameters
-                # This would need full implementation
-                parameters = self._extract_parameters_from_openapi(chat_endpoint)
-        
-        if model.rpc_schema:
-            # Extract from RPC schema
-            chat_rpc = model.rpc_schema.get("/chat", {})
-            if chat_rpc:
-                parameters.update(self._extract_parameters_from_rpc(chat_rpc))
+        if model.endpoints and "components" in model.endpoints:
+            schemas = model.endpoints["components"].get("schemas", {})
+            
+            # Extract chat parameters
+            chat_request = schemas.get("ChatRequest", {})
+            if chat_request:
+                parameters["chat"] = self._extract_request_parameters(chat_request, schemas)
+            
+            # Extract search parameters  
+            search_request = schemas.get("SearchRequest", {})
+            if search_request:
+                parameters["search"] = self._extract_request_parameters(search_request, schemas)
         
         return parameters
+
+    def _extract_request_parameters(self, request_schema: Dict[str, Any], all_schemas: Dict[str, Any]) -> Dict[str, Any]:
+        """Extract parameters from request schema."""
+        parameters = {}
+        properties = request_schema.get("properties", {})
+        required_fields = set(request_schema.get("required", []))
+        
+        # Skip system fields
+        skip_fields = {"userEmail", "model", "messages", "query", "transactionToken"}
+        
+        for field_name, field_info in properties.items():
+            if field_name in skip_fields:
+                continue
+                
+            param_info = {
+                "required": field_name in required_fields,
+                "description": field_info.get("description", "")
+            }
+            
+            # Handle direct type
+            if "type" in field_info:
+                param_info["type"] = field_info["type"]
+                self._add_constraints(param_info, field_info)
+            
+            # Handle $ref
+            elif "$ref" in field_info:
+                ref_name = field_info["$ref"].split("/")[-1]
+                if ref_name in all_schemas:
+                    nested = self._extract_schema_properties(all_schemas[ref_name])
+                    param_info.update(nested)
+            
+            # Handle anyOf (optional references)
+            elif "anyOf" in field_info:
+                for option in field_info["anyOf"]:
+                    if "$ref" in option:
+                        ref_name = option["$ref"].split("/")[-1]
+                        if ref_name in all_schemas:
+                            nested = self._extract_schema_properties(all_schemas[ref_name])
+                            param_info.update(nested)
+                            break
+                    elif "type" in option and option["type"] != "null":
+                        param_info["type"] = option["type"]
+                        self._add_constraints(param_info, option)
+            
+            parameters[field_name] = param_info
+        
+        return parameters
+
+    def _extract_schema_properties(self, schema: Dict[str, Any]) -> Dict[str, Any]:
+        """Extract properties from nested schema."""
+        result = {"type": "object", "properties": {}}
+        properties = schema.get("properties", {})
+        
+        for prop_name, prop_info in properties.items():
+            if prop_name == "extensions":
+                continue
+                
+            prop_data = {
+                "description": prop_info.get("description", ""),
+                "required": False
+            }
+            
+            if "type" in prop_info:
+                prop_data["type"] = prop_info["type"]
+                self._add_constraints(prop_data, prop_info)
+            elif "anyOf" in prop_info:
+                for option in prop_info["anyOf"]:
+                    if "type" in option and option["type"] != "null":
+                        prop_data["type"] = option["type"]
+                        self._add_constraints(prop_data, option)
+                        break
+            
+            result["properties"][prop_name] = prop_data
+        
+        return result
+
+    def _add_constraints(self, param_info: Dict[str, Any], field_info: Dict[str, Any]):
+        """Add validation constraints to parameter info."""
+        for constraint in ["minimum", "maximum", "enum", "format"]:
+            if constraint in field_info:
+                param_info[constraint] = field_info[constraint]
 
     def show_model_usage(self, model_name: str, owner: Optional[str] = None) -> str:
         """Show usage examples for a specific model.
@@ -617,10 +724,7 @@ class SyftBoxClient:
         
         return "\n".join(examples)
     
-
-    # ======================
-    # RAG COORDINATION METHODS
-    # ======================
+    # RAG Workflow
     async def chat_with_search_context(self,
                                     search_models: Union[str, List[str], List[Dict[str, str]]],
                                     chat_model: str,
@@ -973,11 +1077,7 @@ class SyftBoxClient:
             **kwargs
         )
 
-    # ======================
-    # HELPER METHODS
-    # Add these private methods to support RAG coordination
-    # ======================
-
+    # Private methods to support RAG coordination
     def _normalize_model_specs(self, models: Union[str, List[str], List[Dict[str, str]]]) -> List[Dict[str, str]]:
         """Normalize various model specification formats to list of dicts.
         
@@ -1008,7 +1108,6 @@ class SyftBoxClient:
         
         else:
             raise ValidationError(f"Invalid models format: {type(models)}")
-
 
     def _format_search_context(self, results: List[DocumentResult], format_type: str = "frontend") -> str:
         """Format search results as context for chat injection.
@@ -1044,7 +1143,6 @@ class SyftBoxClient:
         else:
             raise ValidationError(f"Unknown context format: {format_type}")
 
-
     def _remove_duplicate_results(self, results: List[DocumentResult]) -> List[DocumentResult]:
         """Remove duplicate results based on content similarity.
         
@@ -1068,15 +1166,6 @@ class SyftBoxClient:
                 unique_results.append(result)
         
         return unique_results
-
-
-    # This method was replaced by get_rag_cost_estimate() for better transparency
-
-
-    # ======================
-    # CONVENIENCE METHODS  
-    # Add these for transparent RAG operations
-    # ======================
 
     def get_rag_cost_estimate(self,
                             search_models: Union[str, List[str], List[Dict[str, str]]],
@@ -1151,7 +1240,6 @@ class SyftBoxClient:
         
         return breakdown
 
-
     def preview_rag_workflow(self,
                             search_models: Union[str, List[str], List[Dict[str, str]]],
                             chat_model: str,
@@ -1214,10 +1302,6 @@ class SyftBoxClient:
         
         return "\n".join(lines)
     
-    # ======================
-    # UPDATED SERVICE CLASSES
-    # ======================
-
     def get_chat_service(self, model_name: str) -> ChatService:
         """Get a chat service for a specific model.
         
@@ -1273,120 +1357,7 @@ class SyftBoxClient:
         chat_service = ChatService(model, self.rpc_client)
         return ConversationManager(chat_service)
     
-    def create_conversation3(self, 
-                            model_name: str, 
-                            owner: Optional[str] = None, 
-                            auto_pay: bool = True
-                        ) -> ConversationManager:
-        """Create a conversation manager for a chat model."""
-        
-        # Find and validate model
-        model = self.find_model(model_name, owner)
-        if not model:
-            if owner:
-                raise ModelNotFoundError(f"Model '{model_name}' not found for owner '{owner}'")
-            else:
-                raise ModelNotFoundError(f"Model '{model_name}' not found")
-        
-        if not model.supports_service(ServiceType.CHAT):
-            raise ValidationError(f"Model '{model_name}' does not support chat service")
-        
-        # Create chat service
-        chat_service = ChatService(model, self.rpc_client)
-        logger.info(f"Chat service created for model: {chat_service}")
-        
-        # Return enhanced conversation manager with auto-payment
-        if auto_pay:
-            return EnhancedConversationManager(chat_service, self)
-        else:
-            return ConversationManager(chat_service)
-    
-    def create_conversation2(self, model_name: str, owner: Optional[str] = None) -> ConversationManager:
-        """Create a conversation manager for a chat model.
-        
-        Args:
-            model_name: Name of the chat model
-            owner: Owner email (required if model name is ambiguous)
-            
-        Returns:
-            ConversationManager instance
-        """
-        model = self.find_model(model_name, owner)
-        if not model:
-            if owner:
-                raise ModelNotFoundError(f"Model '{model_name}' not found for owner '{owner}'")
-            else:
-                raise ModelNotFoundError(f"Model '{model_name}' not found")
-        
-        if not model.supports_service(ServiceType.CHAT):
-            raise ValidationError(f"Model '{model_name}' does not support chat service")
-        
-        chat_service = ChatService(model, self.rpc_client)
-        return ConversationManager(chat_service)
-    
-    def create_conversation1(self, model_name: str) -> ConversationManager:
-        """Create a conversation manager for a chat model.
-        
-        Args:
-            model_name: Name of the chat model
-            
-        Returns:
-            ConversationManager instance
-        """
-        chat_service = self.get_chat_service(model_name)
-        return ConversationManager(chat_service)
-    
-    # Display Methods
-    
-    def list_models(self, 
-                   service_type: Optional[ServiceType] = None,
-                   health_check: str = "auto",
-                   format: str = "table") -> str:
-        """List available models in a user-friendly format.
-        
-        Args:
-            service_type: Optional service type filter
-            health_check: Health checking mode ("auto", "always", "never")
-            format: Output format ("table", "json", "summary")
-            
-        Returns:
-            Formatted string with model information
-        """
-        models = self.discover_models(
-            service_type=service_type,
-            health_check=health_check
-        )
-        
-        if format == "table":
-            return format_models_table(models)
-        elif format == "json":
-            import json
-            model_dicts = [self._model_to_dict(model) for model in models]
-            return json.dumps(model_dicts, indent=2)
-        elif format == "summary":
-            return self._format_models_summary(models)
-        else:
-            return [self._model_to_dict(model) for model in models]
-            # raise ValueError(f"Unknown format: {format}")
-    
-    def show_model_details(self, model_name: str, owner: Optional[str] = None) -> str:
-        """Show detailed information about a specific model.
-        
-        Args:
-            model_name: Name of the model
-            owner: Optional owner to narrow search
-            
-        Returns:
-            Formatted model details
-        """
-        model = self.find_model(model_name, owner)
-        if not model:
-            return f"Model '{model_name}' not found"
-        
-        return format_model_details(model)
-    
     # Health Monitoring Methods
-    
     async def check_model_health(self, model_name: str, timeout: float = 2.0) -> HealthStatus:
         """Check health of a specific model.
         
@@ -1461,7 +1432,6 @@ class SyftBoxClient:
             self._health_monitor = None
     
     # Accounting Integration Methods
-
     def _get_accounting_service_url(self) -> Optional[str]:
         """Get accounting service URL from configuration."""
         # This could come from SyftBox config or environment variable
@@ -1554,8 +1524,8 @@ class SyftBoxClient:
 
         # Get service URL from environment if not provided
         if service_url is None:
-            service_url = service_url
-            # service_url = self._get_accounting_service_url()
+            # service_url = service_url
+            service_url = self._get_accounting_service_url()
         
         # Validate service URL is available
         if not service_url:
@@ -1748,7 +1718,6 @@ class SyftBoxClient:
             raise PaymentError(f"Failed to create payment token: {e}")
     
     # Updated Service Usage Methods
-    
     def get_statistics(self) -> Dict[str, Any]:
         """Get statistics about discovered models.
         
@@ -1788,7 +1757,6 @@ class SyftBoxClient:
         self.scanner.clear_cache()
     
     # Private Helper Methods
-    
     def _should_do_health_check(self, health_check: str, model_count: int) -> bool:
         """Determine if health checking should be performed."""
         if health_check == "always":
@@ -1912,135 +1880,3 @@ class SyftBoxClient:
             lines.append("")  # Empty line between owners
         
         return "\n".join(lines)
-
-class EnhancedConversationManager(ConversationManager):
-    """Enhanced ConversationManager with automatic payment handling."""
-    
-    def __init__(self, chat_service: ChatService, client: SyftBoxClient):  # No quotes needed
-        super().__init__(chat_service)
-        self.client = client
-        self._auto_pay = True
-    
-    async def send_message(self, message: str, **kwargs) -> ChatResponse:
-        """Send a message with automatic payment handling."""
-        
-        # Check if model requires payment and handle automatically
-        if self._auto_pay and self.chat_service.pricing > 0:
-            try:
-                # Create transaction token automatically
-                token = await self.client.rpc_client.create_transaction_token(
-                    self.chat_service.model_info.owner
-                )
-                kwargs['transaction_token'] = token
-                
-            except Exception as e:
-                logger.warning(f"Failed to create transaction token: {e}")
-                # Continue without token - let the service handle the error
-        
-        # Call parent implementation
-        return await super().send_message(message, **kwargs)
-    
-    def disable_auto_pay(self):
-        """Disable automatic payment for this conversation."""
-        self._auto_pay = False
-    
-    def enable_auto_pay(self):
-        """Enable automatic payment for this conversation."""
-        self._auto_pay = True
-
-# ======================
-# CONVENIENCE FUNCTIONS (UPDATED)
-# ======================
-
-# Convenience functions for quick usage
-async def quick_chat(message: str, max_cost: float = 1.0) -> str:
-    """Quick chat function for simple use cases.
-    
-    Args:
-        message: Message to send
-        max_cost: Maximum cost willing to pay
-        
-    Returns:
-        Response content as string
-    """
-    async with SyftBoxClient() as client:
-        response = await client.chat(message, max_cost=max_cost)
-        return response.message.content
-
-
-async def quick_search(query: str, max_cost: float = 1.0, limit: int = 3) -> List[str]:
-    """Quick search function for simple use cases.
-    
-    Args:
-        query: Search query
-        max_cost: Maximum cost willing to pay
-        limit: Maximum results to return
-        
-    Returns:
-        List of result contents as strings
-    """
-    async with SyftBoxClient() as client:
-        response = await client.search(query, max_cost=max_cost, limit=limit)
-        return [result.content for result in response.results]
-
-
-def list_available_models(service_type: Optional[ServiceType] = None) -> str:
-    """List available models (convenience function).
-    
-    Args:
-        service_type: Optional service type filter
-        
-    Returns:
-        Formatted table of available models
-    """
-    client = SyftBoxClient()
-    return client.list_models(service_type=service_type)
-
-async def chat_with_model(model_name: str, 
-                         prompt: str,
-                         owner: Optional[str] = None,
-                         **params) -> str:
-    """Convenience function for quick chat with specific model.
-    
-    Args:
-        model_name: Name of the model to use
-        prompt: Message to send  
-        owner: Owner email
-        **params: Additional parameters
-        
-    Returns:
-        Response content as string
-    """
-    async with SyftBoxClient() as client:
-        response = await client.chat(
-            model_name=model_name,
-            owner=owner,
-            prompt=prompt,
-            **params
-        )
-        return response.message.content
-
-
-async def search_with_model(model_name: str,
-                           query: str, 
-                           owner: Optional[str] = None,
-                           **params) -> List[str]:
-    """Convenience function for quick search with specific model.
-    
-    Args:
-        model_name: Name of the model to use
-        query: Search query
-        owner: Owner email
-        **params: Additional parameters
-        
-    Returns:
-        List of result contents
-    """
-    async with SyftBoxClient() as client:
-        response = await client.search(
-            model_name=model_name,
-            owner=owner,
-            query=query,
-            **params
-        )
-        return [result.content for result in response.results]

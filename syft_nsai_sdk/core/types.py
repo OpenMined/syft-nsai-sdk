@@ -166,6 +166,13 @@ class ChatResponse:
     cost: Optional[float] = None
     provider_info: Optional[Dict[str, Any]] = None
 
+    def __str__(self) -> str:
+        """Return just the message content for easy printing."""
+        return self.message.content
+    
+    def __repr__(self) -> str:
+        """Return full object representation for debugging."""
+        return f"ChatResponse(id='{self.id}', model='{self.model}', message={self.message!r}, usage={self.usage!r}, cost={self.cost}, provider_info={self.provider_info})"
 
 @dataclass
 class SearchOptions:
@@ -204,6 +211,17 @@ class SearchResponse:
     cost: Optional[float] = None
     provider_info: Optional[Dict[str, Any]] = None
 
+    def __str__(self) -> str:
+        """Return formatted search results for easy printing."""
+        if not self.results:
+            return "No results found."
+        
+        parts = [f"Search results for: '{self.query}'"]
+        for i, result in enumerate(self.results, 1):
+            parts.append(f"\n{i}. Score: {result.score:.3f}")
+            parts.append(f"   {result.content[:100]}{'...' if len(result.content) > 100 else ''}")
+        
+        return "\n".join(parts)
 
 @dataclass
 class TransactionToken:

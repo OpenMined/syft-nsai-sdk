@@ -241,27 +241,42 @@ except ValidationError as e:
     print(f"Invalid parameters: {e}")
 ```
 
-### Context Management
-For maintaining context between messages, use conversation managers instead of multiple `client.chat()` calls:
+### Conversation Management
+
+**For maintaining context between messages, use conversation managers:**
 
 ```python
-# ❌ No context between calls
-response1 = await client.chat(model_name="model", prompt="What is AI?")
-response2 = await client.chat(model_name="model", prompt="Give examples")  # No context
+# Create conversation manager
+conversation = client.create_conversation(
+    model_name="claude-sonnet-3.5",
+    owner="aggregator@openmined.org"
+)
 
-# ✅ Context maintained automatically  
-conversation = client.create_conversation("model", owner="owner@email.com")
-response1 = await conversation.send_message("What is AI?")
-response2 = await conversation.send_message("Give examples")  # Remembers previous
-
-# Instead of multiple client.chat() calls
-conversation = client.create_conversation("claude-sonnet-3.5")
+# Optional: Set system message
 conversation.set_system_message("You are a helpful assistant.")
+
+# Configure context retention (default: keeps last 2 exchanges)
+conversation.set_max_exchanges(3)  # Keep last 3 exchanges
 
 # Each message remembers previous context
 response1 = await conversation.send_message("What is SyftBox?")
+
+# This now prints just the content
+print(f"Response:\n{response1}")
+
+# Full object details still available via repr() or explicit access
+print(repr(response1))  # Shows full ChatResponse details
+print(response1.cost)   # Still works for specific attributes
+
 response2 = await conversation.send_message("How does it work?")  # Remembers previous
 response3 = await conversation.send_message("Give me an example")   # Full context
+
+# Get conversation summary
+summary = conversation.get_conversation_summary()
+print(f"Total messages: {summary['total_messages']}")
+
+# Clear history when needed
+conversation.clear_history()
 ```
 
 ### RAG vs Chat-Only
@@ -286,6 +301,10 @@ response = await client.chat_with_search_context(
 ## Configuration
 
 ```python
+# Environment variables
+# SYFTBOX_ACCOUNTING_EMAIL
+# SYFTBOX_ACCOUNTING_PASSWORD  
+# SYFTBOX_ACCOUNTING_URL
 # Custom configuration
 client = SyftBoxClient(
     user_email="your@email.com",
@@ -293,9 +312,4 @@ client = SyftBoxClient(
     auto_setup_accounting=True,
     auto_health_check_threshold=5
 )
-
-# Environment variables
-# SYFTBOX_ACCOUNTING_EMAIL
-# SYFTBOX_ACCOUNTING_PASSWORD  
-# SYFTBOX_ACCOUNTING_URL
 ```

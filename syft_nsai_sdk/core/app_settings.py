@@ -12,11 +12,12 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 load_dotenv(override=True)
 
 
-class AppSettings(BaseSettings):
+class Settings(BaseSettings):
     """Application settings."""
     
     app_name: str = Field("SYFT NSAI SDK", env="APP_NAME")
     syftbox_config_path: Path = Field("~/.syftbox/config.json", env="SYFTBOX_CONFIG_PATH")
+    accounting_config_path: Path = Field("~/.syftbox/accounting.json", env="ACCOUNTING_CONFIG_PATH")
     jwt_secret: str = Field(..., env="JWT_SECRET")
     debug: bool = Field(False, env="DEBUG")
     log_level: str = Field("INFO", env="LOG_LEVEL")
@@ -41,4 +42,4 @@ class AppSettings(BaseSettings):
 
 
 # Global instance
-settings = AppSettings()
+settings = Settings()
