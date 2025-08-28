@@ -111,7 +111,7 @@ class SyftBoxRPCClient:
             recipient_email = syft_url.split('//')[1].split('/')[0]
             
             # Create accounting token for authentication and update payload
-            transaction_token = self.accounting_client.create_transaction_token(
+            transaction_token = await self.create_transaction_token(
                 recipientEmail=recipient_email
             )
             payload["transaction_token"] = transaction_token
@@ -121,7 +121,6 @@ class SyftBoxRPCClient:
             request_headers = {
                 "Content-Type": "application/json",
                 "Accept": "application/json",
-                # "Authorization": f"Bearer {transaction_token}",
                 "x-syft-from": self.from_email,
                 **(headers or {})
             }
@@ -149,7 +148,6 @@ class SyftBoxRPCClient:
             #     payload_json = None
     
             # Make the request
-            # logger.info(f"payload_json: {payload_json}")
             response = await self.client.post(
                 request_url,
                 params=params,
@@ -244,7 +242,6 @@ class SyftBoxRPCClient:
                             "Content-Type": "application/json"
                         }
                     )
-                    # logger.info(f"Response: {response.json()}")
 
                     if response.status_code == 200:
                         # Success - parse response
