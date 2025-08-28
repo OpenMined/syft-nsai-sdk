@@ -8,7 +8,7 @@ import logging
 
 from ..core.types import ModelInfo, HealthStatus
 from ..core.exceptions import HealthCheckError, NetworkError, RPCError
-from ..networking.rpc_client import SyftBoxRPCClient
+from ..clients.rpc_client import SyftBoxRPCClient
 
 logger = logging.getLogger(__name__)
 

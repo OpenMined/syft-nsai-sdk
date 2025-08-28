@@ -8,6 +8,7 @@ from typing import List, Optional, Dict, Any, Union
 from pathlib import Path
 from dotenv import load_dotenv
 
+from .core.decorators import require_account
 from .core.config import (
     SyftBoxConfig, 
     get_config, 
@@ -38,7 +39,8 @@ from .core.exceptions import (
 from .discovery.scanner import ModelScanner, FastScanner
 from .discovery.parser import MetadataParser
 from .discovery.filters import ModelFilter, FilterCriteria, FilterBuilder
-from .networking.rpc_client import SyftBoxRPCClient
+from .clients.rpc_client import SyftBoxRPCClient
+from .clients.accounting_client import AccountingClient
 from .services.chat import ChatService, ConversationManager
 from .services.search import SearchService, BatchSearchService
 from .services.health import check_model_health, batch_health_check, HealthMonitor
@@ -56,7 +58,7 @@ class SyftBoxClient:
                 syftbox_config_path: Optional[Path] = None,
                 user_email: str = "guest@syft.org",
                 cache_server_url: Optional[str] = None,
-                accounting_credentials: Optional[Dict[str, str]] = None,
+                accounting_client: Optional[AccountingClient] = None,
                 auto_setup_accounting: bool = True,
                 auto_health_check_threshold: int = 10):
         """Initialize SyftBox client.
@@ -65,7 +67,6 @@ class SyftBoxClient:
             syftbox_config_path: Custom path to SyftBox config file
             user_email: Override user email for requests
             cache_server_url: Override cache server URL
-            accounting_credentials: Manual accounting credentials
             auto_setup_accounting: Whether to prompt for accounting setup when needed
             auto_health_check_threshold: Max models for auto health checking
         """
@@ -73,8 +74,19 @@ class SyftBoxClient:
         if not is_syftbox_available():
             raise SyftBoxNotFoundError(get_installation_instructions())
         
+        # Initialize account state
+        self._account_configured = False
+        
         # Load configuration
         self.config = get_config(syftbox_config_path)
+
+        # Set up accounting client - check for existing credentials
+        if accounting_client:
+            self.accounting_client = accounting_client
+            if self.accounting_client.is_configured():
+                self._account_configured = True
+        else:
+            self.accounting_client = self._setup_default_accounting()
         
         # Set up RPC client
         from_email = user_email
@@ -83,8 +95,7 @@ class SyftBoxClient:
         self.rpc_client = SyftBoxRPCClient(
             cache_server_url=server_url,
             from_email=from_email,
-            accounting_service_url=self._get_accounting_service_url(),
-            accounting_credentials=accounting_credentials or self._load_accounting_credentials()
+            accounting_client=self.accounting_client,
         )
         
         # Set up model scanner
@@ -94,22 +105,56 @@ class SyftBoxClient:
         # Configuration
         self.auto_health_check_threshold = auto_health_check_threshold
         self.auto_setup_accounting = auto_setup_accounting
-        self._accounting_configured = None  # Cache accounting status
         
         # Optional health monitor
         self._health_monitor: Optional[HealthMonitor] = None
 
-        # Try to load accounting config
-        if accounting_credentials:
-            self._configure_accounting(accounting_credentials)
-        else:
-            self._load_existing_accounting_config()
-
-        # Load user email from config if not provided
+        # Load user email from config if not provided (from_email and self._account_configured)
         if from_email:
             logger.info(f"SyftBoxClient initialized for {from_email}")
         else:
             logger.info("SyftBoxClient initialized in guest mode (no user email provided)")
+
+    def _setup_default_accounting(self) -> AccountingClient:
+        """Check for existing accounting credentials and guide user if none exist."""
+        # Try loading from environment variables
+        try:
+            client = AccountingClient.from_environment()
+            self._account_configured = True
+            logger.info("Found existing accounting credentials in environment")
+            return client
+        except AuthenticationError:
+            pass
+        
+        # Try loading from saved config file
+        try:
+            client = AccountingClient.load_from_config()
+            self._account_configured = True
+            logger.info("Found existing accounting credentials in config file")
+            return client
+        except AuthenticationError:
+            pass
+        
+        # No credentials found - inform user
+        self._show_setup_message()
+        return AccountingClient()
+    
+    def _show_setup_message(self):
+        """Display account setup instructions to user."""
+        print("\n" + "="*60)
+        print("ACCOUNT SETUP REQUIRED")
+        print("="*60)
+        print("No SyftBox account credentials found.")
+        print("To use SyftBox models, you need to set up an account.")
+        print("")
+        print("Please run:")
+        print("  await client.setup_accounting(email, password)")
+        print("")
+        print("Or set environment variables:")
+        print("  SYFTBOX_ACCOUNTING_EMAIL=your_email@example.com")
+        print("  SYFTBOX_ACCOUNTING_PASSWORD=your_password")
+        print("  SYFTBOX_ACCOUNTING_URL=https://service.url")
+        print("="*60)
     
     async def close(self):
         """Close client and cleanup resources."""
@@ -161,13 +206,13 @@ class SyftBoxClient:
                 logger.debug(f"Failed to parse {metadata_path}: {e}")
                 continue
 
-        # CONVERT STRING TO ENUM
+        # Convert string to enum
         service_type_enum = None
         if service_type:
             try:
                 service_type_enum = ServiceType(service_type.lower())
             except ValueError:
-                logger.error(f"❌ Invalid service_type: {service_type}")
+                logger.error(f"Invalid service_type: {service_type}")
                 return []
         
         # Apply filters
@@ -342,6 +387,7 @@ class SyftBoxClient:
         return self._select_best_model(models, preference)
 
     # Service Usage Methods
+    @require_account
     async def chat(self,
                    model_name: str,
                    prompt: str,
@@ -406,11 +452,11 @@ class SyftBoxClient:
         chat_params = {k: v for k, v in chat_params.items() if v is not None}
         
         # Create service and make request
-        from .services.chat import ChatService
         chat_service = ChatService(model, self.rpc_client)
         
-        return await chat_service.send_message_with_params(chat_params)
+        return await chat_service.chat_with_params(chat_params)
     
+    @require_account
     async def search(self,
                     model_name: str, 
                     query: str,
@@ -462,12 +508,12 @@ class SyftBoxClient:
         search_params = {k: v for k, v in search_params.items() if v is not None}
         
         # Create service and make request
-        from .services.search import SearchService
         search_service = SearchService(model, self.rpc_client)
         
         return await search_service.search_with_params(search_params)
 
     # Service Factory Methods
+    @require_account
     async def chat_with_best(self, 
                             prompt: str,
                             max_cost: Optional[float] = None,
@@ -506,7 +552,7 @@ class SyftBoxClient:
         if not best_model:
             raise ModelNotFoundError("No suitable chat models found with specified criteria")
         
-        print(f"🤖 Selected model: {best_model.name} by {best_model.owner}")
+        logger.info(f"Selected model: {best_model.name} by {best_model.owner}")
         
         # Use the selected model
         return await self.chat(
@@ -516,6 +562,7 @@ class SyftBoxClient:
             **chat_params
         )
 
+    @require_account
     async def search_with_best(self,
                               query: str,
                               max_cost: Optional[float] = None,
@@ -542,9 +589,9 @@ class SyftBoxClient:
         
         if not best_model:
             raise ModelNotFoundError("No suitable search models found with specified criteria")
-        
-        print(f"🔍 Selected model: {best_model.name} by {best_model.owner}")
-        
+
+        logger.info(f"Selected model: {best_model.name} by {best_model.owner}")
+
         return await self.search(
             model_name=best_model.name,
             owner=best_model.owner,
@@ -725,6 +772,7 @@ class SyftBoxClient:
         return "\n".join(examples)
     
     # RAG Workflow
+    @require_account
     async def chat_with_search_context(self,
                                     search_models: Union[str, List[str], List[Dict[str, str]]],
                                     chat_model: str,
@@ -774,14 +822,14 @@ class SyftBoxClient:
                 temperature=0.7
             )
         """
-        logger.info(f"🔄 Starting RAG workflow: search → chat")
+        logger.info(f"Starting RAG workflow: search → chat")
         
         # Normalize search models to list of dicts
         search_model_specs = self._normalize_model_specs(search_models)
         
         if not search_model_specs:
             # No search models - do chat only (like frontend with no data sources)
-            logger.info(f"💬 Chat-only mode: no search models specified")
+            logger.info(f"Chat-only mode: no search models specified")
             
             # Find and validate chat model
             chat_model_info = self.find_model(chat_model, chat_owner)
@@ -897,7 +945,7 @@ class SyftBoxClient:
         messages.append(ChatMessage(role="user", content=prompt))
         
         # Step 5: Send to chat model
-        logger.info(f"💬 Sending enhanced prompt to chat model: {chat_model}")
+        logger.info(f"Sending enhanced prompt to chat model: {chat_model}")
         
         # Find and validate chat model
         chat_model_info = self.find_model(chat_model, chat_owner)
@@ -932,13 +980,14 @@ class SyftBoxClient:
             # Add combined cost
             chat_response.cost = (chat_response.cost or 0.0) + total_search_cost
             
-            logger.info(f"✅ RAG workflow completed - Total cost: ${chat_response.cost:.4f}")
+            logger.info(f"RAG workflow completed - Total cost: ${chat_response.cost:.4f}")
             return chat_response
             
         except Exception as e:
-            logger.error(f"❌ Chat request failed in RAG workflow: {e}")
+            logger.error(f"Chat request failed in RAG workflow: {e}")
             raise
 
+    @require_account
     async def search_multiple_models(self,
                                     model_names: Union[List[str], List[Dict[str, str]]],
                                     query: str,
@@ -972,7 +1021,7 @@ class SyftBoxClient:
                 total_limit=10
             )
         """
-        logger.info(f"🔍 Multi-model search across {len(model_names)} models")
+        logger.info(f"Multi-model search across {len(model_names)} models")
         
         # Normalize model specs
         model_specs = self._normalize_model_specs(model_names)
@@ -1038,10 +1087,11 @@ class SyftBoxClient:
             }
         )
         
-        logger.info(f"📊 Multi-search completed: {len(all_results)} results from {len(successful_models)}/{len(model_specs)} models")
+        logger.info(f"Multi-search completed: {len(all_results)} results from {len(successful_models)}/{len(model_specs)} models")
         
         return aggregated_response
     
+    @require_account
     async def search_then_chat(self,
                             search_model: str,
                             chat_model: str,
@@ -1267,10 +1317,10 @@ class SyftBoxClient:
         estimate = self.get_rag_cost_estimate(search_models, chat_model, chat_owner)
         
         lines = [
-            "📋 RAG Workflow Preview",
+            "RAG Workflow Preview",
             "=" * 30,
             "",
-            f"🔍 Search Phase ({len(estimate['search_models'])} models):"
+            f"Search Phase ({len(estimate['search_models'])} models):"
         ]
         
         if estimate["search_models"]:
@@ -1283,7 +1333,7 @@ class SyftBoxClient:
         
         lines.extend([
             "",
-            "💬 Chat Phase:"
+            "Chat Phase:"
         ])
         
         if estimate["chat_model"]:
@@ -1295,7 +1345,7 @@ class SyftBoxClient:
         
         lines.extend([
             "",
-            f"💰 Total Estimated Cost: ${estimate['total_cost']:.4f}",
+            f"Total Estimated Cost: ${estimate['total_cost']:.4f}",
             "",
             "To execute: client.chat_with_search_context(...)"
         ])
@@ -1432,200 +1482,53 @@ class SyftBoxClient:
             self._health_monitor = None
     
     # Accounting Integration Methods
-    def _get_accounting_service_url(self) -> Optional[str]:
-        """Get accounting service URL from configuration."""
-        # This could come from SyftBox config or environment variable
-        return os.getenv('SYFTBOX_ACCOUNTING_URL')
-    
-    def _load_accounting_credentials(self) -> Optional[Dict[str, str]]:
-        """Load accounting credentials from secure storage."""
-        # In practice, this might load from keyring, config file, or prompt user
-        email = os.getenv("SYFTBOX_ACCOUNTING_EMAIL")
-        password = os.getenv("SYFTBOX_ACCOUNTING_PASSWORD") 
-        
-        if email and password:
-            return {"email": email, "password": password}
-        return None
-    
-    def _load_existing_accounting_config(self):
-        """Try to load accounting config from various sources."""
-        import json
-        import os
-        
-        # Try environment variables
-        email = os.getenv("SYFTBOX_ACCOUNTING_EMAIL")
-        password = os.getenv("SYFTBOX_ACCOUNTING_PASSWORD")
-        service_url = os.getenv('SYFTBOX_ACCOUNTING_URL')
-
-        if email and password:
-            self._configure_accounting({
-                "email": email,
-                "password": password,
-                "service_url": service_url
-            })
-            return
-        
-        # Try separate accounting config file
-        accounting_config_path = Path.home() / ".syftbox" / "accounting.json"
-        if accounting_config_path.exists():
-            try:
-                with open(accounting_config_path, 'r') as f:
-                    config = json.load(f)
-                
-                if "email" in config and "password" in config:
-                    self._configure_accounting({
-                        "email": config["email"],
-                        "password": config["password"],
-                        "service_url": config.get("service_url", "")
-                    })
-                    return
-            except Exception as e:
-                logger.debug(f"Could not read accounting config file: {e}")
-        
-        logger.info("No existing accounting configuration found")
-        self._accounting_configured = False
-    
-    def _configure_accounting(self, config: Dict[str, str]):
-        """Configure accounting with provided credentials."""
-        # Store credentials in RPC client
-        self.rpc_client.configure_accounting(
-            service_url=config["service_url"],
-            email=config["email"],
-            password=config["password"]
-        )
-        self._accounting_configured = True
-        logger.info(f"Accounting configured for {config['email']}")
-    
-    def is_accounting_configured(self) -> bool:
-        """Check if accounting is properly configured."""
-        if self._accounting_configured is not None:
-            return self._accounting_configured
-        
-        try:
-            # Test accounting client
-            return self.rpc_client.has_accounting_client()
-        except Exception:
-            self._accounting_configured = False
-            return False
-    
-    async def setup_accounting(self, email: str, password: str, service_url: Optional[str] = None, organization: Optional[str] = None):
+    async def setup_accounting(self, email: str, password: str, service_url: Optional[str] = None, save_config: bool = False):
         """Setup accounting credentials.
         
         Args:
             email: Accounting service email
             password: Accounting service password  
-            organization: Optional organization
+            service_url: Accounting service URL (uses env var if not provided)
+            save_config: Whether to save config to file (requires explicit user consent)
         """
-        """Simplified setup with better error handling."""
-
-        credentials = {"email": email, "password": password}
-        if organization:
-            credentials["organization"] = organization
-
         # Get service URL from environment if not provided
         if service_url is None:
-            # service_url = service_url
-            service_url = self._get_accounting_service_url()
+            service_url = os.getenv('SYFTBOX_ACCOUNTING_URL')
         
-        # Validate service URL is available
         if not service_url:
             raise ValueError(
                 "Accounting service URL is required. Please either:\n"
                 "1. Set SYFTBOX_ACCOUNTING_URL in your .env file, or\n"
-                "2. Pass service_url parameter to this method\n"
-                "Example: await client.setup_accounting(email, password, 'https://your-service.com')"
+                "2. Pass service_url parameter to this method"
             )
         
-        logger.info(f"Using syftbox accounting service URL: {service_url}")
-        
         try:
-            # Create client
-            user_client = UserClient(url=service_url, email=email, password=password)
+            # Configure the accounting client
+            self.accounting_client.configure(service_url, email, password)
             
-            # Make a raw request to see what we get
-            response = user_client._session.get(f"{user_client.url}/user/my-info")
-            # response = user_client.get_user_info()
+            # Test the connection
+            await self.accounting_client.get_account_info()
             
-            # Check response
-            if response.status_code == 401:
-                raise AuthenticationError("Invalid email or password")
-            elif response.status_code == 404:
-                raise AuthenticationError("Service not found - check the URL")
-            elif not response.ok:
-                raise AuthenticationError(f"Service error: HTTP {response.status_code}")
+            # Save config if explicitly requested
+            if save_config:
+                self.accounting_client.save_credentials()
             
-            # Check content type
-            if 'json' not in response.headers.get('content-type', '').lower():
-                raise AuthenticationError("Service returned non-JSON response")
-            
-            # Try to parse JSON
-            try:
-                data = response.json()
-                if 'user' not in data:
-                    raise AuthenticationError("Invalid response format")
-            except ValueError:
-                raise AuthenticationError("Service returned invalid JSON")
-            
-            # If we get here, everything looks good
-            self._configure_accounting({
-                "email": email,
-                "password": password,
-                "service_url": service_url
-            })
-
-            # Store credentials
-            self.rpc_client._accounting_credentials = credentials
-            self.rpc_client._accounting_client = None  # Reset to recreate with new creds
-            
-            await self._save_accounting_config(service_url, email, password)
             logger.info("Accounting setup successful")
             
-        except AuthenticationError:
-            raise
         except Exception as e:
-            raise AuthenticationError(f"Setup failed: {e}")
-    
-    async def _save_accounting_config(self, service_url: str, email: str, password: str):
-        """Save accounting config to file."""
-        import json
-        import os
-        from datetime import datetime
+            raise AuthenticationError(f"Accounting setup failed: {e}")
         
-        try:
-            config_dir = Path.home() / ".syftbox"
-            config_dir.mkdir(exist_ok=True)
-            
-            accounting_config_path = config_dir / "accounting.json"
-            config = {
-                "service_url": service_url,
-                "email": email,
-                "password": password,
-                "created_at": datetime.now().isoformat()
-            }
-            
-            with open(accounting_config_path, 'w') as f:
-                json.dump(config, f, indent=2)
-            
-            # Set restrictive permissions
-            os.chmod(accounting_config_path, 0o600)
-            
-        except Exception as e:
-            logger.warning(f"Could not save accounting config: {e}")
+    def is_accounting_configured(self) -> bool:
+        """Check if accounting is properly configured."""
+        return self.accounting_client.is_configured()
     
     async def get_account_info(self) -> Dict[str, Any]:
         """Get account information and balance."""
+        if not self.is_accounting_configured():
+            return {"error": "Accounting not configured"}
+        
         try:
-            if not self.is_accounting_configured():
-                return {"error": "Accounting not configured"}
-            
-            balance = await self.rpc_client.get_account_balance()
-            email = self.rpc_client.get_accounting_email()
-            
-            return {
-                "email": email,
-                "balance": balance,
-                "currency": "USD"
-            }
+            return await self.accounting_client.get_account_info()
         except Exception as e:
             logger.error(f"Failed to get account info: {e}")
             return {"error": str(e)}
@@ -1634,36 +1537,35 @@ class SyftBoxClient:
         """Show current accounting configuration status."""
         if not self.is_accounting_configured():
             return (
-                "❌ Accounting not configured\n"
+                "Accounting not configured\n"
                 "   Use client.setup_accounting() to configure payment services\n"
                 "   Currently limited to free models only"
             )
         
         try:
-            # Get account info
             import asyncio
             account_info = asyncio.run(self.get_account_info())
             
             if "error" in account_info:
                 return (
-                    f"⚠️  Accounting configured but connection failed\n"
+                    f"Accounting configured but connection failed\n"
                     f"   Error: {account_info['error']}\n"
                     f"   May need to reconfigure credentials"
                 )
             
             return (
-                f"✅ Accounting configured\n"
+                f"Accounting configured\n"
                 f"   Email: {account_info['email']}\n" 
                 f"   Balance: ${account_info['balance']}\n"
                 f"   Can use both free and paid models"
             )
         except Exception as e:
             return (
-                f"⚠️  Accounting configured but connection failed\n"
+                f"Accounting configured but connection failed\n"
                 f"   Error: {e}\n"
                 f"   May need to reconfigure credentials"
             )
-    
+        
     async def _ensure_payment_setup(self, model: ModelInfo) -> Optional[str]:
         """Ensure payment is set up for a paid model.
         
@@ -1716,7 +1618,13 @@ class SyftBoxClient:
             return token
         except Exception as e:
             raise PaymentError(f"Failed to create payment token: {e}")
-    
+        
+
+
+
+
+        
+
     # Updated Service Usage Methods
     def get_statistics(self) -> Dict[str, Any]:
         """Get statistics about discovered models.

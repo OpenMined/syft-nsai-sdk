@@ -15,7 +15,7 @@ from ..core.types import (
     ServiceType
 )
 from ..core.exceptions import ServiceNotSupportedError, RPCError, ValidationError, raise_service_not_supported
-from ..networking.rpc_client import SyftBoxRPCClient
+from ..clients.rpc_client import SyftBoxRPCClient
 
 logger = logging.getLogger(__name__)
 
@@ -38,44 +38,7 @@ class SearchService:
         # Validate that model supports search
         if not model_info.supports_service(ServiceType.SEARCH):
             raise_service_not_supported(model_info.name, "search", model_info)
-    
-    async def search_with_params(self, params: Dict[str, Any]) -> SearchResponse:
-        """Search with explicit parameters dictionary.
-        
-        Args:
-            params: Dictionary of parameters including 'query' and optional params
-            
-        Returns:
-            Search response
-        """
-        # Validate required parameters
-        if "query" not in params:
-            raise ValidationError("'query' parameter is required")
-        
-        # Extract standard parameters (make copy to avoid mutating input)
-        params = params.copy()
-        query = params.pop("query")
-        limit = params.pop("limit", 3)
-        similarity_threshold = params.pop("similarity_threshold", None)
-        
-        # Build RPC payload with consistent authentication
-        payload = {
-            "userEmail": self.rpc_client._accounting_credentials.get('email', ''),
-            "query": query,
-            "options": {"limit": limit}
-        }
-        
-        if similarity_threshold is not None:
-            payload["options"]["similarityThreshold"] = similarity_threshold
-        
-        # Add any additional model-specific parameters
-        for key, value in params.items():
-            payload["options"][key] = value
-        
-        # Make RPC call
-        response_data = await self.rpc_client.call_search(self.model_info, payload)
-        return self._parse_rpc_response(response_data, query)
-    
+
     def _parse_rpc_response(self, response_data: Dict[str, Any], original_query: str) -> SearchResponse:
         """Parse RPC response into SearchResponse object.
         
@@ -220,17 +183,42 @@ class SearchService:
             logger.error(f"Response data: {response_data}")
             raise RPCError(f"Failed to parse search response: {e}")
     
-    @property
-    def pricing(self) -> float:
-        """Get pricing for search service."""
-        search_service = self.model_info.get_service_info(ServiceType.SEARCH)
-        return search_service.pricing if search_service else 0.0
-    
-    @property
-    def charge_type(self) -> str:
-        """Get charge type for search service."""
-        search_service = self.model_info.get_service_info(ServiceType.SEARCH)
-        return search_service.charge_type.value if search_service else "per_request"
+    async def search_with_params(self, params: Dict[str, Any]) -> SearchResponse:
+        """Search with explicit parameters dictionary.
+        
+        Args:
+            params: Dictionary of parameters including 'query' and optional params
+            
+        Returns:
+            Search response
+        """
+        # Validate required parameters
+        if "query" not in params:
+            raise ValidationError("'query' parameter is required")
+        
+        # Extract standard parameters (make copy to avoid mutating input)
+        params = params.copy()
+        query = params.pop("query")
+        limit = params.pop("limit", 3)
+        similarity_threshold = params.pop("similarity_threshold", None)
+        
+        # Build RPC payload with consistent authentication
+        payload = {
+            "userEmail": self.rpc_client._accounting_credentials.get('email', ''),
+            "query": query,
+            "options": {"limit": limit}
+        }
+        
+        if similarity_threshold is not None:
+            payload["options"]["similarityThreshold"] = similarity_threshold
+        
+        # Add any additional model-specific parameters
+        for key, value in params.items():
+            payload["options"][key] = value
+        
+        # Make RPC call
+        response_data = await self.rpc_client.call_search(self.model_info, payload)
+        return self._parse_rpc_response(response_data, query)
     
     def estimate_cost(self, query_count: int = 1, result_limit: int = 3) -> float:
         """Estimate cost for search requests."""
@@ -246,8 +234,19 @@ class SearchService:
             return search_service_info.pricing * estimated_tokens
         else:
             return search_service_info.pricing
-
-
+        
+    @property
+    def pricing(self) -> float:
+        """Get pricing for search service."""
+        search_service = self.model_info.get_service_info(ServiceType.SEARCH)
+        return search_service.pricing if search_service else 0.0
+    
+    @property
+    def charge_type(self) -> str:
+        """Get charge type for search service."""
+        search_service = self.model_info.get_service_info(ServiceType.SEARCH)
+        return search_service.charge_type.value if search_service else "per_request"
+    
 class BatchSearchService:
     """Helper class for batch search operations."""
     

@@ -19,7 +19,7 @@ from ..core.types import (
     ServiceType
 )
 from ..core.exceptions import ServiceNotSupportedError, RPCError, ValidationError, raise_service_not_supported
-from ..networking.rpc_client import SyftBoxRPCClient
+from ..clients.rpc_client import SyftBoxRPCClient
 
 logger = logging.getLogger(__name__)
 
@@ -42,54 +42,7 @@ class ChatService:
         # Validate that model supports chat
         if not model_info.supports_service(ServiceType.CHAT):
             raise_service_not_supported(model_info.name, "chat", model_info)
-    
-    async def send_message_with_params(self, params: Dict[str, Any]) -> ChatResponse:
-        """Send message with explicit parameters dictionary.
-        
-        Args:
-            params: Dictionary of parameters including 'prompt' and optional params
-            
-        Returns:
-            Chat response
-        """
-        # Validate required parameters
-        if "prompt" not in params:
-            raise ValidationError("'prompt' parameter is required")
-        
-        # Extract standard parameters
-        params = params.copy()
-        prompt = params.pop("prompt")
-        temperature = params.pop("temperature", None)
-        max_tokens = params.pop("max_tokens", None)
-        
-        # Build messages
-        messages = [{"role": "user", "content": prompt}]
-        
-        # Build RPC payload with all parameters
-        payload = {
-            "user_email": self.rpc_client._accounting_credentials.get('email', ''),
-            "model": self.model_info.name,
-            "messages": messages
-        }
-        
-        # Add generation options
-        options = {}
-        if temperature is not None:
-            options["temperature"] = temperature
-        if max_tokens is not None:
-            options["maxTokens"] = max_tokens
-        
-        # Add any additional model-specific parameters
-        for key, value in params.items():
-            options[key] = value
-        
-        if options:
-            payload["options"] = options
 
-        # Make RPC call
-        response_data = await self.rpc_client.call_chat(self.model_info, payload)
-        return self._parse_rpc_response(response_data)
-    
     def _parse_rpc_response(self, response_data: Dict[str, Any]) -> ChatResponse:
         """Parse RPC response into ChatResponse object.
         
@@ -224,17 +177,53 @@ class ChatService:
             logger.error(f"Response data: {response_data}")
             raise RPCError(f"Failed to parse chat response: {e}")
     
-    @property
-    def pricing(self) -> float:
-        """Get pricing for chat service."""
-        chat_service = self.model_info.get_service_info(ServiceType.CHAT)
-        return chat_service.pricing if chat_service else 0.0
-    
-    @property
-    def charge_type(self) -> str:
-        """Get charge type for chat service."""
-        chat_service = self.model_info.get_service_info(ServiceType.CHAT)
-        return chat_service.charge_type.value if chat_service else "per_request"
+    async def chat_with_params(self, params: Dict[str, Any]) -> ChatResponse:
+        """Send message with explicit parameters dictionary.
+        
+        Args:
+            params: Dictionary of parameters including 'prompt' and optional params
+            
+        Returns:
+            Chat response
+        """
+        # Validate required parameters
+        if "prompt" not in params:
+            raise ValidationError("'prompt' parameter is required")
+        
+        # Extract standard parameters
+        params = params.copy()
+        prompt = params.pop("prompt")
+        temperature = params.pop("temperature", None)
+        max_tokens = params.pop("max_tokens", None)
+        
+        # Build messages
+        messages = [{"role": "user", "content": prompt}]
+        
+        # Build RPC payload with all parameters
+        account_email = self.rpc_client.accounting_client.get_email()
+        payload = {
+            "user_email": account_email,
+            "model": self.model_info.name,
+            "messages": messages
+        }
+        
+        # Add generation options
+        options = {}
+        if temperature is not None:
+            options["temperature"] = temperature
+        if max_tokens is not None:
+            options["maxTokens"] = max_tokens
+        
+        # Add any additional model-specific parameters
+        for key, value in params.items():
+            options[key] = value
+        
+        if options:
+            payload["options"] = options
+
+        # Make RPC call
+        response_data = await self.rpc_client.call_chat(self.model_info, payload)
+        return self._parse_rpc_response(response_data)
     
     def estimate_cost(self, message_count: int = 1) -> float:
         """Estimate cost for a chat request."""
@@ -250,8 +239,19 @@ class ChatService:
             return chat_service_info.pricing * estimated_tokens
         else:
             return chat_service_info.pricing
-
-
+    
+    @property
+    def pricing(self) -> float:
+        """Get pricing for chat service."""
+        chat_service = self.model_info.get_service_info(ServiceType.CHAT)
+        return chat_service.pricing if chat_service else 0.0
+    
+    @property
+    def charge_type(self) -> str:
+        """Get charge type for chat service."""
+        chat_service = self.model_info.get_service_info(ServiceType.CHAT)
+        return chat_service.charge_type.value if chat_service else "per_request"
+    
 class ConversationManager:
     """Helper class for managing multi-turn conversations."""
     
@@ -266,6 +266,36 @@ class ConversationManager:
         self.messages: List[Dict[str, str]] = []
         self.system_message: Optional[str] = None
         self.max_exchanges = 2
+
+    def _build_context_prompt(self, new_message: str) -> str:
+        """Build a context-aware prompt from conversation history."""
+        parts = []
+        
+        if self.system_message:
+            parts.append(f"system: {self.system_message}")
+        
+        # Add conversation history
+        for msg in self.messages:
+            # Ensure content is properly cleaned
+            content = str(msg["content"]).strip()
+            parts.append(f"{msg['role']}: {content}")
+        
+        parts.append(f"user: {new_message.strip()}")
+        parts.append("assistant:")
+        
+        context = "\n".join(parts)
+        
+        # Debug: print context length
+        print(f"Context length: {len(context)} characters")
+        
+        return context
+    
+    def _auto_trim(self):
+        """Automatically trim conversation to keep only recent exchanges."""
+        max_messages = self.max_exchanges * 2  # Each exchange = user + assistant
+        if len(self.messages) > max_messages:
+            # Keep only the most recent exchanges
+            self.messages = self.messages[-max_messages:]
     
     def set_system_message(self, message: str):
         """Set or update the system message.
@@ -297,7 +327,7 @@ class ConversationManager:
         # Build context and send message
         context_prompt = self._build_context_prompt(message)
         params = {"prompt": context_prompt, **kwargs}
-        response = await self.chat_service.send_message_with_params(params)
+        response = await self.chat_service.chat_with_params(params)
         
         # Update conversation history
         self.messages.append({"role": "user", "content": message})
@@ -308,58 +338,10 @@ class ConversationManager:
         
         return response
     
-    def _auto_trim(self):
-        """Automatically trim conversation to keep only recent exchanges."""
-        max_messages = self.max_exchanges * 2  # Each exchange = user + assistant
-        if len(self.messages) > max_messages:
-            # Keep only the most recent exchanges
-            self.messages = self.messages[-max_messages:]
-    
     def set_max_exchanges(self, max_exchanges: int):
         """Set maximum number of exchanges to retain."""
         self.max_exchanges = max_exchanges
         self._auto_trim()  # Trim immediately if needed
-    
-    def _build_context_prompt1(self, new_message: str) -> str:
-        """Build a context-aware prompt from conversation history."""
-        parts = []
-        
-        # Add system message if set
-        if self.system_message:
-            parts.append(f"system: {self.system_message}")
-        
-        # Add conversation history
-        for msg in self.messages:
-            parts.append(f"{msg['role']}: {msg['content']}")
-        
-        # Add new user message and assistant prompt
-        parts.append(f"user: {new_message}")
-        parts.append("assistant:")
-        
-        return "\n".join(parts)
-    
-    def _build_context_prompt(self, new_message: str) -> str:
-        """Build a context-aware prompt from conversation history."""
-        parts = []
-        
-        if self.system_message:
-            parts.append(f"system: {self.system_message}")
-        
-        # Add conversation history
-        for msg in self.messages:
-            # Ensure content is properly cleaned
-            content = str(msg["content"]).strip()
-            parts.append(f"{msg['role']}: {content}")
-        
-        parts.append(f"user: {new_message.strip()}")
-        parts.append("assistant:")
-        
-        context = "\n".join(parts)
-        
-        # Debug: print context length
-        print(f"Context length: {len(context)} characters")
-        
-        return context
     
     def clear_history(self):
         """Clear conversation history."""
