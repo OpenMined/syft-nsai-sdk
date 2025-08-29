@@ -54,7 +54,7 @@ class ModelScanner:
                 logger.warning(f"Error scanning datasite {datasite_dir.name}: {e}")
                 continue
         
-        logger.info(f"Found {len(metadata_paths)} models across {len(list(self.datasites_path.iterdir()))} datasites")
+        logger.debug(f"Found {len(metadata_paths)} models across {len(list(self.datasites_path.iterdir()))} datasites")
         return metadata_paths
     
     def scan_datasite(self, owner_email: str) -> List[Path]:
@@ -285,7 +285,7 @@ class FastScanner:
                 except (IndexError, AttributeError):
                     continue
             
-            logger.info(f"Cached {len(all_paths)} models from {len(self._cache)} owners")
+            logger.debug(f"Cached {len(all_paths)} models from {len(self._cache)} owners")
         
         # Return flattened list
         all_paths = []

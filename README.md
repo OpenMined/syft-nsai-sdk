@@ -12,9 +12,9 @@ async def main():
     async with SyftBoxClient() as client:
         # Setup accounting for paid models
         await client.setup_accounting(
-            email="your@email.com",
-            password="your_password",
-            service_url="https://accounting.syftbox.net"
+            email,
+            password,
+            # service_url,
         )
         
         # Chat with a model

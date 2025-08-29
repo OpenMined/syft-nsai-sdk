@@ -3,7 +3,7 @@ Response data classes for SyftBox services
 """
 from typing import List, Optional, Dict, Any, Union
 from dataclasses import dataclass, field
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator, validator
 from datetime import datetime
 from enum import Enum
 import uuid
@@ -50,7 +50,7 @@ class ChatUsageModel(BaseModel):
     completion_tokens: int = Field(..., ge=0, description="Tokens in the completion")
     total_tokens: int = Field(..., ge=0, description="Total tokens used")
     
-    @validator('total_tokens')
+    @field_validator('total_tokens')
     def validate_total(cls, v, values):
         if 'prompt_tokens' in values and 'completion_tokens' in values:
             expected = values['prompt_tokens'] + values['completion_tokens']
@@ -64,8 +64,8 @@ class ChatMessageModel(BaseModel):
     role: str = Field(..., description="Message role")
     content: str = Field(..., description="Message content")
     name: Optional[str] = Field(None, description="Optional author name")
-    
-    @validator('role')
+
+    @field_validator('role')
     def validate_role(cls, v):
         if v not in ['user', 'assistant', 'system']:
             raise ValueError('Role must be user, assistant, or system')

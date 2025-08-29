@@ -81,7 +81,7 @@ class SyftBoxRPCClient:
         # Build syft URL: syft://owner/app_data/model_name/rpc/endpoint
         return f"syft://{owner}/app_data/{model_name}/rpc/{endpoint}"
     
-    async def call_rpc(self, 
+    async def call_rpc1(self, 
                        syft_url: str, 
                        payload: Optional[Dict[str, Any]] = None,  
                        headers: Optional[Dict[str, str]] = None,
@@ -199,6 +199,146 @@ class SyftBoxRPCClient:
                 except:
                     error_msg = f"HTTP {response.status_code}: {response.text}"
                     logger.debug(f"Got error message from {error_msg}")
+                raise NetworkError(
+                    f"RPC call failed: {error_msg}",
+                    syft_url,
+                    response.status_code
+                )
+        
+        except httpx.TimeoutException:
+            raise NetworkError(f"Request timeout after {self.timeout}s", syft_url)
+        except httpx.RequestError as e:
+            raise NetworkError(f"Request failed: {e}", syft_url)
+        except json.JSONDecodeError as e:
+            raise RPCError(f"Invalid JSON response: {e}", syft_url)
+        
+    async def call_rpc(self, 
+                    syft_url: str, 
+                    payload: Optional[Dict[str, Any]] = None,  
+                    headers: Optional[Dict[str, str]] = None,
+                    method: str = "POST",
+                    show_spinner: bool = True,
+                    ) -> Dict[str, Any]:
+        """Make an RPC call to a SyftBox model.
+        
+        Args:
+            syft_url: The syft:// URL to call
+            payload: JSON payload to send (optional)
+            headers: Additional headers (optional)
+            method: HTTP method to use (GET or POST)
+            
+        Returns:
+            Response data from the model
+            
+        Raises:
+            NetworkError: For HTTP/network issues
+            RPCError: For RPC-specific errors
+            PollingTimeoutError: When polling times out
+        """
+        try:
+            # Build request URL
+            request_url = f"{self.cache_server_url}/api/v1/send/msg"
+
+            # Build query parameters
+            params = {
+                "x-syft-url": syft_url,
+                "x-syft-from": self.from_email
+            }
+
+            # Add raw parameter if specified in headers
+            if headers and headers.get("x-syft-raw"):
+                params["x-syft-raw"] = headers["x-syft-raw"]
+            
+            logger.debug(f"Making RPC call to {syft_url}")
+
+            # Make the request based on method
+            if method.upper() == "GET":
+                # For GET requests, use minimal headers and no payload
+                get_headers = {
+                    "Accept": "application/json",
+                    "x-syft-from": self.from_email,
+                    **(headers or {})
+                }
+                
+                response = await self.client.get(
+                    request_url,
+                    params=params,
+                    headers=get_headers
+                )
+            else:
+                # For POST requests, handle payload and accounting
+                if payload is None:
+                    payload = {}
+
+                # Extract recipient email for accounting token
+                recipient_email = syft_url.split('//')[1].split('/')[0]
+                
+                # Create accounting token if client is configured
+                if self.accounting_client.is_configured():
+                    transaction_token = await self.accounting_client.create_transaction_token(
+                        recipient_email=recipient_email
+                    )
+                    payload["transaction_token"] = transaction_token
+                
+                # Build POST headers
+                post_headers = {
+                    "Content-Type": "application/json",
+                    "Accept": "application/json",
+                    "x-syft-from": self.from_email,
+                    **(headers or {})
+                }
+
+                # Serialize payload and set Content-Length
+                payload_json = json.dumps(payload) if payload else None
+                if payload_json:
+                    post_headers["Content-Length"] = str(len(payload_json.encode('utf-8')))
+
+                response = await self.client.post(
+                    request_url,
+                    params=params,
+                    headers=post_headers,
+                    data=payload_json,
+                )
+            
+            # Handle response (same for both GET and POST)
+            if response.status_code == 200:
+                # Immediate response
+                data = response.json()
+                logger.debug(f"Got immediate response from {syft_url}")
+                return data
+            
+            elif response.status_code == 202:
+                # Async response - need to poll
+                data = response.json()
+                request_id = data.get("request_id")
+                
+                if not request_id:
+                    raise RPCError("Received 202 but no request_id", syft_url)
+
+                logger.debug(f"Got async response, polling with request_id: {request_id}")
+
+                # Extract poll URL from response
+                poll_url_path = None
+                if "data" in data and "poll_url" in data["data"]:
+                    poll_url_path = data["data"]["poll_url"]
+                elif "location" in response.headers:
+                    poll_url_path = response.headers["location"]
+                
+                if not poll_url_path:
+                    raise RPCError("Async response but no poll URL found", syft_url)
+                
+                # Poll for the actual response
+                return await self._poll_for_response(poll_url_path, syft_url, request_id, show_spinner)
+
+            else:
+                # Error response
+                try:
+                    error_data = response.json()
+                    error_msg = error_data.get("message", f"HTTP {response.status_code}")
+                    logger.info(f"Got error response from {error_msg}")
+                except:
+                    error_msg = f"HTTP {response.status_code}: {response.text}"
+                    logger.info(f"Got error message from {error_msg}")
                 raise NetworkError(
                     f"RPC call failed: {error_msg}",
                     syft_url,
@@ -345,9 +485,11 @@ class SyftBoxRPCClient:
             Health response data
         """
         syft_url = self.build_syft_url(model_info.owner, model_info.name, "health")
-        return await self.call_rpc(syft_url, show_spinner=False)
+        # return await self.call_rpc(syft_url, show_spinner=False)
+        return await self.call_rpc(syft_url, payload=None, method="GET", show_spinner=False)
+        # return await self.call_rpc(syft_url, method="GET", show_spinner=False)
     
-    async def call_chat(self, model_info: ModelInfo, request_data: Dict[str, Any]) -> Dict[str, Any]:
+    async def call_chat1(self, model_info: ModelInfo, request_data: Dict[str, Any]) -> Dict[str, Any]:
         """Call the chat endpoint of a model.
         
         Args:
@@ -357,6 +499,29 @@ class SyftBoxRPCClient:
         Returns:
             Chat response data
         """
+        syft_url = self.build_syft_url(model_info.owner, model_info.name, "chat")
+        return await self.call_rpc(syft_url, request_data)
+    
+    async def call_search1(self, model_info: ModelInfo, request_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Call the search endpoint of a model.
+        
+        Args:
+            model_info: Model information
+            request_data: Search request payload
+            
+        Returns:
+            Search response data
+        """
+        syft_url = self.build_syft_url(model_info.owner, model_info.name, "search")
+        return await self.call_rpc(syft_url, request_data)
+    
+    async def call_chat(self, model_info: ModelInfo, request_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Call the chat endpoint of a model."""
+        # Map router model names to actual model names if needed
+        if "model" in request_data:
+            request_data = request_data.copy()  # Don't modify original
+            request_data["model"] = self._map_model_name(request_data["model"], model_info)
+        
         syft_url = self.build_syft_url(model_info.owner, model_info.name, "chat")
         return await self.call_rpc(syft_url, request_data)
     
@@ -370,8 +535,29 @@ class SyftBoxRPCClient:
         Returns:
             Search response data
         """
+        # Map router model names to actual model names if needed
+        if "model" in request_data:
+            request_data = request_data.copy()  # Don't modify original
+            request_data["model"] = self._map_model_name(request_data["model"], model_info)
+        
         syft_url = self.build_syft_url(model_info.owner, model_info.name, "search")
         return await self.call_rpc(syft_url, request_data)
+
+    def _map_model_name(self, model_name: str, model_info: ModelInfo) -> str:
+        """Map router model names to actual underlying model names."""
+        # Hard-coded mapping for known Ollama routers
+        if model_info.name in ["carl-model", "carl-free"]:
+            logger.debug(f"Mapping {model_name} to tinyllama:latest for known Ollama router")
+            return "tinyllama:latest"
+        
+        # Tag-based detection for other Ollama routers
+        if model_info.tags and "ollama" in [tag.lower() for tag in model_info.tags]:
+            logger.debug(f"Mapping {model_name} to tinyllama:latest based on ollama tag")
+            return "tinyllama:latest"
+        
+        # For other routers, use the original name
+        logger.debug(f"Using original model name: {model_name}")
+        return model_name
     
     def configure_accounting(self, service_url: str, email: str, password: str):
         """Configure accounting client.

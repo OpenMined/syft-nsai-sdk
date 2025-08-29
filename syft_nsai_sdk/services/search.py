@@ -203,8 +203,9 @@ class SearchService:
         similarity_threshold = params.pop("similarity_threshold", None)
         
         # Build RPC payload with consistent authentication
+        account_email = self.rpc_client.accounting_client.get_email()
         payload = {
-            "userEmail": self.rpc_client._accounting_credentials.get('email', ''),
+            "user_email": account_email,
             "query": query,
             "options": {"limit": limit}
         }

@@ -3936,6 +3936,18 @@ dependencies = [
     { name = "uvicorn" },
 ]
 
+[package.optional-dependencies]
+all = [
+    { name = "aiohttp" },
+    { name = "httpx" },
+]
+chat = [
+    { name = "aiohttp" },
+]
+search = [
+    { name = "httpx" },
+]
+
 [package.dev-dependencies]
 dev = [
     { name = "ipykernel" },
@@ -3948,10 +3960,14 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "aiohttp", specifier = ">=3.8.0" },
+    { name = "aiohttp", marker = "extra == 'all'", specifier = ">=3.8.0" },
+    { name = "aiohttp", marker = "extra == 'chat'", specifier = ">=3.8.0" },
     { name = "colorama", specifier = ">=0.4.6" },
     { name = "fastapi", specifier = ">=0.104.0" },
     { name = "fastsyftbox", specifier = ">=0.1.19" },
     { name = "httpx", specifier = ">=0.24.0" },
+    { name = "httpx", marker = "extra == 'all'", specifier = ">=0.24.0" },
+    { name = "httpx", marker = "extra == 'search'", specifier = ">=0.24.0" },
     { name = "ipython", specifier = ">=8.18.1" },
     { name = "jinja2", specifier = ">=3.1.6" },
     { name = "pandas", specifier = ">=2.3.1" },
@@ -3970,6 +3986,7 @@ requires-dist = [
     { name = "typer", specifier = ">=0.15.2" },
     { name = "uvicorn", specifier = ">=0.24.0" },
 ]
+provides-extras = ["chat", "search", "all"]
 
 [package.metadata.requires-dev]
 dev = [
