@@ -285,9 +285,6 @@ class ConversationManager:
         
         context = "\n".join(parts)
         
-        # Debug: print context length
-        print(f"Context length: {len(context)} characters")
-        
         return context
     
     def _auto_trim(self):

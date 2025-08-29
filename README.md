@@ -141,6 +141,25 @@ response = await client.search_then_chat(
 )
 ```
 
+### RAG vs Chat-Only
+The `chat_with_search_context()` method supports both patterns:
+
+```python
+# Chat only (like frontend with no data sources)
+response = await client.chat_with_search_context(
+    search_models=[],  # Empty = chat only
+    chat_model="assistant",
+    prompt="What is Python?"
+)
+
+# RAG workflow (like frontend with data sources selected)
+response = await client.chat_with_search_context(
+    search_models=["docs", "wiki"],  # Search + chat
+    chat_model="assistant",
+    prompt="What's our policy?"
+)
+```
+
 ### Model Information
 
 ```python
@@ -277,25 +296,6 @@ print(f"Total messages: {summary['total_messages']}")
 
 # Clear history when needed
 conversation.clear_history()
-```
-
-### RAG vs Chat-Only
-The `chat_with_search_context()` method supports both patterns:
-
-```python
-# Chat only (like frontend with no data sources)
-response = await client.chat_with_search_context(
-    search_models=[],  # Empty = chat only
-    chat_model="assistant",
-    prompt="What is Python?"
-)
-
-# RAG workflow (like frontend with data sources selected)
-response = await client.chat_with_search_context(
-    search_models=["docs", "wiki"],  # Search + chat
-    chat_model="assistant",
-    prompt="What's our policy?"
-)
 ```
 
 ## Configuration

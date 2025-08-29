@@ -117,7 +117,7 @@ class SyftBoxRPCClient:
                 )
                 payload["transaction_token"] = transaction_token
             
-            payload["stream"] = False
+            # payload["stream"] = False
 
             # Build request headers
             request_headers = {
@@ -141,13 +141,23 @@ class SyftBoxRPCClient:
                 params["x-syft-raw"] = headers["x-syft-raw"]
             
             logger.debug(f"Making RPC call to {syft_url}")
+
+            # Serialize payload to JSON string and set Content-Length
+            if payload:
+                payload_json = json.dumps(payload)
+                request_headers["Content-Length"] = str(len(payload_json.encode('utf-8')))
+            else:
+                payload_json = None
+    
     
             # Make the request
+            # logger.info(f"Sending request to {request_url} with params {params} and payload {payload}")
             response = await self.client.post(
                 request_url,
                 params=params,
                 headers=request_headers,
-                json=payload,
+                # json=payload,
+                data=payload_json,
             )
             
             # Handle response
