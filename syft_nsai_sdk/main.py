@@ -39,6 +39,7 @@ from .core.exceptions import (
 from .discovery.scanner import ModelScanner, FastScanner
 from .discovery.parser import MetadataParser
 from .discovery.filters import ModelFilter, FilterCriteria, FilterBuilder
+from .models.models_list import ModelsList
 from .clients.rpc_client import SyftBoxRPCClient
 from .clients.accounting_client import AccountingClient
 from .services.chat import ChatService, ConversationManager
@@ -235,10 +236,25 @@ class SyftBoxClient:
         )
         
         if should_health_check:
-            filtered_models = asyncio.run(self._add_health_status(filtered_models))
+            # Check if we're in Jupyter to avoid asyncio.run() issues
+            try:
+                import IPython
+                ipython = IPython.get_ipython()
+                if ipython is not None and hasattr(ipython, 'kernel'):
+                    # We're in Jupyter, skip health check to avoid asyncio issues
+                    logger.info("Skipping health check in Jupyter environment to avoid asyncio issues")
+                else:
+                    # Not in Jupyter, safe to use asyncio.run()
+                    filtered_models = asyncio.run(self._add_health_status(filtered_models))
+            except ImportError:
+                # IPython not available, safe to use asyncio.run()
+                filtered_models = asyncio.run(self._add_health_status(filtered_models))
+            except Exception as e:
+                # Any other error, log and continue without health check
+                logger.warning(f"Health check failed: {e}. Continuing without health status.")
         
         logger.info(f"Discovered {len(filtered_models)} models (health_check={should_health_check})")
-        return filtered_models
+        return ModelsList(filtered_models, self)
     
     def find_model(self, model_name: str, owner: Optional[str] = None) -> Optional[ModelInfo]:
         """Find a specific model by name.
@@ -260,18 +276,18 @@ class SyftBoxClient:
         
         return None
     
-    def find_models_by_owner(self, owner_email: str) -> List[ModelInfo]:
+    def find_models_by_owner(self, owner_email: str) -> ModelsList:
         """Find all models by a specific owner.
         
         Args:
             owner_email: Email of the model owner
             
         Returns:
-            List of models owned by the user
+            ModelsList of models owned by the user
         """
         return self.discover_models(owner=owner_email, health_check="never")
     
-    def find_models_by_tags(self, tags: List[str], match_all: bool = False) -> List[ModelInfo]:
+    def find_models_by_tags(self, tags: List[str], match_all: bool = False) -> ModelsList:
         """Find models by tags.
         
         Args:
@@ -279,12 +295,12 @@ class SyftBoxClient:
             match_all: If True, model must have ALL tags; if False, ANY tag
             
         Returns:
-            List of matching models
+            ModelsList of matching models
         """
         if match_all:
             return self.discover_models(has_all_tags=tags, health_check="never")
         else:
-            return self.discover_models(has_any_tags=tags, health_check="never")
+            return self.discover_models(has_all_tags=tags, health_check="never")
     
     # Display Methods 
     def list_models(self, 
@@ -358,7 +374,9 @@ class SyftBoxClient:
             **criteria
         )
         
-        return self._select_best_model(models, preference)
+        # Convert ModelsList back to regular list for selection
+        models_list = list(models)
+        return self._select_best_model(models_list, preference)
     
     def find_best_search_model(self,
                               preference: QualityPreference = QualityPreference.BALANCED,
@@ -384,7 +402,9 @@ class SyftBoxClient:
             **criteria
         )
         
-        return self._select_best_model(models, preference)
+        # Convert ModelsList back to regular list for selection
+        models_list = list(models)
+        return self._select_best_model(models_list, preference)
 
     # Service Usage Methods
     @require_account
