@@ -4,23 +4,24 @@ Core type definitions for SyftBox NSAI SDK
 from enum import Enum
 from typing import List, Dict, Any, Optional
 from dataclasses import dataclass, field
+from pydantic import BaseModel, Field, EmailStr, field_validator
 from pathlib import Path
 
 
 class ServiceType(Enum):
-    """Types of services that models can provide."""
+    """Types of services that services can provide."""
     CHAT = "chat"
     SEARCH = "search"
 
 
-class ModelStatus(Enum):
-    """Configuration status of a model based on metadata."""
+class ServiceStatus(Enum):
+    """Configuration status of a service based on metadata."""
     ACTIVE = "Active"
     DISABLED = "Disabled"
 
 
 class HealthStatus(Enum):
-    """Runtime health status of a model service."""
+    """Runtime health status of a service service."""
     ONLINE = "online"
     OFFLINE = "offline"
     TIMEOUT = "timeout"
@@ -29,24 +30,38 @@ class HealthStatus(Enum):
 
 
 class QualityPreference(Enum):
-    """Quality preference for model selection."""
+    """Quality preference for service selection."""
     CHEAPEST = "cheapest"
     BALANCED = "balanced"
-    PREMIUM = "premium"
+    PREMIUM = "paid"
     FASTEST = "fastest"
 
 
 class PricingChargeType(Enum):
-    """How models charge for their services."""
+    """How services charge for their services."""
     PER_REQUEST = "per_request"
     PER_TOKEN = "per_token"
     PER_MINUTE = "per_minute"
     FLAT_RATE = "flat_rate"
 
+class UserAccount(BaseModel):
+    """User account information."""
+    email: EmailStr
+    balance: float = Field(ge=0.0, default=0.0)
+    password: str
+    organization: Optional[str] = None
+
+class APIException(Exception):
+    """Generic HTTP exception with status code"""
+
+    def __init__(self, message: str, status_code: int = 500):
+        self.message = message
+        self.status_code = status_code
+        super().__init__(self.message)
 
 @dataclass
-class ServiceInfo:
-    """Information about a specific service within a model."""
+class ServiceItem:
+    """Information about a specific item within a service."""
     type: ServiceType
     enabled: bool
     pricing: float
@@ -54,20 +69,20 @@ class ServiceInfo:
 
 
 @dataclass
-class ModelInfo:
-    """Comprehensive information about a discovered model."""
+class ServiceInfo:
+    """Comprehensive information about a discovered service."""
     # Basic metadata from metadata.json
     name: str
-    owner: str
+    datasite: str
     summary: str
     description: str
     tags: List[str]
     
     # Service information
-    services: List[ServiceInfo]
+    services: List[ServiceItem]
     
     # Status information
-    config_status: ModelStatus
+    config_status: ServiceStatus
     health_status: Optional[HealthStatus] = None
     
     # Technical details
@@ -84,7 +99,7 @@ class ModelInfo:
     
     @property
     def has_enabled_services(self) -> bool:
-        """Check if model has any enabled services."""
+        """Check if service has any enabled services."""
         return any(service.enabled for service in self.services)
     
     @property
@@ -107,8 +122,8 @@ class ModelInfo:
         if not enabled_services:
             return 0.0
         return max(service.pricing for service in enabled_services)
-    
-    def get_service_info(self, service_type: ServiceType) -> Optional[ServiceInfo]:
+
+    def get_service_info(self, service_type: ServiceType) -> Optional[ServiceItem]:
         """Get service info for a specific service type."""
         for service in self.services:
             if service.type == service_type:
@@ -116,7 +131,7 @@ class ModelInfo:
         return None
     
     def supports_service(self, service_type: ServiceType) -> bool:
-        """Check if model supports and has enabled a specific service type."""
+        """Check if service supports and has enabled a specific service type."""
         service = self.get_service_info(service_type)
         return service is not None and service.enabled
 
@@ -142,7 +157,7 @@ class GenerationOptions:
 class ChatRequest:
     """Request for chat completion."""
     messages: List[ChatMessage]
-    model: Optional[str] = None
+    service: Optional[str] = None
     options: Optional[GenerationOptions] = None
     user_email: Optional[str] = None
     transaction_token: Optional[str] = None
@@ -160,7 +175,7 @@ class ChatUsage:
 class ChatResponse:
     """Response from a chat completion request."""
     id: str
-    model: str
+    service: str
     message: ChatMessage
     usage: ChatUsage
     cost: Optional[float] = None
@@ -172,7 +187,7 @@ class ChatResponse:
     
     def __repr__(self) -> str:
         """Return full object representation for debugging."""
-        return f"ChatResponse(id='{self.id}', model='{self.model}', message={self.message!r}, usage={self.usage!r}, cost={self.cost}, provider_info={self.provider_info})"
+        return f"ChatResponse(id='{self.id}', service='{self.service}', message={self.message!r}, usage={self.usage!r}, cost={self.cost}, provider_info={self.provider_info})"
 
 @dataclass
 class SearchOptions:
@@ -230,5 +245,5 @@ class TransactionToken:
     recipient_email: str
 
 
-# Filter types for model discovery
+# Filter types for service discovery
 FilterDict = Dict[str, Any]

@@ -1,5 +1,5 @@
 """
-Models widget HTML template for the SyftBox NSAI SDK.
+Services widget HTML template for the SyftBox NSAI SDK.
 """
 
 from typing import List, Optional
@@ -8,10 +8,10 @@ import random
 import uuid
 
 
-def get_models_widget_html(
-    models: Optional[List] = None,
+def get_services_widget_html(
+    services: Optional[List] = None,
     service_type: Optional[str] = None,
-    owner: Optional[str] = None,
+    datasite: Optional[str] = None,
     tags: Optional[List[str]] = None,
     max_cost: Optional[float] = None,
     free_only: bool = False,
@@ -21,32 +21,32 @@ def get_models_widget_html(
     items_per_page: int = 50,
     current_user_email: str = "",
 ) -> str:
-    """Generate the models widget HTML for web serving.
+    """Generate the services widget HTML for web serving.
     
-    Note: Filtering parameters (service_type, owner, tags, etc.) are optional.
-    When not provided, the widget will display all models without additional filtering.
+    Note: Filtering parameters (service_type, datasite, tags, etc.) are optional.
+    When not provided, the widget will display all services without additional filtering.
     """
     
-    container_id = f"syft_models_{uuid.uuid4().hex[:8]}"
+    container_id = f"syft_services_{uuid.uuid4().hex[:8]}"
 
     # Non-obvious tips for users
     tips = [
         'Use quotation marks to search for exact phrases like "machine learning"',
-        "Multiple words without quotes searches for models containing ALL words",
+        "Multiple words without quotes searches for services containing ALL words",
         "Press Tab in search boxes for auto-completion suggestions",
-        "Tab completion in Owner filter shows all available datasite emails",
-        "Click any row to copy its model identifier to clipboard",
-        "Health check shows real-time model availability",
-        "Free models have $0.00 pricing",
-        "Tags help categorize models by purpose or technology",
-        "Owner shows who published the model",
+        "Tab completion in Datasite filter shows all available datasite emails",
+        "Click any row to copy its service identifier to clipboard",
+        "Health check shows real-time service availability",
+        "Free services have $0.00 pricing",
+        "Tags help categorize services by purpose or technology",
+        "Datasite shows who published the service",
         "Services column shows available capabilities (chat, search)",
-        "Status shows if model is active and healthy",
-        "Use client.chat() or client.search() to interact with models",
+        "Status shows if service is active and healthy",
+        "Use client.chat() or client.search() to interact with services",
         "Filter by max_cost to stay within budget",
-        "Set free_only=True to see only free models",
+        "Set free_only=True to see only free services",
         "Health status: ✅ Online, ❌ Offline, ⏱️ Timeout, ❓ Unknown",
-        "Models with multiple services can do both chat and search"
+        "Services with multiple services can do both chat and search"
     ]
 
     # Pick a random tip for footer
@@ -54,11 +54,11 @@ def get_models_widget_html(
     show_footer_tip = random.random() < 0.5  # 50% chance
 
     # Handle optional filtering parameters
-    # If not provided, set defaults that show all models
+    # If not provided, set defaults that show all services
     if service_type is None:
         service_type = ""
-    if owner is None:
-        owner = ""
+    if datasite is None:
+        datasite = ""
     if tags is None:
         tags = []
     if max_cost is None:
@@ -73,7 +73,7 @@ def get_models_widget_html(
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SyftBox Models</title>
+    <title>SyftBox Services</title>
     <style>
     body {{
         background-color: #ffffff;
@@ -158,8 +158,8 @@ def get_models_widget_html(
     }}
 
     /* Improved column widths - balanced to fill full width */
-    #{container_id} th:nth-child(1) {{ width: 15%; }} /* Model Name */
-    #{container_id} th:nth-child(2) {{ width: 12%; }} /* Owner */
+    #{container_id} th:nth-child(1) {{ width: 15%; }} /* Service Name */
+    #{container_id} th:nth-child(2) {{ width: 12%; }} /* Datasite */
     #{container_id} th:nth-child(3) {{ width: 12%; }} /* Services */
     #{container_id} th:nth-child(4) {{ width: 10%; }} /* Pricing */
     #{container_id} th:nth-child(5) {{ width: 10%; }} /* Status */
@@ -437,7 +437,7 @@ def get_models_widget_html(
 
         <div style="font-size: 20px; font-weight: 600; color: #000000; 
                     margin-top: 2rem; text-align: center;">
-            loading <br />AI models
+            loading <br />AI services
         </div>
 
         <div style="width: 340px; height: 6px; 
@@ -462,8 +462,8 @@ def get_models_widget_html(
     <!-- Main widget container (hidden initially) -->
     <div id="{container_id}" style="display: none;">
         <div class="search-controls">
-            <input id="{container_id}-search" placeholder="🔍 Search models..." style="flex: 1;">
-            <input id="{container_id}-owner-filter" placeholder="Filter by Owner..." style="flex: 1;">
+            <input id="{container_id}-search" placeholder="🔍 Search services..." style="flex: 1;">
+            <input id="{container_id}-datasite-filter" placeholder="Filter by Datasite..." style="flex: 1;">
             <select id="{container_id}-service-filter" style="flex: 1;">
                 <option value="">All Services</option>
                 <option value="chat">Chat Only</option>
@@ -480,8 +480,8 @@ def get_models_widget_html(
             <table>
                 <thead>
                     <tr>
-                        <th style="width: 15%;">Model Name</th>
-                        <th style="width: 12%;">Owner</th>
+                        <th style="width: 15%;">Service Name</th>
+                        <th style="width: 12%;">Datasite</th>
                         <th style="width: 12%;">Services</th>
                         <th style="width: 10%;">Pricing</th>
                         <th style="width: 10%;">Status</th>
@@ -518,8 +518,8 @@ def get_models_widget_html(
         }};
 
         // Initialize variables
-        var allModels = [];
-        var filteredModels = [];
+        var allServices = [];
+        var filteredServices = [];
         var currentPage = {page};
         var itemsPerPage = {items_per_page};
 
@@ -536,25 +536,25 @@ def get_models_widget_html(
             }}
         }}
 
-        // Load models data
-        async function loadModels() {{
+        // Load services data
+        async function loadServices() {{
             try {{
                 updateProgress(10, 'Initializing...');
                 
-                // Use the actual models data passed from Python
-                var realModels = {json.dumps(models) if models else '[]'};
+                // Use the actual services data passed from Python
+                var realServices = {json.dumps(services) if services else '[]'};
                 
-                if (realModels && realModels.length > 0) {{
-                    // Use real models data
-                    allModels = realModels;
-                    updateProgress(100, 'Models loaded successfully!');
+                if (realServices && realServices.length > 0) {{
+                    // Use real services data
+                    allServices = realServices;
+                    updateProgress(100, 'Services loaded successfully!');
                 }} else {{
-                    // No models found
-                    allModels = [];
-                    updateProgress(100, 'No models found');
+                    // No services found
+                    allServices = [];
+                    updateProgress(100, 'No services found');
                 }}
                 
-                filteredModels = allModels.slice();
+                filteredServices = allServices.slice();
                 
                 // Hide loading screen and show widget
                 document.getElementById('loading-container-{container_id}').style.display = 'none';
@@ -565,8 +565,8 @@ def get_models_widget_html(
                 updateStatus();
                 
             }} catch (error) {{
-                console.error('Error loading models:', error);
-                updateProgress(0, 'Error loading models. Please refresh the page.');
+                console.error('Error loading services:', error);
+                updateProgress(0, 'Error loading services. Please refresh the page.');
             }}
         }}
 
@@ -575,8 +575,8 @@ def get_models_widget_html(
         // Render table
         function renderTable() {{
             var tbody = document.getElementById('{container_id}-tbody');
-            var totalModels = filteredModels.length;
-            var totalPages = Math.max(1, Math.ceil(totalModels / itemsPerPage));
+            var totalServices = filteredServices.length;
+            var totalPages = Math.max(1, Math.ceil(totalServices / itemsPerPage));
 
             if (currentPage > totalPages) currentPage = totalPages;
             if (currentPage < 1) currentPage = 1;
@@ -585,26 +585,26 @@ def get_models_widget_html(
             document.getElementById('{container_id}-next-btn').disabled = currentPage === totalPages;
             document.getElementById('{container_id}-page-info').textContent = 'Page ' + currentPage + ' of ' + totalPages;
 
-            if (totalModels === 0) {{
-                tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 40px;">No models found</td></tr>';
+            if (totalServices === 0) {{
+                tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 40px;">No services found</td></tr>';
                 return;
             }}
 
             var start = (currentPage - 1) * itemsPerPage;
-            var end = Math.min(start + itemsPerPage, totalModels);
+            var end = Math.min(start + itemsPerPage, totalServices);
 
             var html = '';
             for (var i = start; i < end; i++) {{
-                var model = filteredModels[i];
+                var service = filteredServices[i];
                 
-                html += '<tr onclick="copyModelId_{container_id}(\\'' + model.name + '\\', \\'' + model.owner + '\\')">' +
-                    '<td><div class="truncate" data-full-text="' + escapeHtml(model.name) + '" title="' + escapeHtml(model.name) + '">' + escapeHtml(model.name) + '</div></td>' +
-                    '<td><div class="truncate" data-full-text="' + escapeHtml(model.owner) + '" title="' + escapeHtml(model.owner) + '">' + escapeHtml(model.owner) + '</div></td>' +
-                    '<td>' + formatServices(model.services) + '</td>' +
-                    '<td>' + formatPricing(model.min_pricing, model.max_pricing) + '</td>' +
-                    '<td>' + formatStatus(model.config_status, model.health_status) + '</td>' +
-                    '<td>' + formatTags(model.tags) + '</td>' +
-                    '<td><div class="summary truncate" data-full-text="' + escapeHtml(model.summary) + '" title="' + escapeHtml(model.summary) + '">' + escapeHtml(model.summary) + '</div></td>' +
+                html += '<tr onclick="copyServiceId_{container_id}(\\'' + service.name + '\\', \\'' + service.datasite + '\\')">' +
+                    '<td><div class="truncate" data-full-text="' + escapeHtml(service.name) + '" title="' + escapeHtml(service.name) + '">' + escapeHtml(service.name) + '</div></td>' +
+                    '<td><div class="truncate" data-full-text="' + escapeHtml(service.datasite) + '" title="' + escapeHtml(service.datasite) + '">' + escapeHtml(service.datasite) + '</div></td>' +
+                    '<td>' + formatServices(service.services) + '</td>' +
+                    '<td>' + formatPricing(service.min_pricing, service.max_pricing) + '</td>' +
+                    '<td>' + formatStatus(service.config_status, service.health_status) + '</td>' +
+                    '<td>' + formatTags(service.tags) + '</td>' +
+                    '<td><div class="summary truncate" data-full-text="' + escapeHtml(service.summary) + '" title="' + escapeHtml(service.summary) + '">' + escapeHtml(service.summary) + '</div></td>' +
                 '</tr>';
             }}
 
@@ -666,7 +666,7 @@ def get_models_widget_html(
             
             // Add visible tags
             visibleTags.forEach(tag => {{
-                html += '<span class="tag" title="' + escapeHtml(tag) + '">' + escapeHtml(tag) + '</span>';
+                html += '<span class="tag" title="' + escapeHtml(tag) + '">' + escapeHtml(tag) + ',' + '</span>';
             }});
             
             // Add "more" indicator if there are additional tags
@@ -722,13 +722,13 @@ def get_models_widget_html(
 
         // Update status
         function updateStatus() {{
-            var modelCount = filteredModels.length;
-            var chatModels = filteredModels.filter(m => m.services.some(s => s.type === 'chat' && s.enabled)).length;
-            var searchModels = filteredModels.filter(m => m.services.some(s => s.type === 'search' && s.enabled)).length;
-            var freeModels = filteredModels.filter(m => m.min_pricing === 0).length;
-            var paidModels = filteredModels.filter(m => m.min_pricing > 0).length;
+            var serviceCount = filteredServices.length;
+            var chatServices = filteredServices.filter(m => m.services.some(s => s.type === 'chat' && s.enabled)).length;
+            var searchServices = filteredServices.filter(m => m.services.some(s => s.type === 'search' && s.enabled)).length;
+            var freeServices = filteredServices.filter(m => m.min_pricing === 0).length;
+            var paidServices = filteredServices.filter(m => m.min_pricing > 0).length;
             
-            var statusText = modelCount + ' models • ' + chatModels + ' chat • ' + searchModels + ' search • ' + freeModels + ' free • ' + paidModels + ' paid';
+            var statusText = serviceCount + ' services • ' + chatServices + ' chat • ' + searchServices + ' search • ' + freeServices + ' free • ' + paidServices + ' paid';
             
             if (showFooterTip) {{
                 statusText += ' • 💡 ' + '{footer_tip}';
@@ -737,40 +737,40 @@ def get_models_widget_html(
             document.getElementById('{container_id}-status').textContent = statusText;
         }}
 
-        // Search models
-        function searchModels_{container_id}() {{
+        // Search services
+        function searchServices_{container_id}() {{
             var searchTerm = document.getElementById('{container_id}-search').value.toLowerCase();
-            var ownerFilter = document.getElementById('{container_id}-owner-filter').value.toLowerCase();
+            var datasiteFilter = document.getElementById('{container_id}-datasite-filter').value.toLowerCase();
             var serviceFilter = document.getElementById('{container_id}-service-filter').value;
             var pricingFilter = document.getElementById('{container_id}-pricing-filter').value;
 
-            filteredModels = allModels.filter(function(model) {{
-                // Owner filter
-                if (ownerFilter && !model.owner.toLowerCase().includes(ownerFilter)) {{
+            filteredServices = allServices.filter(function(service) {{
+                // Datasite filter
+                if (datasiteFilter && !service.datasite.toLowerCase().includes(datasiteFilter)) {{
                     return false;
                 }}
                 
                 // Service filter
                 if (serviceFilter) {{
-                    var hasService = model.services.some(s => s.type === serviceFilter && s.enabled);
+                    var hasService = service.services.some(s => s.type === serviceFilter && s.enabled);
                     if (!hasService) return false;
                 }}
                 
                 // Pricing filter
-                if (pricingFilter === 'free' && model.min_pricing > 0) {{
+                if (pricingFilter === 'free' && service.min_pricing > 0) {{
                     return false;
-                }} else if (pricingFilter === 'paid' && model.min_pricing === 0) {{
+                }} else if (pricingFilter === 'paid' && service.min_pricing === 0) {{
                     return false;
                 }}
                 
                 // Search filter
                 if (searchTerm) {{
                     var searchableContent = [
-                        model.name,
-                        model.owner,
-                        model.summary,
-                        model.description,
-                        model.tags.join(' ')
+                        service.name,
+                        service.datasite,
+                        service.summary,
+                        service.description,
+                        service.tags.join(' ')
                     ].join(' ').toLowerCase();
                     
                     return searchableContent.includes(searchTerm);
@@ -786,27 +786,27 @@ def get_models_widget_html(
 
         // Change page
         function changePage_{container_id}(direction) {{
-            var totalPages = Math.max(1, Math.ceil(filteredModels.length / itemsPerPage));
+            var totalPages = Math.max(1, Math.ceil(filteredServices.length / itemsPerPage));
             currentPage += direction;
             if (currentPage < 1) currentPage = 1;
             if (currentPage > totalPages) currentPage = totalPages;
             renderTable();
         }}
 
-        // Copy model ID
-        function copyModelId_{container_id}(name, owner) {{
-            var modelId = name + ' by ' + owner;
-            navigator.clipboard.writeText(modelId).then(function() {{
-                document.getElementById('{container_id}-status').textContent = 'Copied: ' + modelId;
+        // Copy service ID
+        function copyServiceId_{container_id}(name, datasite) {{
+            var serviceId = name + ' by ' + datasite;
+            navigator.clipboard.writeText(serviceId).then(function() {{
+                document.getElementById('{container_id}-status').textContent = 'Copied: ' + serviceId;
                 setTimeout(function() {{
                     updateStatus();
                 }}, 2000);
             }});
         }}
 
-        // Chat with model
-        function chatWithModel_{container_id}(name, owner) {{
-            var command = 'await client.chat(model_name="' + name + '", owner="' + owner + '", prompt="Hello!")';
+        // Chat with service
+        function chatWithService_{container_id}(name, datasite) {{
+            var command = 'await client.chat(service_name="' + name + '", datasite="' + datasite + '", prompt="Hello!")';
             navigator.clipboard.writeText(command).then(function() {{
                 document.getElementById('{container_id}-status').textContent = 'Chat command copied to clipboard';
                 setTimeout(function() {{
@@ -815,9 +815,9 @@ def get_models_widget_html(
             }});
         }}
 
-        // Search with model
-        function searchWithModel_{container_id}(name, owner) {{
-            var command = 'await client.search(model_name="' + name + '", owner="' + owner + '", query="search query")';
+        // Search with service
+        function searchWithService_{container_id}(name, datasite) {{
+            var command = 'await client.search(service_name="' + name + '", datasite="' + datasite + '", query="search query")';
             navigator.clipboard.writeText(command).then(function() {{
                 document.getElementById('{container_id}-status').textContent = 'Search command copied to clipboard';
                 setTimeout(function() {{
@@ -826,10 +826,10 @@ def get_models_widget_html(
             }});
         }}
 
-        // Refresh models
-        function refreshModels_{container_id}() {{
-            document.getElementById('{container_id}-status').textContent = 'Refreshing models...';
-            loadModels();
+        // Refresh services
+        function refreshServices_{container_id}() {{
+            document.getElementById('{container_id}-status').textContent = 'Refreshing services...';
+            loadServices();
         }}
 
         // Utility functions
@@ -840,13 +840,13 @@ def get_models_widget_html(
         }}
 
         // Add event listeners
-        document.getElementById('{container_id}-search').addEventListener('input', searchModels_{container_id});
-        document.getElementById('{container_id}-owner-filter').addEventListener('input', searchModels_{container_id});
-        document.getElementById('{container_id}-service-filter').addEventListener('change', searchModels_{container_id});
-        document.getElementById('{container_id}-pricing-filter').addEventListener('change', searchModels_{container_id});
+        document.getElementById('{container_id}-search').addEventListener('input', searchServices_{container_id});
+        document.getElementById('{container_id}-datasite-filter').addEventListener('input', searchServices_{container_id});
+        document.getElementById('{container_id}-service-filter').addEventListener('change', searchServices_{container_id});
+        document.getElementById('{container_id}-pricing-filter').addEventListener('change', searchServices_{container_id});
 
-        // Start loading models when page loads
-        loadModels();
+        // Start loading services when page loads
+        loadServices();
     }})();
     </script>
 </body>

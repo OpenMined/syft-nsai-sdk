@@ -23,6 +23,12 @@ class SyftBoxNotFoundError(SyftBoxSDKError):
     def __init__(self, message: str = "SyftBox installation not found"):
         super().__init__(message, "SYFTBOX_NOT_FOUND")
 
+class SyftBoxNotRunningError(SyftBoxSDKError):
+    """SyftBox is installed but not running."""
+    
+    def __init__(self, message: str = "SyftBox is not running"):
+        super().__init__(message, "SYFTBOX_NOT_RUNNING")
+
 
 class ConfigurationError(SyftBoxSDKError):
     """Configuration-related errors."""
@@ -32,26 +38,26 @@ class ConfigurationError(SyftBoxSDKError):
         super().__init__(message, "CONFIGURATION_ERROR", details)
 
 
-class ModelNotFoundError(SyftBoxSDKError):
-    """Model not found in discovery."""
+class ServiceNotFoundError(SyftBoxSDKError):
+    """Service not found in discovery."""
     
-    def __init__(self, model_name: str, available_models: Optional[int] = None):
-        message = f"Model '{model_name}' not found"
-        if available_models is not None:
-            message += f" (searched {available_models} available models)"
-        details = {"model_name": model_name, "available_models": available_models}
-        super().__init__(message, "MODEL_NOT_FOUND", details)
+    def __init__(self, service_name: str, available_services: Optional[int] = None):
+        message = f"Service '{service_name}' not found"
+        if available_services is not None:
+            message += f" (searched {available_services} available services)"
+        details = {"service_name": service_name, "available_services": available_services}
+        super().__init__(message, "SERVICE_NOT_FOUND", details)
 
 
 class ServiceNotSupportedError(SyftBoxSDKError):
-    """Model doesn't support requested service type."""
+    """Service doesn't support requested service type."""
     
-    def __init__(self, model_name: str, service_type: str, supported_services: Optional[list] = None):
-        message = f"Model '{model_name}' does not support '{service_type}' service"
+    def __init__(self, service_name: str, service_type: str, supported_services: Optional[list] = None):
+        message = f"Service '{service_name}' does not support '{service_type}' service"
         if supported_services:
             message += f" (supports: {', '.join(supported_services)})"
         details = {
-            "model_name": model_name,
+            "service_name": service_name,
             "requested_service": service_type,
             "supported_services": supported_services
         }
@@ -61,11 +67,11 @@ class ServiceNotSupportedError(SyftBoxSDKError):
 class ServiceUnavailableError(SyftBoxSDKError):
     """Service is configured but currently unavailable."""
     
-    def __init__(self, model_name: str, service_type: str, reason: Optional[str] = None):
-        message = f"Service '{service_type}' on model '{model_name}' is unavailable"
+    def __init__(self, service_name: str, service_type: str, reason: Optional[str] = None):
+        message = f"Service '{service_type}' on service '{service_name}' is unavailable"
         if reason:
             message += f": {reason}"
-        details = {"model_name": model_name, "service_type": service_type, "reason": reason}
+        details = {"service_name": service_name, "service_type": service_type, "reason": reason}
         super().__init__(message, "SERVICE_UNAVAILABLE", details)
 
 
@@ -147,7 +153,7 @@ class ValidationError(SyftBoxSDKError):
 
 
 class MetadataParsingError(SyftBoxSDKError):
-    """Error parsing model metadata files."""
+    """Error parsing service metadata files."""
     
     def __init__(self, file_path: str, parse_error: str):
         message = f"Failed to parse metadata file: {parse_error}"
@@ -156,27 +162,27 @@ class MetadataParsingError(SyftBoxSDKError):
 
 
 class HealthCheckError(SyftBoxSDKError):
-    """Error during model health checking."""
+    """Error during service health checking."""
     
-    def __init__(self, model_name: str, reason: str):
-        message = f"Health check failed for model '{model_name}': {reason}"
-        details = {"model_name": model_name, "reason": reason}
+    def __init__(self, service_name: str, reason: str):
+        message = f"Health check failed for service '{service_name}': {reason}"
+        details = {"service_name": service_name, "reason": reason}
         super().__init__(message, "HEALTH_CHECK_ERROR", details)
 
 
 # Convenience functions for common error scenarios
-def raise_model_not_found(model_name: str, available_models: list = None):
-    """Raise ModelNotFoundError with helpful context."""
-    count = len(available_models) if available_models else None
-    raise ModelNotFoundError(model_name, count)
+def raise_service_not_found(service_name: str, available_services: list = None):
+    """Raise ServiceNotFoundError with helpful context."""
+    count = len(available_services) if available_services else None
+    raise ServiceNotFoundError(service_name, count)
 
 
-def raise_service_not_supported(model_name: str, service_type: str, model_info=None):
-    """Raise ServiceNotSupportedError with model's actual capabilities."""
+def raise_service_not_supported(service_name: str, service_type: str, service_info=None):
+    """Raise ServiceNotSupportedError with service's actual capabilities."""
     supported = None
-    if model_info and hasattr(model_info, 'enabled_service_types'):
-        supported = [s.value for s in model_info.enabled_service_types]
-    raise ServiceNotSupportedError(model_name, service_type, supported)
+    if service_info and hasattr(service_info, 'enabled_service_types'):
+        supported = [s.value for s in service_info.enabled_service_types]
+    raise ServiceNotSupportedError(service_name, service_type, supported)
 
 
 def raise_network_error(message: str, url: str = None, status_code: int = None):

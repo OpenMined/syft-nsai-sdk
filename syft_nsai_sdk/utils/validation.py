@@ -25,19 +25,19 @@ def validate_email(email: str) -> bool:
     return bool(re.match(pattern, email))
 
 
-def validate_model_name(name: str) -> bool:
-    """Validate model name format.
+def validate_service_name(name: str) -> bool:
+    """Validate service name format.
     
     Args:
-        name: Model name to validate
+        name: Service name to validate
         
     Returns:
-        True if valid model name
+        True if valid service name
     """
     if not name or not isinstance(name, str):
         return False
     
-    # Model names should be alphanumeric with hyphens/underscores
+    # Service names should be alphanumeric with hyphens/underscores
     pattern = r'^[a-zA-Z0-9_-]+$'
     return bool(re.match(pattern, name)) and 1 <= len(name) <= 100
 
@@ -74,7 +74,7 @@ def validate_syft_url(url: str) -> bool:
         if not validate_email(email):
             return False
         
-        # Path should follow /app_data/{model}/rpc/{endpoint} pattern
+        # Path should follow /app_data/{service}/rpc/{endpoint} pattern
         path_parts = parsed.path.strip('/').split('/')
         if len(path_parts) < 4:
             return False
@@ -82,9 +82,9 @@ def validate_syft_url(url: str) -> bool:
         if path_parts[0] != 'app_data' or path_parts[2] != 'rpc':
             return False
         
-        # Validate model name
-        model_name = path_parts[1]
-        if not validate_model_name(model_name):
+        # Validate service name
+        service_name = path_parts[1]
+        if not validate_service_name(service_name):
             return False
         
         return True
@@ -409,13 +409,13 @@ class Validator:
             raise ValidationError(error_msg, field="multiple", value=str(self.errors))
 
 
-def validate_chat_request(message: str, model_name: Optional[str] = None, 
+def validate_chat_request(message: str, service_name: Optional[str] = None, 
                          max_tokens: Optional[int] = None, temperature: Optional[float] = None) -> None:
     """Validate chat request parameters.
     
     Args:
         message: Chat message
-        model_name: Optional model name
+        service_name: Optional service name
         max_tokens: Optional max tokens
         temperature: Optional temperature
         
@@ -428,8 +428,8 @@ def validate_chat_request(message: str, model_name: Optional[str] = None,
     if message and not validate_chat_message(message):
         validator.errors.append("message contains invalid content or is too long")
     
-    if model_name and not validate_model_name(model_name):
-        validator.errors.append("model_name contains invalid characters")
+    if service_name and not validate_service_name(service_name):
+        validator.errors.append("service_name contains invalid characters")
     
     validator.validate_range(max_tokens, 1, 100000, "max_tokens")
     validator.validate_range(temperature, 0.0, 2.0, "temperature")
@@ -461,8 +461,8 @@ def validate_search_request(query: str, limit: Optional[int] = None,
     validator.raise_if_invalid("Search request")
 
 
-def validate_model_filter_criteria(**kwargs) -> None:
-    """Validate model filter criteria.
+def validate_service_filter_criteria(**kwargs) -> None:
+    """Validate service filter criteria.
     
     Args:
         **kwargs: Filter criteria to validate
@@ -472,8 +472,8 @@ def validate_model_filter_criteria(**kwargs) -> None:
     """
     validator = Validator()
     
-    if 'owner' in kwargs and kwargs['owner']:
-        validator.validate_email_field(kwargs['owner'], "owner")
+    if 'datasite' in kwargs and kwargs['datasite']:
+        validator.validate_email_field(kwargs['datasite'], "datasite")
     
     if 'tags' in kwargs and kwargs['tags']:
         if not validate_tags(kwargs['tags']):
@@ -485,7 +485,7 @@ def validate_model_filter_criteria(**kwargs) -> None:
     if 'min_cost' in kwargs and kwargs['min_cost'] is not None:
         validator.validate_range(kwargs['min_cost'], 0.0, 1000.0, "min_cost")
     
-    validator.raise_if_invalid("Model filter criteria")
+    validator.raise_if_invalid("Service filter criteria")
 
 
 # Quick validation functions for common use cases
@@ -497,10 +497,10 @@ def ensure_valid_email(email: str, field_name: str = "email") -> str:
     return email
 
 
-def ensure_valid_model_name(name: str, field_name: str = "model_name") -> str:
-    """Ensure model name is valid, raise ValidationError if not."""
-    if not validate_model_name(name):
-        raise ValidationError(f"Invalid model name format: {name}", field_name, name)
+def ensure_valid_service_name(name: str, field_name: str = "service_name") -> str:
+    """Ensure service name is valid, raise ValidationError if not."""
+    if not validate_service_name(name):
+        raise ValidationError(f"Invalid service name format: {name}", field_name, name)
     return name
 
 
@@ -557,7 +557,7 @@ def sanitize_tags(tags: List[str]) -> List[str]:
     for tag in tags:
         if isinstance(tag, str):
             clean_tag = sanitize_string(tag, 50)
-            if clean_tag and validate_model_name(clean_tag):
+            if clean_tag and validate_service_name(clean_tag):
                 sanitized.append(clean_tag)
     
     # Remove duplicates while preserving order

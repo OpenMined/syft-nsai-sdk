@@ -1,34 +1,34 @@
 """
-Formatting utilities for displaying model information
+Formatting utilities for displaying service information
 """
 from typing import List, Optional
 from datetime import datetime
 
-from ..core.types import ModelInfo, ServiceType, HealthStatus
+from ..core.types import ServiceInfo, ServiceType, HealthStatus
 
 
-def format_models_table(models: List[ModelInfo]) -> str:
-    """Format models as a table.
+def format_services_table(services: List[ServiceInfo]) -> str:
+    """Format services as a table.
     
     Args:
-        models: List of models to display
+        services: List of services to display
         
     Returns:
         Formatted table string
     """
-    if not models:
-        return "No models found."
+    if not services:
+        return "No services found."
     
     # Calculate column widths
-    name_width = max(len("Name"), max(len(model.name) for model in models), 15)
-    owner_width = max(len("Owner"), max(len(model.owner) for model in models), 15)
-    services_width = max(len("Services"), max(len(_format_services(model)) for model in models), 10)
-    summary_width = max(len("Summary"), max(len(model.summary[:30]) for model in models), 20)
-    status_width = max(len("Status"), max(len(_format_status(model)) for model in models), 10)
+    name_width = max(len("Name"), max(len(service.name) for service in services), 15)
+    datasite_width = max(len("Datasite"), max(len(service.datasite) for service in services), 15)
+    services_width = max(len("Services"), max(len(_format_services(service)) for service in services), 10)
+    summary_width = max(len("Summary"), max(len(service.summary[:30]) for service in services), 20)
+    status_width = max(len("Status"), max(len(_format_status(service)) for service in services), 10)
     
     # Ensure minimum widths and maximum widths for readability
     name_width = min(max(name_width, 15), 25)
-    owner_width = min(max(owner_width, 15), 30)
+    datasite_width = min(max(datasite_width, 15), 30)
     services_width = min(max(services_width, 10), 15)
     summary_width = min(max(summary_width, 20), 40)
     status_width = min(max(status_width, 10), 15)
@@ -37,50 +37,50 @@ def format_models_table(models: List[ModelInfo]) -> str:
     lines = []
     
     # Header
-    header = f"┌─{'─' * name_width}─┬─{'─' * owner_width}─┬─{'─' * services_width}─┬─{'─' * summary_width}─┬─{'─' * status_width}─┐"
+    header = f"┌─{'─' * name_width}─┬─{'─' * datasite_width}─┬─{'─' * services_width}─┬─{'─' * summary_width}─┬─{'─' * status_width}─┐"
     lines.append(header)
     
-    header_row = (f"│ {'Name':<{name_width}} │ {'Owner':<{owner_width}} │ "
+    header_row = (f"│ {'Name':<{name_width}} │ {'Datasite':<{datasite_width}} │ "
                   f"{'Services':<{services_width}} │ {'Summary':<{summary_width}} │ {'Status':<{status_width}} │")
     lines.append(header_row)
     
-    separator = f"├─{'─' * name_width}─┼─{'─' * owner_width}─┼─{'─' * services_width}─┼─{'─' * summary_width}─┼─{'─' * status_width}─┤"
+    separator = f"├─{'─' * name_width}─┼─{'─' * datasite_width}─┼─{'─' * services_width}─┼─{'─' * summary_width}─┼─{'─' * status_width}─┤"
     lines.append(separator)
     
     # Data rows
-    for model in models:
-        name = _truncate(model.name, name_width)
-        owner = _truncate(model.owner, owner_width)
-        services = _truncate(_format_services(model), services_width)
-        summary = _truncate(model.summary, summary_width)
-        status = _truncate(_format_status(model), status_width)
+    for service in services:
+        name = _truncate(service.name, name_width)
+        datasite = _truncate(service.datasite, datasite_width)
+        services = _truncate(_format_services(service), services_width)
+        summary = _truncate(service.summary, summary_width)
+        status = _truncate(_format_status(service), status_width)
         
-        row = (f"│ {name:<{name_width}} │ {owner:<{owner_width}} │ "
+        row = (f"│ {name:<{name_width}} │ {datasite:<{datasite_width}} │ "
                f"{services:<{services_width}} │ {summary:<{summary_width}} │ {status:<{status_width}} │")
         lines.append(row)
     
     # Footer
-    footer = f"└─{'─' * name_width}─┴─{'─' * owner_width}─┴─{'─' * services_width}─┴─{'─' * summary_width}─┴─{'─' * status_width}─┘"
+    footer = f"└─{'─' * name_width}─┴─{'─' * datasite_width}─┴─{'─' * services_width}─┴─{'─' * summary_width}─┴─{'─' * status_width}─┘"
     lines.append(footer)
     
     # Add summary info
-    total_models = len(models)
-    health_checked = len([m for m in models if m.health_status is not None])
+    total_services = len(services)
+    health_checked = len([m for m in services if m.health_status is not None])
     
     if health_checked > 0:
-        online = len([m for m in models if m.health_status == HealthStatus.ONLINE])
-        lines.append(f"\nFound {total_models} models (health checks: {online}/{health_checked} online)")
+        online = len([m for m in services if m.health_status == HealthStatus.ONLINE])
+        lines.append(f"\nFound {total_services} services (health checks: {online}/{health_checked} online)")
     else:
-        lines.append(f"\nFound {total_models} models")
+        lines.append(f"\nFound {total_services} services")
     
     return "\n".join(lines)
 
 
-def format_model_details(model: ModelInfo) -> str:
-    """Format detailed information about a single model.
+def format_service_details(service: ServiceInfo) -> str:
+    """Format detailed information about a single service.
     
     Args:
-        model: Model to display details for
+        service: Service to display details for
         
     Returns:
         Formatted details string
@@ -89,24 +89,24 @@ def format_model_details(model: ModelInfo) -> str:
     
     # Header
     lines.append("=" * 60)
-    lines.append(f"Model: {model.name}")
+    lines.append(f"Service: {service.name}")
     lines.append("=" * 60)
     
     # Basic info
-    lines.append(f"Owner: {model.owner}")
-    lines.append(f"Summary: {model.summary}")
-    if model.description != model.summary:
-        lines.append(f"Description: {model.description}")
+    lines.append(f"Datasite: {service.datasite}")
+    lines.append(f"Summary: {service.summary}")
+    if service.description != service.summary:
+        lines.append(f"Description: {service.description}")
     
     # Status
-    lines.append(f"Config Status: {model.config_status.value}")
-    if model.health_status:
-        lines.append(f"Health Status: {_format_health_status(model.health_status)}")
+    lines.append(f"Config Status: {service.config_status.value}")
+    if service.health_status:
+        lines.append(f"Health Status: {_format_health_status(service.health_status)}")
     
     # Services
     lines.append("\nServices:")
-    if model.services:
-        for service in model.services:
+    if service.services:
+        for service in service.services:
             status = "✅ Enabled" if service.enabled else "❌ Disabled"
             pricing = f"${service.pricing}/{service.charge_type.value}" if service.pricing > 0 else "Free"
             lines.append(f"  • {service.type.value.title()}: {status} ({pricing})")
@@ -114,28 +114,28 @@ def format_model_details(model: ModelInfo) -> str:
         lines.append("  No services defined")
     
     # Tags
-    if model.tags:
-        lines.append(f"\nTags: {', '.join(model.tags)}")
+    if service.tags:
+        lines.append(f"\nTags: {', '.join(service.tags)}")
     
     # Delegate info
-    if model.delegate_email:
-        lines.append(f"\nDelegate: {model.delegate_email}")
+    if service.delegate_email:
+        lines.append(f"\nDelegate: {service.delegate_email}")
     
     # Pricing summary
-    if model.has_enabled_services:
-        if model.min_pricing == model.max_pricing:
-            if model.min_pricing == 0:
+    if service.has_enabled_services:
+        if service.min_pricing == service.max_pricing:
+            if service.min_pricing == 0:
                 lines.append("\nPricing: Free")
             else:
-                lines.append(f"\nPricing: ${model.min_pricing}")
+                lines.append(f"\nPricing: ${service.min_pricing}")
         else:
-            lines.append(f"\nPricing: ${model.min_pricing} - ${model.max_pricing}")
+            lines.append(f"\nPricing: ${service.min_pricing} - ${service.max_pricing}")
     
     # File paths (for debugging)
-    if model.metadata_path:
-        lines.append(f"\nMetadata: {model.metadata_path}")
-    if model.rpc_schema_path:
-        lines.append(f"RPC Schema: {model.rpc_schema_path}")
+    if service.metadata_path:
+        lines.append(f"\nMetadata: {service.metadata_path}")
+    if service.rpc_schema_path:
+        lines.append(f"RPC Schema: {service.rpc_schema_path}")
     
     return "\n".join(lines)
 
@@ -228,7 +228,7 @@ def format_health_summary(health_status: dict) -> str:
     """Format health status summary.
     
     Args:
-        health_status: Dictionary mapping model names to health status
+        health_status: Dictionary mapping service names to health status
         
     Returns:
         Formatted health summary
@@ -252,7 +252,7 @@ def format_health_summary(health_status: dict) -> str:
     timeout = status_counts.get(HealthStatus.TIMEOUT, 0)
     unknown = status_counts.get(HealthStatus.UNKNOWN, 0)
     
-    lines.append(f"Total Models: {total}")
+    lines.append(f"Total Services: {total}")
     lines.append(f"Online: {online} ✅")
     lines.append(f"Offline: {offline} ❌")
     lines.append(f"Timeout: {timeout} ⏱️")
@@ -262,15 +262,15 @@ def format_health_summary(health_status: dict) -> str:
     lines.append("\nDetailed Status:")
     lines.append("-" * 30)
     
-    for model_name, status in sorted(health_status.items()):
+    for service_name, status in sorted(health_status.items()):
         status_str = _format_health_status(status)
-        lines.append(f"{model_name}: {status_str}")
+        lines.append(f"{service_name}: {status_str}")
     
     return "\n".join(lines)
 
 
 def format_statistics(stats: dict) -> str:
-    """Format model statistics for display.
+    """Format service statistics for display.
     
     Args:
         stats: Statistics dictionary
@@ -279,27 +279,27 @@ def format_statistics(stats: dict) -> str:
         Formatted statistics
     """
     lines = []
-    lines.append("Model Statistics")
+    lines.append("Service Statistics")
     lines.append("=" * 20)
     
-    lines.append(f"Total Models: {stats.get('total_models', 0)}")
-    lines.append(f"Enabled Models: {stats.get('enabled_models', 0)}")
-    lines.append(f"Disabled Models: {stats.get('disabled_models', 0)}")
-    lines.append(f"Chat Models: {stats.get('chat_models', 0)}")
-    lines.append(f"Search Models: {stats.get('search_models', 0)}")
-    lines.append(f"Free Models: {stats.get('free_models', 0)}")
-    lines.append(f"Paid Models: {stats.get('paid_models', 0)}")
-    lines.append(f"Total Owners: {stats.get('total_owners', 0)}")
+    lines.append(f"Total Services: {stats.get('total_services', 0)}")
+    lines.append(f"Enabled Services: {stats.get('enabled_services', 0)}")
+    lines.append(f"Disabled Services: {stats.get('disabled_services', 0)}")
+    lines.append(f"Chat Services: {stats.get('chat_services', 0)}")
+    lines.append(f"Search Services: {stats.get('search_services', 0)}")
+    lines.append(f"Free Services: {stats.get('free_services', 0)}")
+    lines.append(f"Paid Services: {stats.get('paid_services', 0)}")
+    lines.append(f"Total Owners: {stats.get('total_datasites', 0)}")
     
-    avg_models = stats.get('avg_models_per_owner', 0)
-    lines.append(f"Avg Models per Owner: {avg_models:.1f}")
+    avg_services = stats.get('avg_services_per_datasite', 0)
+    lines.append(f"Avg Services per Datasite: {avg_services:.1f}")
     
-    # Top owners
-    top_owners = stats.get('top_owners', [])
-    if top_owners:
-        lines.append("\nTop Model Owners:")
-        for owner, count in top_owners:
-            lines.append(f"  {owner}: {count} models")
+    # Top datasites
+    top_datasites = stats.get('top_datasites', [])
+    if top_datasites:
+        lines.append("\nTop Service Owners:")
+        for datasite, count in top_datasites:
+            lines.append(f"  {datasite}: {count} services")
     
     return "\n".join(lines)
 
@@ -313,29 +313,29 @@ def _truncate(text: str, max_length: int) -> str:
     return text[:max_length-3] + "..."
 
 
-def _format_services(model: ModelInfo) -> str:
+def _format_services(service: ServiceInfo) -> str:
     """Format services list for table display."""
-    enabled_services = [s.type.value for s in model.services if s.enabled]
+    enabled_services = [s.type.value for s in service.services if s.enabled]
     if not enabled_services:
         return "none"
     return ",".join(enabled_services)
 
 
-def _format_status(model: ModelInfo) -> str:
+def _format_status(service: ServiceInfo) -> str:
     """Format status column for table display."""
-    base_status = model.config_status.value
+    base_status = service.config_status.value
     
-    if not model.has_enabled_services:
+    if not service.has_enabled_services:
         return "Disabled"
     
-    if model.health_status is None:
+    if service.health_status is None:
         return base_status
     
-    if model.health_status == HealthStatus.ONLINE:
+    if service.health_status == HealthStatus.ONLINE:
         return f"{base_status} ✅"
-    elif model.health_status == HealthStatus.OFFLINE:
+    elif service.health_status == HealthStatus.OFFLINE:
         return f"{base_status} ❌"
-    elif model.health_status == HealthStatus.TIMEOUT:
+    elif service.health_status == HealthStatus.TIMEOUT:
         return f"{base_status} ⏱️"
     else:
         return f"{base_status} ❓"

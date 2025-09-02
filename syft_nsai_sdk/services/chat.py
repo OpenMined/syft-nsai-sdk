@@ -1,5 +1,5 @@
 """
-Chat service client for SyftBox models
+Chat service client for SyftBox services
 """
 import json
 import uuid
@@ -9,7 +9,7 @@ from typing import List, Optional, Dict, Any
 from typer import prompt
 
 from ..core.types import (
-    ModelInfo, 
+    ServiceInfo, 
     ChatMessage, 
     ChatRequest, 
     ChatResponse, 
@@ -24,24 +24,24 @@ from ..clients.rpc_client import SyftBoxRPCClient
 logger = logging.getLogger(__name__)
 
 class ChatService:
-    """Service client for chat/conversation models."""
+    """Service client for chat/conversation services."""
     
-    def __init__(self, model_info: ModelInfo, rpc_client: SyftBoxRPCClient):
+    def __init__(self, service_info: ServiceInfo, rpc_client: SyftBoxRPCClient):
         """Initialize chat service.
         
         Args:
-            model_info: Information about the model
+            service_info: Information about the service
             rpc_client: RPC client for making calls
             
         Raises:
-            ServiceNotSupportedError: If model doesn't support chat
+            ServiceNotSupportedError: If service doesn't support chat
         """
-        self.model_info = model_info
+        self.service_info = service_info
         self.rpc_client = rpc_client
 
-        # Validate that model supports chat
-        if not model_info.supports_service(ServiceType.CHAT):
-            raise_service_not_supported(model_info.name, "chat", model_info)
+        # Validate that service supports chat
+        if not service_info.supports_service(ServiceType.CHAT):
+            raise_service_not_supported(service_info.name, "chat", service_info)
 
     def _parse_rpc_response(self, response_data: Dict[str, Any]) -> ChatResponse:
         """Parse RPC response into ChatResponse object.
@@ -55,7 +55,7 @@ class ChatService:
                 "cost": 0.3,
                 "message": {"content": "...", "role": "assistant"},
                 "usage": {"completionTokens": 113, ...},
-                "model": "claude-sonnet-3.5"
+                "service": "claude-sonnet-3.5"
             }
             }
         }
@@ -102,7 +102,7 @@ class ChatService:
                     
                     return ChatResponse(
                         id=body.get("id", str(uuid.uuid4())),
-                        model=body.get("model", self.model_info.name),
+                        service=body.get("service", self.service_info.name),
                         message=message,
                         usage=usage,
                         cost=body.get("cost"),
@@ -128,7 +128,7 @@ class ChatService:
                 
                 return ChatResponse(
                     id=response_data.get("id", str(uuid.uuid4())),
-                    model=response_data.get("model", self.model_info.name),
+                    service=response_data.get("service", self.service_info.name),
                     message=message,
                     usage=usage,
                     cost=response_data.get("cost"),
@@ -146,7 +146,7 @@ class ChatService:
                 
                 return ChatResponse(
                     id=str(uuid.uuid4()),
-                    model=self.model_info.name,
+                    service=self.service_info.name,
                     message=message,
                     usage=usage,
                     cost=response_data.get("cost"),
@@ -167,7 +167,7 @@ class ChatService:
                 
                 return ChatResponse(
                     id=str(uuid.uuid4()),
-                    model=self.model_info.name,
+                    service=self.service_info.name,
                     message=message,
                     usage=usage
                 )
@@ -203,7 +203,7 @@ class ChatService:
         account_email = self.rpc_client.accounting_client.get_email()
         payload = {
             "user_email": account_email,
-            "model": self.model_info.name,
+            "service": self.service_info.name,
             "messages": messages
         }
         
@@ -214,7 +214,7 @@ class ChatService:
         if max_tokens is not None:
             options["maxTokens"] = max_tokens
         
-        # Add any additional model-specific parameters
+        # Add any additional service-specific parameters
         for key, value in params.items():
             options[key] = value
         
@@ -222,19 +222,19 @@ class ChatService:
             payload["options"] = options
 
         # Make RPC call
-        response_data = await self.rpc_client.call_chat(self.model_info, payload)
+        response_data = await self.rpc_client.call_chat(self.service_info, payload)
         return self._parse_rpc_response(response_data)
     
     def estimate_cost(self, message_count: int = 1) -> float:
         """Estimate cost for a chat request."""
-        chat_service_info = self.model_info.get_service_info(ServiceType.CHAT)
+        chat_service_info = self.service_info.get_service_info(ServiceType.CHAT)
         if not chat_service_info:
             return 0.0
         
         if chat_service_info.charge_type == PricingChargeType.PER_REQUEST:
             return chat_service_info.pricing * message_count
         elif chat_service_info.charge_type == PricingChargeType.PER_TOKEN:
-            # Use actual per-token pricing from model info
+            # Use actual per-token pricing from service info
             estimated_tokens = message_count * 50  # Still need rough token estimate
             return chat_service_info.pricing * estimated_tokens
         else:
@@ -243,13 +243,13 @@ class ChatService:
     @property
     def pricing(self) -> float:
         """Get pricing for chat service."""
-        chat_service = self.model_info.get_service_info(ServiceType.CHAT)
+        chat_service = self.service_info.get_service_info(ServiceType.CHAT)
         return chat_service.pricing if chat_service else 0.0
     
     @property
     def charge_type(self) -> str:
         """Get charge type for chat service."""
-        chat_service = self.model_info.get_service_info(ServiceType.CHAT)
+        chat_service = self.service_info.get_service_info(ServiceType.CHAT)
         return chat_service.charge_type.value if chat_service else "per_request"
     
 class ConversationManager:

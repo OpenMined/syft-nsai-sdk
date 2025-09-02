@@ -9,14 +9,9 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 from .core.decorators import require_account
-from .core.config import (
-    SyftBoxConfig, 
-    get_config, 
-    is_syftbox_available, 
-    get_installation_instructions
-)
+from .core.config import ConfigManager
 from .core.types import (
-    ModelInfo, 
+    ServiceInfo, 
     ServiceType, 
     HealthStatus, 
     QualityPreference,
@@ -30,38 +25,40 @@ from .core.exceptions import (
     AuthenticationError, 
     PaymentError, 
     SyftBoxNotFoundError, 
-    ModelNotFoundError, 
-    ServiceNotSupportedError, 
+    ServiceNotFoundError, 
+    ServiceNotSupportedError,
+    SyftBoxNotRunningError, 
     ValidationError,
-    raise_model_not_found, 
+    raise_service_not_found, 
     raise_service_not_supported
 )
-from .discovery.scanner import ModelScanner, FastScanner
+from .discovery.scanner import ServiceScanner, FastScanner
 from .discovery.parser import MetadataParser
-from .discovery.filters import ModelFilter, FilterCriteria, FilterBuilder
-from .models.models_list import ModelsList
+from .discovery.filters import ServiceFilter, FilterCriteria, FilterBuilder
 from .clients.rpc_client import SyftBoxRPCClient
 from .clients.accounting_client import AccountingClient
 from .services.chat import ChatService, ConversationManager
 from .services.search import SearchService, BatchSearchService
-from .services.health import check_model_health, batch_health_check, HealthMonitor
-from .utils.formatting import format_models_table, format_model_details
+from .services.health import check_service_health, batch_health_check, HealthMonitor
+from .services.services_list import ServicesList
+from .utils.formatting import format_services_table, format_service_details
 
 from syft_accounting_sdk import UserClient, ServiceException
 
 logger = logging.getLogger(__name__)
 load_dotenv()
 
-class SyftBoxClient:
-    """Main client for discovering and using SyftBox AI models."""
+class Client:
+    """Main client for discovering and using SyftBox AI services."""
     
     def __init__(self, 
                 syftbox_config_path: Optional[Path] = None,
-                user_email: str = "guest@syft.org",
+                # user_email: str = "guest@syft.org",
                 cache_server_url: Optional[str] = None,
                 accounting_client: Optional[AccountingClient] = None,
                 auto_setup_accounting: bool = True,
-                auto_health_check_threshold: int = 10):
+                auto_health_check_threshold: int = 10
+            ):
         """Initialize SyftBox client.
         
         Args:
@@ -69,17 +66,28 @@ class SyftBoxClient:
             user_email: Override user email for requests
             cache_server_url: Override cache server URL
             auto_setup_accounting: Whether to prompt for accounting setup when needed
-            auto_health_check_threshold: Max models for auto health checking
+            auto_health_check_threshold: Max services for auto health checking
         """
         # Check SyftBox availability
-        if not is_syftbox_available():
-            raise SyftBoxNotFoundError(get_installation_instructions())
+        # Create config manager with custom path if provided
+        self.config_manager = ConfigManager(syftbox_config_path)
+        
+        # Check if installed first
+        # if not self.config_manager.is_syftbox_installed():
+        #     raise SyftBoxNotFoundError(self.config_manager.get_installation_instructions())
+
+        # Then check if running  
+        if not self.config_manager.is_syftbox_running():
+            raise SyftBoxNotFoundError(self.config_manager.get_startup_instructions())
+        
+        # Store config for later use
+        self.config = self.config_manager.config
         
         # Initialize account state
         self._account_configured = False
         
         # Load configuration
-        self.config = get_config(syftbox_config_path)
+        # self.config = get_config(syftbox_config_path)
 
         # Set up accounting client - check for existing credentials
         if accounting_client:
@@ -90,16 +98,16 @@ class SyftBoxClient:
             self.accounting_client = self._setup_default_accounting()
         
         # Set up RPC client
-        from_email = user_email
+        # from_email = user_email
         server_url = cache_server_url or self.config.cache_server_url
         
         self.rpc_client = SyftBoxRPCClient(
             cache_server_url=server_url,
-            from_email=from_email,
+            # from_email=from_email,
             accounting_client=self.accounting_client,
         )
         
-        # Set up model scanner
+        # Set up service scanner
         self.scanner = FastScanner(self.config)
         self.parser = MetadataParser()
         
@@ -111,45 +119,62 @@ class SyftBoxClient:
         self._health_monitor: Optional[HealthMonitor] = None
 
         # Load user email from config if not provided (from_email and self._account_configured)
-        if from_email:
-            logger.info(f"SyftBoxClient initialized for {from_email}")
-        else:
-            logger.info("SyftBoxClient initialized in guest mode (no user email provided)")
+        logger.info(f"Client initialized for {self.config.email}")
+        # if self._account_configured:
+        #     logger.info(f"Client initialized for {self.accounting_client.get_email()}")
+        # # if from_email:
+        # #     logger.info(f"Client initialized for {self.accounting_client.get_email()}")
+        # else:
+        #     logger.info("Client initialized in guest mode (no user account provided)")
 
+    # def _setup_default_accounting1(self) -> AccountingClient:
+    #     """Check for existing accounting credentials and guide user if none exist."""
+    #     # Try loading from environment variables
+    #     try:
+    #         client = AccountingClient.from_environment()
+    #         self._account_configured = True
+    #         logger.info("Found existing accounting credentials in environment")
+    #         return client
+    #     except AuthenticationError:
+    #         pass
+        
+    #     # Try loading from saved config file
+    #     try:
+    #         client = AccountingClient.load_from_config()
+    #         self._account_configured = True
+    #         logger.info("Found existing accounting credentials in config file")
+    #         return client
+    #     except AuthenticationError:
+    #         pass
+        
+    #     # No credentials found - inform user
+    #     self._show_setup_message()
+    #     return AccountingClient()
+    
     def _setup_default_accounting(self) -> AccountingClient:
-        """Check for existing accounting credentials and guide user if none exist."""
-        # Try loading from environment variables
-        try:
-            client = AccountingClient.from_environment()
-            self._account_configured = True
-            logger.info("Found existing accounting credentials in environment")
-            return client
-        except AuthenticationError:
-            pass
+        client, is_configured = AccountingClient.setup_accounting_discovery()
         
-        # Try loading from saved config file
-        try:
-            client = AccountingClient.load_from_config()
+        if is_configured:
             self._account_configured = True
-            logger.info("Found existing accounting credentials in config file")
-            return client
-        except AuthenticationError:
-            pass
+            # logger.info(await client.get_account_info())  # Validate credentials
+            logger.info(f"Found existing accounting credentials for {client.get_email()}")
+        else:
+            self._show_setup_message()
         
-        # No credentials found - inform user
-        self._show_setup_message()
-        return AccountingClient()
+        return client
     
     def _show_setup_message(self):
         """Display account setup instructions to user."""
         print("\n" + "="*60)
-        print("ACCOUNT SETUP REQUIRED")
+        print("NO ACTIVE ACCOUNT FOUND!")
         print("="*60)
-        print("No SyftBox account credentials found.")
-        print("To use SyftBox models, you need to set up an account.")
+        print("You are currently limited to SyftBox free services.")
+        print("New users receive $20 in free credits upon first connection to the accounting service.")
+        print("To use SyftBox paid services, you need to set up an account.")
         print("")
         print("Please run:")
-        print("  await client.setup_accounting(email, password)")
+        print("  await client.register_accounting(email, password) to create an account.")
+        print("  await client.connect_accounting(email, password) to connect to an existing account.")
         print("")
         print("Or set environment variables:")
         print("  SYFTBOX_ACCOUNTING_EMAIL=your_email@example.com")
@@ -169,40 +194,38 @@ class SyftBoxClient:
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         await self.close()
 
-    # Model Discovery Methods
-    def discover_models(self,
+    # Service Discovery Methods
+    def list_services(self,
                     service_type: Optional[str] = None,
-                    owner: Optional[str] = None,
+                    datasite: Optional[str] = None,
                     tags: Optional[List[str]] = None,
                     max_cost: Optional[float] = None,
-                    free_only: bool = False,  # NEW PARAMETER
+                    free_only: bool = False,
                     health_check: str = "auto",
-                    include_disabled: bool = False,
-                    **filter_kwargs) -> List[ModelInfo]:
-        """Discover available models with filtering and optional health checking.
+                    **filter_kwargs) -> List[ServiceInfo]:
+        """Discover available services with filtering and optional health checking.
         
         Args:
             service_type: Filter by service type (chat, search)
-            owner: Filter by owner email
+            datasite: Filter by datasite email
             tags: Filter by tags (any match)
             max_cost: Maximum cost per request
-            free_only: Only return free models (cost = 0)  # NEW PARAMETER DOCS
+            free_only: Only return free services (cost = 0)
             health_check: Health checking mode ("auto", "always", "never")
-            include_disabled: Include models with disabled services
             **filter_kwargs: Additional filter criteria
             
         Returns:
-            List of discovered and filtered models
+            List of discovered and filtered services
         """
         # Scan for metadata files
         metadata_paths = self.scanner.scan_with_cache()
         
-        # Parse models from metadata
-        models = []
+        # Parse services from metadata
+        services = []
         for metadata_path in metadata_paths:
             try:
-                model_info = self.parser.parse_model_from_files(metadata_path)
-                models.append(model_info)
+                service_info = self.parser.parse_service_from_files(metadata_path)
+                services.append(service_info)
             except Exception as e:
                 logger.debug(f"Failed to parse {metadata_path}: {e}")
                 continue
@@ -219,20 +242,20 @@ class SyftBoxClient:
         # Apply filters
         filter_criteria = FilterCriteria(
             service_type=service_type_enum,
-            owner=owner,
+            datasite=datasite,
             has_any_tags=tags,
             max_cost=max_cost,
-            free_only=free_only,  # NEW PARAMETER USAGE
-            enabled_only=not include_disabled,
+            free_only=free_only,
+            enabled_only=True,
             **filter_kwargs
         )
         
-        model_filter = ModelFilter(filter_criteria)
-        filtered_models = model_filter.filter_models(models)
+        service_filter = ServiceFilter(filter_criteria)
+        filtered_services = service_filter.filter_services(services)
         
         # Determine if we should do health checking
         should_health_check = self._should_do_health_check(
-            health_check, len(filtered_models)
+            health_check, len(filtered_services)
         )
         
         if should_health_check:
@@ -245,69 +268,43 @@ class SyftBoxClient:
                     logger.info("Skipping health check in Jupyter environment to avoid asyncio issues")
                 else:
                     # Not in Jupyter, safe to use asyncio.run()
-                    filtered_models = asyncio.run(self._add_health_status(filtered_models))
+                    filtered_services = asyncio.run(self._add_health_status(filtered_services))
             except ImportError:
                 # IPython not available, safe to use asyncio.run()
-                filtered_models = asyncio.run(self._add_health_status(filtered_models))
+                filtered_services = asyncio.run(self._add_health_status(filtered_services))
             except Exception as e:
                 # Any other error, log and continue without health check
                 logger.warning(f"Health check failed: {e}. Continuing without health status.")
         
-        logger.info(f"Discovered {len(filtered_models)} models (health_check={should_health_check})")
-        return ModelsList(filtered_models, self)
+        logger.info(f"Discovered {len(filtered_services)} services (health_check={should_health_check})")
+        return ServicesList(filtered_services, self)
     
-    def find_model(self, model_name: str, owner: Optional[str] = None) -> Optional[ModelInfo]:
-        """Find a specific model by name.
+    def get_service(self, service_name: str, datasite: Optional[str] = None) -> Optional[ServiceInfo]:
+        """Find a specific service by name.
         
         Args:
-            model_name: Name of the model to find
-            owner: Optional owner email to narrow search
+            service_name: Name of the service to find
+            datasite: Optional datasite email to narrow search
             
         Returns:
-            ModelInfo if found, None otherwise
+            ServiceInfo if found, None otherwise
         """
-        models = self.discover_models(name=model_name, owner=owner, health_check="never")
+        services = self.list_services(name=service_name, datasite=datasite, health_check="never")
         
         # Find exact match
-        for model in models:
-            if model.name == model_name:
-                if owner is None or model.owner == owner:
-                    return model
+        for service in services:
+            if service.name == service_name:
+                if datasite is None or service.datasite == datasite:
+                    return service
         
         return None
     
-    def find_models_by_owner(self, owner_email: str) -> ModelsList:
-        """Find all models by a specific owner.
-        
-        Args:
-            owner_email: Email of the model owner
-            
-        Returns:
-            ModelsList of models owned by the user
-        """
-        return self.discover_models(owner=owner_email, health_check="never")
-    
-    def find_models_by_tags(self, tags: List[str], match_all: bool = False) -> ModelsList:
-        """Find models by tags.
-        
-        Args:
-            tags: List of tags to match
-            match_all: If True, model must have ALL tags; if False, ANY tag
-            
-        Returns:
-            ModelsList of matching models
-        """
-        if match_all:
-            return self.discover_models(has_all_tags=tags, health_check="never")
-        else:
-            return self.discover_models(has_all_tags=tags, health_check="never")
-    
     # Display Methods 
-    def list_models(self, 
+    def format_services(self, 
                    service_type: Optional[ServiceType] = None,
                    health_check: str = "auto",
                    format: str = "table") -> str:
-        """List available models in a user-friendly format.
+        """List available services in a user-friendly format.
         
         Args:
             service_type: Optional service type filter
@@ -315,150 +312,93 @@ class SyftBoxClient:
             format: Output format ("table", "json", "summary")
             
         Returns:
-            Formatted string with model information
+            Formatted string with service information
         """
-        models = self.discover_models(
+        services = self.list_services(
             service_type=service_type,
             health_check=health_check
         )
         
         if format == "table":
-            return format_models_table(models)
+            return format_services_table(services)
         elif format == "json":
             import json
-            model_dicts = [self._model_to_dict(model) for model in models]
-            return json.dumps(model_dicts, indent=2)
+            service_dicts = [self._service_to_dict(service) for service in services]
+            return json.dumps(service_dicts, indent=2)
         elif format == "summary":
-            return self._format_models_summary(models)
+            return self._format_services_summary(services)
         else:
-            return [self._model_to_dict(model) for model in models]
+            return [self._service_to_dict(service) for service in services]
     
-    def show_model_details(self, model_name: str, owner: Optional[str] = None) -> str:
-        """Show detailed information about a specific model.
+    def show_service_details(self, service_name: str, datasite: Optional[str] = None) -> str:
+        """Show detailed information about a specific service.
         
         Args:
-            model_name: Name of the model
-            owner: Optional owner to narrow search
+            service_name: Name of the service
+            datasite: Optional datasite to narrow search
             
         Returns:
-            Formatted model details
+            Formatted service details
         """
-        model = self.find_model(model_name, owner)
-        if not model:
-            return f"Model '{model_name}' not found"
+        service = self.get_service(service_name, datasite)
+        if not service:
+            return f"Service '{service_name}' not found"
         
-        return format_model_details(model)
+        return format_service_details(service)
     
-    # Model Selection Methods
-    def find_best_chat_model(self,
-                            preference: QualityPreference = QualityPreference.BALANCED,
-                            max_cost: Optional[float] = None,
-                            tags: Optional[List[str]] = None,
-                            **criteria) -> Optional[ModelInfo]:
-        """Find the best chat model based on preferences.
-        
-        Args:
-            preference: Quality preference (cheapest, balanced, premium, fastest)
-            max_cost: Maximum cost per request
-            tags: Preferred tags
-            **criteria: Additional filter criteria
-            
-        Returns:
-            Best matching chat model, or None if none found
-        """
-        models = self.discover_models(
-            service_type=ServiceType.CHAT,
-            max_cost=max_cost,
-            tags=tags,
-            health_check="auto",
-            **criteria
-        )
-        
-        # Convert ModelsList back to regular list for selection
-        models_list = list(models)
-        return self._select_best_model(models_list, preference)
-    
-    def find_best_search_model(self,
-                              preference: QualityPreference = QualityPreference.BALANCED,
-                              max_cost: Optional[float] = None,
-                              tags: Optional[List[str]] = None,
-                              **criteria) -> Optional[ModelInfo]:
-        """Find the best search model based on preferences.
-        
-        Args:
-            preference: Quality preference (cheapest, balanced, premium, fastest)
-            max_cost: Maximum cost per request
-            tags: Preferred tags
-            **criteria: Additional filter criteria
-            
-        Returns:
-            Best matching search model, or None if none found
-        """
-        models = self.discover_models(
-            service_type=ServiceType.SEARCH,
-            max_cost=max_cost,
-            tags=tags,
-            health_check="auto",
-            **criteria
-        )
-        
-        # Convert ModelsList back to regular list for selection
-        models_list = list(models)
-        return self._select_best_model(models_list, preference)
-
     # Service Usage Methods
     @require_account
-    async def chat(self,
-                   model_name: str,
+    def chat(self,
+                   service_name: str,
                    prompt: str,
-                   owner: Optional[str] = None,
+                   datasite: Optional[str] = None,
                    temperature: Optional[float] = None,
                    max_tokens: Optional[int] = None,
                    auto_pay: bool = True,
                    **kwargs) -> ChatResponse:
-        """Chat with a specific model.
+        """Chat with a specific service.
         
         Args:
-            model_name: Name of the model to use (REQUIRED)
+            service_name: Name of the service to use (REQUIRED)
             prompt: Message to send
-            owner: Owner email (required if model name is ambiguous)
+            datasite: Datasite email (required if service name is ambiguous)
             temperature: Sampling temperature (0.0-1.0)
             max_tokens: Maximum tokens to generate
-            auto_pay: Automatically handle payment for paid models
-            **kwargs: Additional model-specific parameters
+            auto_pay: Automatically handle payment for paid services
+            **kwargs: Additional service-specific parameters
             
         Returns:
-            Chat response from the specified model
+            Chat response from the specified service
             
         Example:
             response = await client.chat(
-                model_name="public-tinnyllama",
-                owner="irina@openmined.org", 
+                service_name="public-tinnyllama",
+                datasite="irina@openmined.org", 
                 prompt="Hello! Testing the API",
                 temperature=0.7
             )
         """
-        # Find the specific model
-        model = self.find_model(model_name, owner)
-        if not model:
-            if owner:
-                raise ModelNotFoundError(f"Model '{model_name}' not found for owner '{owner}'")
+        # Find the specific service
+        service = self.get_service(service_name, datasite)
+        if not service:
+            if datasite:
+                raise ServiceNotFoundError(f"Service '{service_name}' not found for datasite '{datasite}'")
             else:
-                # Show available models with same name
-                similar_models = [m for m in self.discover_models() if m.name == model_name]
-                if len(similar_models) > 1:
-                    owners = [m.owner for m in similar_models]
+                # Show available services with same name
+                similar_services = [m for m in self.list_services() if m.name == service_name]
+                if len(similar_services) > 1:
+                    datasites = [m.datasite for m in similar_services]
                     raise ValidationError(
-                        f"Multiple models named '{model_name}' found. "
-                        f"Please specify owner. Available owners: {', '.join(owners)}"
+                        f"Multiple services named '{service_name}' found. "
+                        f"Please specify datasite. Available datasites: {', '.join(datasites)}"
                     )
                 else:
-                    raise ModelNotFoundError(f"Model '{model_name}' not found")
+                    raise ServiceNotFoundError(f"Service '{service_name}' not found")
         
-        # Check if model supports chat
-        if not model.supports_service(ServiceType.CHAT):
-            raise_service_not_supported(model.name, "chat", model)
-            # raise ValidationError(f"Model '{model_name}' does not support chat service")
+        # Check if service supports chat
+        if not service.supports_service(ServiceType.CHAT):
+            raise_service_not_supported(service.name, "chat", service)
+            # raise ValidationError(f"Service '{service_name}' does not support chat service")
         
         # Build request parameters
         chat_params = {
@@ -472,49 +412,49 @@ class SyftBoxClient:
         chat_params = {k: v for k, v in chat_params.items() if v is not None}
         
         # Create service and make request
-        chat_service = ChatService(model, self.rpc_client)
-        
-        return await chat_service.chat_with_params(chat_params)
-    
+        chat_service = ChatService(service, self.rpc_client)
+
+        return asyncio.run(chat_service.chat_with_params(chat_params))
+
     @require_account
-    async def search(self,
-                    model_name: str, 
+    def search(self,
+                    service_name: str, 
                     query: str,
-                    owner: Optional[str] = None,
+                    datasite: Optional[str] = None,
                     limit: Optional[int] = None,
                     similarity_threshold: Optional[float] = None,
                     **kwargs) -> SearchResponse:
-        """Search with a specific model.
+        """Search with a specific service.
         
         Args:
-            model_name: Name of the model to use (REQUIRED)
+            service_name: Name of the service to use (REQUIRED)
             query: Search query
-            owner: Owner email (required if model name is ambiguous)
+            datasite: Datasite email (required if service name is ambiguous)
             limit: Maximum number of results
             similarity_threshold: Minimum similarity score
-            **kwargs: Additional model-specific parameters
+            **kwargs: Additional service-specific parameters
             
         Returns:
-            Search response from the specified model
+            Search response from the specified service
             
         Example:
             results = await client.search(
-                model_name="the-city",
+                service_name="the-city",
                 query="latest news",
-                owner="speters@thecity.nyc"
+                datasite="speters@thecity.nyc"
             )
         """
-        # Find the specific model
-        model = self.find_model(model_name, owner)
-        if not model:
-            if owner:
-                raise ModelNotFoundError(f"Model '{model_name}' not found for owner '{owner}'")
+        # Find the specific service
+        service = self.get_service(service_name, datasite)
+        if not service:
+            if datasite:
+                raise ServiceNotFoundError(f"Service '{service_name}' not found for datasite '{datasite}'")
             else:
-                raise ModelNotFoundError(f"Model '{model_name}' not found")
+                raise ServiceNotFoundError(f"Service '{service_name}' not found")
         
-        # Check if model supports search
-        if not model.supports_service(ServiceType.SEARCH):
-            raise ValidationError(f"Model '{model_name}' does not support search service")
+        # Check if service supports search
+        if not service.supports_service(ServiceType.SEARCH):
+            raise ValidationError(f"Service '{service_name}' does not support search service")
         
         # Build request parameters
         search_params = {
@@ -528,108 +468,146 @@ class SyftBoxClient:
         search_params = {k: v for k, v in search_params.items() if v is not None}
         
         # Create service and make request
-        search_service = SearchService(model, self.rpc_client)
-        
-        return await search_service.search_with_params(search_params)
+        search_service = SearchService(service, self.rpc_client)
 
-    # Service Factory Methods
+        return asyncio.run(search_service.search_with_params(search_params))
+
     @require_account
-    async def chat_with_best(self, 
-                            prompt: str,
-                            max_cost: Optional[float] = None,
-                            tags: Optional[List[str]] = None,
-                            preference: str = "balanced",
-                            **chat_params) -> ChatResponse:
-        """Find best chat model and use it.
+    async def chat_async(self,
+                   service_name: str,
+                   prompt: str,
+                   datasite: Optional[str] = None,
+                   temperature: Optional[float] = None,
+                   max_tokens: Optional[int] = None,
+                   auto_pay: bool = True,
+                   **kwargs) -> ChatResponse:
+        """Chat with a specific service.
         
         Args:
+            service_name: Name of the service to use (REQUIRED)
             prompt: Message to send
-            max_cost: Maximum cost willing to pay
-            tags: Preferred model tags
-            preference: Selection preference (cheapest, balanced, premium)
-            **chat_params: Parameters for the chat request
+            datasite: Datasite email (required if service name is ambiguous)
+            temperature: Sampling temperature (0.0-1.0)
+            max_tokens: Maximum tokens to generate
+            auto_pay: Automatically handle payment for paid services
+            **kwargs: Additional service-specific parameters
             
         Returns:
-            Chat response with model info included
+            Chat response from the specified service
             
         Example:
-            # This is explicit about model selection happening
-            response = await client.chat_with_best(
-                prompt="Hello!",
-                max_cost=0.10,
-                tags=["opensource"],
+            response = await client.chat(
+                service_name="public-tinnyllama",
+                datasite="irina@openmined.org", 
+                prompt="Hello! Testing the API",
                 temperature=0.7
             )
-            print(f"Used model: {response.model}")
         """
-        # Find best model with explicit criteria
-        best_model = self.find_best_chat_model(
-            max_cost=max_cost,
-            tags=tags,
-            preference=preference
-        )
+        # Find the specific service
+        service = self.get_service(service_name, datasite)
+        if not service:
+            if datasite:
+                raise ServiceNotFoundError(f"Service '{service_name}' not found for datasite '{datasite}'")
+            else:
+                # Show available services with same name
+                similar_services = [m for m in self.list_services() if m.name == service_name]
+                if len(similar_services) > 1:
+                    datasites = [m.datasite for m in similar_services]
+                    raise ValidationError(
+                        f"Multiple services named '{service_name}' found. "
+                        f"Please specify datasite. Available datasites: {', '.join(datasites)}"
+                    )
+                else:
+                    raise ServiceNotFoundError(f"Service '{service_name}' not found")
         
-        if not best_model:
-            raise ModelNotFoundError("No suitable chat models found with specified criteria")
+        # Check if service supports chat
+        if not service.supports_service(ServiceType.CHAT):
+            raise_service_not_supported(service.name, "chat", service)
+            # raise ValidationError(f"Service '{service_name}' does not support chat service")
         
-        logger.info(f"Selected model: {best_model.name} by {best_model.owner}")
+        # Build request parameters
+        chat_params = {
+            "prompt": prompt,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+            **kwargs
+        }
         
-        # Use the selected model
-        return await self.chat(
-            model_name=best_model.name,
-            owner=best_model.owner,
-            prompt=prompt,
-            **chat_params
-        )
-
+        # Remove None values
+        chat_params = {k: v for k, v in chat_params.items() if v is not None}
+        
+        # Create service and make request
+        chat_service = ChatService(service, self.rpc_client)
+        
+        return await chat_service.chat_with_params(chat_params)
+    
     @require_account
-    async def search_with_best(self,
-                              query: str,
-                              max_cost: Optional[float] = None,
-                              tags: Optional[List[str]] = None,
-                              preference: str = "balanced",
-                              **search_params) -> SearchResponse:
-        """Find best search model and use it.
+    async def search_async(self,
+                    service_name: str, 
+                    query: str,
+                    datasite: Optional[str] = None,
+                    limit: Optional[int] = None,
+                    similarity_threshold: Optional[float] = None,
+                    **kwargs) -> SearchResponse:
+        """Search with a specific service.
         
         Args:
+            service_name: Name of the service to use (REQUIRED)
             query: Search query
-            max_cost: Maximum cost willing to pay
-            tags: Preferred model tags
-            preference: Selection preference
-            **search_params: Parameters for the search request
+            datasite: Datasite email (required if service name is ambiguous)
+            limit: Maximum number of results
+            similarity_threshold: Minimum similarity score
+            **kwargs: Additional service-specific parameters
             
         Returns:
-            Search response with model info included
+            Search response from the specified service
+            
+        Example:
+            results = await client.search(
+                service_name="the-city",
+                query="latest news",
+                datasite="speters@thecity.nyc"
+            )
         """
-        best_model = self.find_best_search_model(
-            max_cost=max_cost,
-            tags=tags,
-            preference=preference
-        )
+        # Find the specific service
+        service = self.get_service(service_name, datasite)
+        if not service:
+            if datasite:
+                raise ServiceNotFoundError(f"Service '{service_name}' not found for datasite '{datasite}'")
+            else:
+                raise ServiceNotFoundError(f"Service '{service_name}' not found")
         
-        if not best_model:
-            raise ModelNotFoundError("No suitable search models found with specified criteria")
-
-        logger.info(f"Selected model: {best_model.name} by {best_model.owner}")
-
-        return await self.search(
-            model_name=best_model.name,
-            owner=best_model.owner,
-            query=query,
-            **search_params
-        )
+        # Check if service supports search
+        if not service.supports_service(ServiceType.SEARCH):
+            raise ValidationError(f"Service '{service_name}' does not support search service")
+        
+        # Build request parameters
+        search_params = {
+            "query": query,
+            "limit": limit,
+            "similarity_threshold": similarity_threshold,
+            **kwargs
+        }
+        
+        # Remove None values
+        search_params = {k: v for k, v in search_params.items() if v is not None}
+        
+        # Create service and make request
+        search_service = SearchService(service, self.rpc_client)
+        
+        return await search_service.search_with_params(search_params)
     
-    # Model Parameters
-    def get_model_parameters(self, model_name: str, owner: Optional[str] = None) -> Dict[str, Any]:
-        """Get available parameters for a specific model."""
-        model = self.find_model(model_name, owner)
-        if not model:
-            raise ModelNotFoundError(f"Model '{model_name}' not found")
+    # Service Parameters
+    def get_service_parameters(self, service_name: str, datasite: Optional[str] = None) -> Dict[str, Any]:
+        """Get available parameters for a specific service."""
+        service = self.get_service(service_name, datasite)
+        if not service:
+            raise ServiceNotFoundError(f"Service '{service_name}' not found")
         
         parameters = {}
         
-        if model.endpoints and "components" in model.endpoints:
-            schemas = model.endpoints["components"].get("schemas", {})
+        if service.endpoints and "components" in service.endpoints:
+            schemas = service.endpoints["components"].get("schemas", {})
             
             # Extract chat parameters
             chat_request = schemas.get("ChatRequest", {})
@@ -650,7 +628,7 @@ class SyftBoxClient:
         required_fields = set(request_schema.get("required", []))
         
         # Skip system fields
-        skip_fields = {"userEmail", "model", "messages", "query", "transactionToken"}
+        skip_fields = {"userEmail", "service", "messages", "query", "transactionToken"}
         
         for field_name, field_info in properties.items():
             if field_name in skip_fields:
@@ -724,38 +702,38 @@ class SyftBoxClient:
             if constraint in field_info:
                 param_info[constraint] = field_info[constraint]
 
-    def show_model_usage(self, model_name: str, owner: Optional[str] = None) -> str:
-        """Show usage examples for a specific model.
+    def show_service_usage(self, service_name: str, datasite: Optional[str] = None) -> str:
+        """Show usage examples for a specific service.
         
         Args:
-            model_name: Name of the model
-            owner: Owner email if needed
+            service_name: Name of the service
+            datasite: Datasite email if needed
             
         Returns:
             Formatted usage examples
         """
-        model = self.find_model(model_name, owner)
-        if not model:
-            raise ModelNotFoundError(f"Model '{model_name}' not found")
+        service = self.get_service(service_name, datasite)
+        if not service:
+            raise ServiceNotFoundError(f"Service '{service_name}' not found")
         
         examples = []
-        examples.append(f"# Usage examples for {model.name}")
-        examples.append(f"# Owner: {model.owner}")
+        examples.append(f"# Usage examples for {service.name}")
+        examples.append(f"# Datasite: {service.datasite}")
         examples.append("")
         
-        if model.supports_service(ServiceType.CHAT):
+        if service.supports_service(ServiceType.CHAT):
             examples.extend([
                 "# Basic chat",
                 f'response = await client.chat(',
-                f'    model_name="{model.name}",',
-                f'    owner="{model.owner}",',
+                f'    service_name="{service.name}",',
+                f'    datasite="{service.datasite}",',
                 f'    prompt="Hello! How are you?"',
                 f')',
                 "",
                 "# Chat with parameters",
                 f'response = await client.chat(',
-                f'    model_name="{model.name}",',
-                f'    owner="{model.owner}",',
+                f'    service_name="{service.name}",',
+                f'    datasite="{service.datasite}",',
                 f'    prompt="Write a story",',
                 f'    temperature=0.7,',
                 f'    max_tokens=200',
@@ -763,19 +741,19 @@ class SyftBoxClient:
                 ""
             ])
         
-        if model.supports_service(ServiceType.SEARCH):
+        if service.supports_service(ServiceType.SEARCH):
             examples.extend([
                 "# Basic search",
                 f'results = await client.search(',
-                f'    model_name="{model.name}",',
-                f'    owner="{model.owner}",',
+                f'    service_name="{service.name}",',
+                f'    datasite="{service.datasite}",',
                 f'    query="machine learning"',
                 f')',
                 "",
                 "# Search with parameters", 
                 f'results = await client.search(',
-                f'    model_name="{model.name}",',
-                f'    owner="{model.owner}",',
+                f'    service_name="{service.name}",',
+                f'    datasite="{service.datasite}",',
                 f'    query="latest AI research",',
                 f'    limit=10,',
                 f'    similarity_threshold=0.8',
@@ -784,8 +762,8 @@ class SyftBoxClient:
             ])
         
         # Add pricing info
-        if model.min_pricing > 0:
-            examples.append(f"# Cost: ${model.min_pricing} per request")
+        if service.min_pricing > 0:
+            examples.append(f"# Cost: ${service.min_pricing} per request")
         else:
             examples.append("# Cost: Free")
         
@@ -794,30 +772,30 @@ class SyftBoxClient:
     # RAG Workflow
     @require_account
     async def chat_with_search_context(self,
-                                    search_models: Union[str, List[str], List[Dict[str, str]]],
-                                    chat_model: str,
+                                    search_services: Union[str, List[str], List[Dict[str, str]]],
+                                    chat_service: str,
                                     prompt: str,
-                                    chat_owner: Optional[str] = None,
+                                    chat_datasite: Optional[str] = None,
                                     max_search_results: int = 3,
                                     search_similarity_threshold: Optional[float] = None,
                                     context_format: str = "frontend",  # "frontend" or "simple"
                                     **chat_kwargs) -> ChatResponse:
-        """Perform search across multiple models then chat with context injection.
+        """Perform search across multiple services then chat with context injection.
         
         This method replicates the frontend pattern where users can:
-        1. Chat only (if no search_models provided)
-        2. Search + Chat (if search_models provided - becomes RAG workflow)
+        1. Chat only (if no search_services provided)
+        2. Search + Chat (if search_services provided - becomes RAG workflow)
         
         Args:
-            search_models: Search models to query (OPTIONAL). Can be:
+            search_services: Search services to query (OPTIONAL). Can be:
                         - None or [] for chat-only
-                        - Single model name: "model-name"
-                        - List of names: ["model1", "model2"] 
-                        - List with owners: [{"name": "model1", "owner": "user@email.com"}]
-            chat_model: Name of chat model for final response (REQUIRED)
+                        - Single service name: "service-name"
+                        - List of names: ["service1", "service2"] 
+                        - List with datasites: [{"name": "service1", "datasite": "user@email.com"}]
+            chat_service: Name of chat service for final response (REQUIRED)
             prompt: User's question/prompt
-            chat_owner: Owner of chat model (if ambiguous)
-            max_search_results: Max results per search model (ignored if no search)
+            chat_datasite: Datasite of chat service (if ambiguous)
+            max_search_results: Max results per search service (ignored if no search)
             search_similarity_threshold: Minimum similarity score (ignored if no search)
             context_format: How to format context ("frontend" matches web app, "simple" is cleaner)
             **chat_kwargs: Additional parameters for chat request (temperature, max_tokens, etc.)
@@ -828,15 +806,15 @@ class SyftBoxClient:
         Example:
             # Chat only (like frontend with no data sources selected)
             response = await client.chat_with_search_context(
-                search_models=[],  # No search - just chat
-                chat_model="gpt-assistant", 
+                search_services=[],  # No search - just chat
+                chat_service="gpt-assistant", 
                 prompt="What is machine learning?"
             )
             
             # RAG workflow (like frontend with data sources selected)
             response = await client.chat_with_search_context(
-                search_models=["legal-docs", "company-policies"],
-                chat_model="gpt-assistant", 
+                search_services=["legal-docs", "company-policies"],
+                chat_service="gpt-assistant", 
                 prompt="What are our remote work policies?",
                 max_search_results=5,
                 temperature=0.7
@@ -844,24 +822,24 @@ class SyftBoxClient:
         """
         logger.info(f"Starting RAG workflow: search → chat")
         
-        # Normalize search models to list of dicts
-        search_model_specs = self._normalize_model_specs(search_models)
+        # Normalize search services to list of dicts
+        search_service_specs = self._normalize_service_specs(search_services)
         
-        if not search_model_specs:
-            # No search models - do chat only (like frontend with no data sources)
-            logger.info(f"Chat-only mode: no search models specified")
+        if not search_service_specs:
+            # No search services - do chat only (like frontend with no data sources)
+            logger.info(f"Chat-only mode: no search services specified")
             
-            # Find and validate chat model
-            chat_model_info = self.find_model(chat_model, chat_owner)
-            if not chat_model_info:
-                raise ModelNotFoundError(f"Chat model '{chat_model}' not found" + 
-                                    (f" for owner '{chat_owner}'" if chat_owner else ""))
+            # Find and validate chat service
+            chat_service_info = self.get_service(chat_service, chat_datasite)
+            if not chat_service_info:
+                raise ServiceNotFoundError(f"Chat service '{chat_service}' not found" + 
+                                    (f" for datasite '{chat_datasite}'" if chat_datasite else ""))
             
-            if not chat_model_info.supports_service(ServiceType.CHAT):
-                raise ValidationError(f"Model '{chat_model}' does not support chat service")
+            if not chat_service_info.supports_service(ServiceType.CHAT):
+                raise ValidationError(f"Service '{chat_service}' does not support chat service")
             
             # Direct chat without search context
-            chat_service = ChatService(chat_model_info, self.rpc_client)
+            chat_service = ChatService(chat_service_info, self.rpc_client)
             
             # Build simple messages (just system + user)
             messages = [
@@ -887,7 +865,7 @@ class SyftBoxClient:
             chat_response.provider_info.update({
                 "rag_workflow": False,
                 "chat_only": True,
-                "search_models_used": [],
+                "search_services_used": [],
                 "search_results_count": 0,
                 "context_injected": False
             })
@@ -895,28 +873,28 @@ class SyftBoxClient:
             logger.info(f"✅ Chat-only completed - Cost: ${chat_response.cost:.4f}")
             return chat_response
         
-        # Step 1: Search across specified models (RAG mode)
-        logger.info(f"🔍 RAG mode: searching {len(search_model_specs)} models for context")
+        # Step 1: Search across specified services (RAG mode)
+        logger.info(f"🔍 RAG mode: searching {len(search_service_specs)} services for context")
         search_responses = []
         
-        for model_spec in search_model_specs:
-            model_name = model_spec["name"]
-            owner = model_spec.get("owner")
+        for service_spec in search_service_specs:
+            service_name = service_spec["name"]
+            datasite = service_spec.get("datasite")
             
             try:
                 search_response = await self.search(
-                    model_name=model_name,
+                    service_name=service_name,
                     query=prompt,  # Use the prompt as search query
-                    owner=owner,
+                    datasite=datasite,
                     limit=max_search_results,
                     similarity_threshold=search_similarity_threshold
                 )
                 search_responses.append(search_response)
-                logger.debug(f"✅ Search completed: {model_name} returned {len(search_response.results)} results")
+                logger.debug(f"✅ Search completed: {service_name} returned {len(search_response.results)} results")
                 
             except Exception as e:
-                logger.warning(f"⚠️ Search failed for {model_name}: {e}")
-                # Continue with other models - graceful degradation
+                logger.warning(f"⚠️ Search failed for {service_name}: {e}")
+                # Continue with other services - graceful degradation
                 continue
         
         # Step 2: Aggregate and format search results
@@ -964,20 +942,20 @@ class SyftBoxClient:
         # Add user prompt
         messages.append(ChatMessage(role="user", content=prompt))
         
-        # Step 5: Send to chat model
-        logger.info(f"Sending enhanced prompt to chat model: {chat_model}")
+        # Step 5: Send to chat service
+        logger.info(f"Sending enhanced prompt to chat service: {chat_service}")
         
-        # Find and validate chat model
-        chat_model_info = self.find_model(chat_model, chat_owner)
-        if not chat_model_info:
-            raise ModelNotFoundError(f"Chat model '{chat_model}' not found" + 
-                                (f" for owner '{chat_owner}'" if chat_owner else ""))
+        # Find and validate chat service
+        chat_service_info = self.get_service(chat_service, chat_datasite)
+        if not chat_service_info:
+            raise ServiceNotFoundError(f"Chat service '{chat_service}' not found" + 
+                                (f" for datasite '{chat_datasite}'" if chat_datasite else ""))
         
-        if not chat_model_info.supports_service(ServiceType.CHAT):
-            raise ValidationError(f"Model '{chat_model}' does not support chat service")
+        if not chat_service_info.supports_service(ServiceType.CHAT):
+            raise ValidationError(f"Service '{chat_service}' does not support chat service")
         
         # Create chat service and send enhanced conversation
-        chat_service = ChatService(chat_model_info, self.rpc_client)
+        chat_service = ChatService(chat_service_info, self.rpc_client)
         
         try:
             chat_response = await chat_service.send_conversation(
@@ -991,7 +969,7 @@ class SyftBoxClient:
             
             chat_response.provider_info.update({
                 "rag_workflow": True,
-                "search_models_used": [spec["name"] for spec in search_model_specs],
+                "search_services_used": [spec["name"] for spec in search_service_specs],
                 "search_results_count": len(all_results),
                 "total_search_cost": total_search_cost,
                 "context_injected": context_message is not None
@@ -1008,21 +986,21 @@ class SyftBoxClient:
             raise
 
     @require_account
-    async def search_multiple_models(self,
-                                    model_names: Union[List[str], List[Dict[str, str]]],
+    async def search_multiple_services(self,
+                                    service_names: Union[List[str], List[Dict[str, str]]],
                                     query: str,
-                                    limit_per_model: int = 3,
+                                    limit_per_service: int = 3,
                                     total_limit: Optional[int] = None,
                                     similarity_threshold: Optional[float] = None,
                                     remove_duplicates: bool = True,
                                     sort_by_score: bool = True,
                                     **search_kwargs) -> SearchResponse:
-        """Search across multiple models and aggregate results.
+        """Search across multiple services and aggregate results.
         
         Args:
-            model_names: List of model names or model specs with owners
+            service_names: List of service names or service specs with datasites
             query: Search query
-            limit_per_model: Max results per individual model
+            limit_per_service: Max results per individual service
             total_limit: Max results in final aggregated response (None = no limit)
             similarity_threshold: Minimum similarity score
             remove_duplicates: Remove duplicate content based on content hash
@@ -1030,51 +1008,51 @@ class SyftBoxClient:
             **search_kwargs: Additional parameters for search requests
             
         Returns:
-            SearchResponse with aggregated results from all models
+            SearchResponse with aggregated results from all services
             
         Example:
             # Search multiple data sources
-            results = await client.search_multiple_models(
-                model_names=["legal-docs", "company-wiki", "slack-archive"],
+            results = await client.search_multiple_services(
+                service_names=["legal-docs", "company-wiki", "slack-archive"],
                 query="vacation policy changes",
-                limit_per_model=5,
+                limit_per_service=5,
                 total_limit=10
             )
         """
-        logger.info(f"Multi-model search across {len(model_names)} models")
+        logger.info(f"Multi-service search across {len(service_names)} services")
         
-        # Normalize model specs
-        model_specs = self._normalize_model_specs(model_names)
+        # Normalize service specs
+        service_specs = self._normalize_service_specs(service_names)
         
         all_results = []
         total_cost = 0.0
-        successful_models = []
-        failed_models = []
+        successful_services = []
+        failed_services = []
         
-        # Search each model
-        for model_spec in model_specs:
-            model_name = model_spec["name"]
-            owner = model_spec.get("owner")
+        # Search each service
+        for service_spec in service_specs:
+            service_name = service_spec["name"]
+            datasite = service_spec.get("datasite")
             
             try:
                 response = await self.search(
-                    model_name=model_name,
+                    service_name=service_name,
                     query=query,
-                    owner=owner,
-                    limit=limit_per_model,
+                    datasite=datasite,
+                    limit=limit_per_service,
                     similarity_threshold=similarity_threshold,
                     **search_kwargs
                 )
                 
                 all_results.extend(response.results)
                 total_cost += response.cost or 0.0
-                successful_models.append(model_name)
+                successful_services.append(service_name)
                 
-                logger.debug(f"✅ {model_name}: {len(response.results)} results")
+                logger.debug(f"✅ {service_name}: {len(response.results)} results")
                 
             except Exception as e:
-                logger.warning(f"⚠️ Search failed for {model_name}: {e}")
-                failed_models.append({"model": model_name, "error": str(e)})
+                logger.warning(f"⚠️ Search failed for {service_name}: {e}")
+                failed_services.append({"service": service_name, "error": str(e)})
                 continue
         
         # Remove duplicates if requested
@@ -1098,35 +1076,35 @@ class SyftBoxClient:
             results=all_results,
             cost=total_cost,
             provider_info={
-                "multi_model_search": True,
-                "successful_models": successful_models,
-                "failed_models": failed_models,
-                "total_models_searched": len(successful_models),
+                "multi_service_search": True,
+                "successful_services": successful_services,
+                "failed_services": failed_services,
+                "total_services_searched": len(successful_services),
                 "deduplication_applied": remove_duplicates,
                 "sorted_by_score": sort_by_score
             }
         )
         
-        logger.info(f"Multi-search completed: {len(all_results)} results from {len(successful_models)}/{len(model_specs)} models")
+        logger.info(f"Multi-search completed: {len(all_results)} results from {len(successful_services)}/{len(service_specs)} services")
         
         return aggregated_response
     
     @require_account
     async def search_then_chat(self,
-                            search_model: str,
-                            chat_model: str,
+                            search_service: str,
+                            chat_service: str,
                             prompt: str,
-                            search_owner: Optional[str] = None,
-                            chat_owner: Optional[str] = None,
+                            search_datasite: Optional[str] = None,
+                            chat_datasite: Optional[str] = None,
                             **kwargs) -> ChatResponse:
-        """Simplified single-model search then chat workflow.
+        """Simplified single-service search then chat workflow.
         
         Args:
-            search_model: Name of model to search
-            chat_model: Name of model to chat with
+            search_service: Name of service to search
+            chat_service: Name of service to chat with
             prompt: User prompt (used for both search and chat)
-            search_owner: Owner of search model
-            chat_owner: Owner of chat model
+            search_datasite: Datasite of search service
+            chat_datasite: Datasite of chat service
             **kwargs: Additional parameters for both search and chat
             
         Returns:
@@ -1134,50 +1112,50 @@ class SyftBoxClient:
             
         Example:
             response = await client.search_then_chat(
-                search_model="company-docs",
-                chat_model="assistant-gpt",
+                search_service="company-docs",
+                chat_service="assistant-gpt",
                 prompt="How do I submit expenses?"
             )
         """
         return await self.chat_with_search_context(
-            search_models=[{"name": search_model, "owner": search_owner} if search_owner else search_model],
-            chat_model=chat_model,
+            search_services=[{"name": search_service, "datasite": search_datasite} if search_datasite else search_service],
+            chat_service=chat_service,
             prompt=prompt,
-            chat_owner=chat_owner,
+            chat_datasite=chat_datasite,
             **kwargs
         )
 
     # Private methods to support RAG coordination
-    def _normalize_model_specs(self, models: Union[str, List[str], List[Dict[str, str]]]) -> List[Dict[str, str]]:
-        """Normalize various model specification formats to list of dicts.
+    def _normalize_service_specs(self, services: Union[str, List[str], List[Dict[str, str]]]) -> List[Dict[str, str]]:
+        """Normalize various service specification formats to list of dicts.
         
         Args:
-            models: Models in various formats
+            services: Services in various formats
             
         Returns:
-            List of model specs with 'name' and optional 'owner' keys
+            List of service specs with 'name' and optional 'datasite' keys
         """
-        if isinstance(models, str):
-            # Single model name
-            return [{"name": models}]
+        if isinstance(services, str):
+            # Single service name
+            return [{"name": services}]
         
-        elif isinstance(models, list):
+        elif isinstance(services, list):
             normalized = []
-            for model in models:
-                if isinstance(model, str):
-                    # List of model names
-                    normalized.append({"name": model})
-                elif isinstance(model, dict):
-                    # List of model specs
-                    if "name" not in model:
-                        raise ValidationError(f"Model spec missing 'name' key: {model}")
-                    normalized.append(model)
+            for service in services:
+                if isinstance(service, str):
+                    # List of service names
+                    normalized.append({"name": service})
+                elif isinstance(service, dict):
+                    # List of service specs
+                    if "name" not in service:
+                        raise ValidationError(f"Service spec missing 'name' key: {service}")
+                    normalized.append(service)
                 else:
-                    raise ValidationError(f"Invalid model specification: {model}")
+                    raise ValidationError(f"Invalid service specification: {service}")
             return normalized
         
         else:
-            raise ValidationError(f"Invalid models format: {type(models)}")
+            raise ValidationError(f"Invalid services format: {type(services)}")
 
     def _format_search_context(self, results: List[DocumentResult], format_type: str = "frontend") -> str:
         """Format search results as context for chat injection.
@@ -1238,70 +1216,70 @@ class SyftBoxClient:
         return unique_results
 
     def get_rag_cost_estimate(self,
-                            search_models: Union[str, List[str], List[Dict[str, str]]],
-                            chat_model: str,
-                            chat_owner: Optional[str] = None) -> Dict[str, Any]:
+                            search_services: Union[str, List[str], List[Dict[str, str]]],
+                            chat_service: str,
+                            chat_datasite: Optional[str] = None) -> Dict[str, Any]:
         """Get cost estimate for RAG workflow before execution.
         
         Provides transparent cost breakdown so users can make informed decisions
-        about which models to use (matching the frontend's cost preview).
+        about which services to use (matching the frontend's cost preview).
         
         Args:
-            search_models: Search models to estimate
-            chat_model: Chat model to estimate
-            chat_owner: Owner of chat model
+            search_services: Search services to estimate
+            chat_service: Chat service to estimate
+            chat_datasite: Datasite of chat service
             
         Returns:
-            Dictionary with cost breakdown and model details
+            Dictionary with cost breakdown and service details
             
         Example:
             # Preview costs before RAG workflow
             estimate = client.get_rag_cost_estimate(
-                search_models=["docs-1", "docs-2"],
-                chat_model="premium-chat"
+                search_services=["docs-1", "docs-2"],
+                chat_service="paid-chat"
             )
             print(f"Total cost: ${estimate['total_cost']}")
-            print(f"Models: {estimate['model_summary']}")
+            print(f"Services: {estimate['service_summary']}")
         """
-        search_model_specs = self._normalize_model_specs(search_models)
+        search_service_specs = self._normalize_service_specs(search_services)
         
         breakdown = {
-            "search_models": [],
-            "chat_model": None,
+            "search_services": [],
+            "chat_service": None,
             "search_cost": 0.0,
             "chat_cost": 0.0, 
             "total_cost": 0.0,
-            "model_summary": {
-                "search_count": len(search_model_specs),
-                "search_names": [spec["name"] for spec in search_model_specs],
-                "chat_name": chat_model
+            "service_summary": {
+                "search_count": len(search_service_specs),
+                "search_names": [spec["name"] for spec in search_service_specs],
+                "chat_name": chat_service
             }
         }
         
-        # Get search model costs
-        for spec in search_model_specs:
-            model = self.find_model(spec["name"], spec.get("owner"))
-            if model:
-                search_service = model.get_service_info(ServiceType.SEARCH)
+        # Get search service costs
+        for spec in search_service_specs:
+            service = self.get_service(spec["name"], spec.get("datasite"))
+            if service:
+                search_service = service.get_service_info(ServiceType.SEARCH)
                 if search_service:
-                    model_cost = search_service.pricing
-                    breakdown["search_cost"] += model_cost
-                    breakdown["search_models"].append({
-                        "name": model.name,
-                        "owner": model.owner,
-                        "cost": model_cost,
+                    service_cost = search_service.pricing
+                    breakdown["search_cost"] += service_cost
+                    breakdown["search_services"].append({
+                        "name": service.name,
+                        "datasite": service.datasite,
+                        "cost": service_cost,
                         "charge_type": search_service.charge_type.value
                     })
         
-        # Get chat model cost
-        chat_model_info = self.find_model(chat_model, chat_owner)
-        if chat_model_info:
-            chat_service = chat_model_info.get_service_info(ServiceType.CHAT)
+        # Get chat service cost
+        chat_service_info = self.get_service(chat_service, chat_datasite)
+        if chat_service_info:
+            chat_service = chat_service_info.get_service_info(ServiceType.CHAT)
             if chat_service:
                 breakdown["chat_cost"] = chat_service.pricing
-                breakdown["chat_model"] = {
-                    "name": chat_model_info.name,
-                    "owner": chat_model_info.owner,
+                breakdown["chat_service"] = {
+                    "name": chat_service_info.name,
+                    "datasite": chat_service_info.datasite,
                     "cost": chat_service.pricing,
                     "charge_type": chat_service.charge_type.value
                 }
@@ -1311,57 +1289,57 @@ class SyftBoxClient:
         return breakdown
 
     def preview_rag_workflow(self,
-                            search_models: Union[str, List[str], List[Dict[str, str]]],
-                            chat_model: str,
-                            chat_owner: Optional[str] = None) -> str:
-        """Preview RAG workflow with model details and costs.
+                            search_services: Union[str, List[str], List[Dict[str, str]]],
+                            chat_service: str,
+                            chat_datasite: Optional[str] = None) -> str:
+        """Preview RAG workflow with service details and costs.
         
         Provides a human-readable preview of the RAG workflow showing exactly
-        which models will be used and their costs (transparency like frontend).
+        which services will be used and their costs (transparency like frontend).
         
         Args:
-            search_models: Search models for the workflow
-            chat_model: Chat model for the workflow  
-            chat_owner: Owner of chat model
+            search_services: Search services for the workflow
+            chat_service: Chat service for the workflow  
+            chat_datasite: Datasite of chat service
             
         Returns:
             Formatted preview string
             
         Example:
             preview = client.preview_rag_workflow(
-                search_models=["legal-docs", "hr-policies"],
-                chat_model="gpt-assistant"
+                search_services=["legal-docs", "hr-policies"],
+                chat_service="gpt-assistant"
             )
             print(preview)
         """
-        estimate = self.get_rag_cost_estimate(search_models, chat_model, chat_owner)
+        estimate = self.get_rag_cost_estimate(search_services, chat_service, chat_datasite)
         
         lines = [
             "RAG Workflow Preview",
             "=" * 30,
             "",
-            f"Search Phase ({len(estimate['search_models'])} models):"
+            f"Search Phase ({len(estimate['search_services'])} services):"
         ]
         
-        if estimate["search_models"]:
-            for model in estimate["search_models"]:
-                cost_str = f"${model['cost']:.4f}" if model['cost'] > 0 else "Free"
-                lines.append(f"  • {model['name']} by {model['owner']} - {cost_str}")
+        if estimate["search_services"]:
+            for service in estimate["search_services"]:
+                cost_str = f"${service['cost']:.4f}" if service['cost'] > 0 else "Free"
+                lines.append(f"  • {service['name']} by {service['datasite']} - {cost_str}")
             lines.append(f"  Subtotal: ${estimate['search_cost']:.4f}")
         else:
-            lines.append("  • No valid search models found")
+            lines.append("  • No valid search services found")
         
         lines.extend([
             "",
             "Chat Phase:"
         ])
         
-        if estimate["chat_model"]:
-            chat = estimate["chat_model"]
+        if estimate["chat_service"]:
+            chat = estimate["chat_service"]
             cost_str = f"${chat['cost']:.4f}" if chat['cost'] > 0 else "Free"
-            lines.append(f"  • {chat['name']} by {chat['owner']} - {cost_str}")
+            lines.append(f"  • {chat['name']} by {chat['datasite']} - {cost_str}")
         else:
-            lines.append("  • Chat model not found")
+            lines.append("  • Chat service not found")
         
         lines.extend([
             "",
@@ -1372,100 +1350,100 @@ class SyftBoxClient:
         
         return "\n".join(lines)
     
-    def get_chat_service(self, model_name: str) -> ChatService:
-        """Get a chat service for a specific model.
+    def get_chat_service(self, service_name: str) -> ChatService:
+        """Get a chat service for a specific service.
         
         Args:
-            model_name: Name of the model
+            service_name: Name of the service
             
         Returns:
             ChatService instance
         """
-        model = self.find_model(model_name)
-        if not model:
-            raise_model_not_found(model_name)
+        service = self.get_service(service_name)
+        if not service:
+            raise_service_not_found(service_name)
         
-        return ChatService(model, self.rpc_client)
+        return ChatService(service, self.rpc_client)
     
-    def get_search_service(self, model_name: str) -> SearchService:
-        """Get a search service for a specific model.
+    def get_search_service(self, service_name: str) -> SearchService:
+        """Get a search service for a specific service.
         
         Args:
-            model_name: Name of the model
+            service_name: Name of the service
             
         Returns:
             SearchService instance
         """
-        model = self.find_model(model_name)
-        if not model:
-            raise_model_not_found(model_name)
+        service = self.get_service(service_name)
+        if not service:
+            raise_service_not_found(service_name)
         
-        return SearchService(model, self.rpc_client)
+        return SearchService(service, self.rpc_client)
     
-    def create_conversation(self, model_name: str, owner: Optional[str] = None) -> ConversationManager:
-        """Create a conversation manager for a chat model.
+    def create_conversation(self, service_name: str, datasite: Optional[str] = None) -> ConversationManager:
+        """Create a conversation manager for a chat service.
         
         Args:
-            model_name: Name of the chat model
-            owner: Owner email (required if model name is ambiguous)
+            service_name: Name of the chat service
+            datasite: Datasite email (required if service name is ambiguous)
             
         Returns:
             ConversationManager instance
         """
-        # Find and validate model
-        model = self.find_model(model_name, owner)
-        if not model:
-            if owner:
-                raise ModelNotFoundError(f"Model '{model_name}' not found for owner '{owner}'")
+        # Find and validate service
+        service = self.get_service(service_name, datasite)
+        if not service:
+            if datasite:
+                raise ServiceNotFoundError(f"Service '{service_name}' not found for datasite '{datasite}'")
             else:
-                raise ModelNotFoundError(f"Model '{model_name}' not found")
+                raise ServiceNotFoundError(f"Service '{service_name}' not found")
         
-        if not model.supports_service(ServiceType.CHAT):
-            raise ValidationError(f"Model '{model_name}' does not support chat service")
+        if not service.supports_service(ServiceType.CHAT):
+            raise ValidationError(f"Service '{service_name}' does not support chat service")
         
         # Create chat service and conversation manager
-        chat_service = ChatService(model, self.rpc_client)
+        chat_service = ChatService(service, self.rpc_client)
         return ConversationManager(chat_service)
     
     # Health Monitoring Methods
-    async def check_model_health(self, model_name: str, timeout: float = 2.0) -> HealthStatus:
-        """Check health of a specific model.
+    async def check_service_health(self, service_name: str, timeout: float = 2.0) -> HealthStatus:
+        """Check health of a specific service.
         
         Args:
-            model_name: Name of the model to check
+            service_name: Name of the service to check
             timeout: Timeout for health check
             
         Returns:
-            Health status of the model
+            Health status of the service
         """
-        model = self.find_model(model_name)
-        if not model:
-            raise_model_not_found(model_name)
+        service = self.get_service(service_name)
+        if not service:
+            raise_service_not_found(service_name)
         
-        return await check_model_health(model, self.rpc_client, timeout)
+        return await check_service_health(service, self.rpc_client, timeout)
     
-    async def check_all_models_health(self, 
+    async def check_all_services_health(self, 
                                      service_type: Optional[ServiceType] = None,
                                      timeout: float = 2.0) -> Dict[str, HealthStatus]:
-        """Check health of all discovered models.
+        """Check health of all discovered services.
         
         Args:
             service_type: Optional service type filter
             timeout: Timeout per health check
             
         Returns:
-            Dictionary mapping model names to health status
+            Dictionary mapping service names to health status
         """
-        models = self.discover_models(service_type=service_type, health_check="never")
-        return await batch_health_check(models, self.rpc_client, timeout)
+        services = self.list_services(service_type=service_type, health_check="never")
+        return await batch_health_check(services, self.rpc_client, timeout)
     
     def start_health_monitoring(self, 
-                               models: Optional[List[str]] = None,
+                               services: Optional[List[str]] = None,
                                check_interval: float = 30.0) -> HealthMonitor:
         """Start continuous health monitoring.
         
         Args:
-            models: Optional list of model names to monitor (default: all chat/search models)
+            services: Optional list of service names to monitor (default: all chat/search services)
             check_interval: Seconds between health checks
             
         Returns:
@@ -1477,18 +1455,18 @@ class SyftBoxClient:
         
         self._health_monitor = HealthMonitor(self.rpc_client, check_interval)
         
-        # Add models to monitor
-        if models:
-            for model_name in models:
-                model = self.find_model(model_name)
-                if model:
-                    self._health_monitor.add_model(model)
+        # Add services to monitor
+        if services:
+            for service_name in services:
+                service = self.get_service(service_name)
+                if service:
+                    self._health_monitor.add_service(service)
         else:
-            # Monitor all enabled chat/search models
-            all_models = self.discover_models(health_check="never")
-            for model in all_models:
-                if model.supports_service(ServiceType.CHAT) or model.supports_service(ServiceType.SEARCH):
-                    self._health_monitor.add_model(model)
+            # Monitor all enabled chat/search services
+            all_services = self.list_services(health_check="never")
+            for service in all_services:
+                if service.supports_service(ServiceType.CHAT) or service.supports_service(ServiceType.SEARCH):
+                    self._health_monitor.add_service(service)
         
         # Start monitoring
         asyncio.create_task(self._health_monitor.start_monitoring())
@@ -1502,39 +1480,105 @@ class SyftBoxClient:
             self._health_monitor = None
     
     # Accounting Integration Methods
-    async def setup_accounting(self, email: str, password: str, service_url: Optional[str] = None, save_config: bool = False):
+    def register_accounting(self, email: str, password: str, organization: Optional[str] = None):
+        """
+        Register a new accounting user.
+        """
+        try:
+            asyncio.run(self.accounting_client.create_accounting_user(email, password, organization))
+            self.accounting_client.save_credentials()
+
+            # logger.info("Accounting setup successful")
+            self.connect_accounting(email, password, self.accounting_client.accounting_url)
+            logger.info("Accounting setup completed and connected successful")
+
+        except Exception as e:
+            raise AuthenticationError(f"Accounting setup failed: {e}")
+
+    def connect_accounting(self, email: str, password: str, accounting_url: Optional[str] = None, save_config: bool = False):
         """Setup accounting credentials.
         
         Args:
             email: Accounting service email
             password: Accounting service password  
-            service_url: Accounting service URL (uses env var if not provided)
+            accounting_url: Accounting service URL (uses env var if not provided)
             save_config: Whether to save config to file (requires explicit user consent)
         """
         # Get service URL from environment if not provided
-        if service_url is None:
-            service_url = os.getenv('SYFTBOX_ACCOUNTING_URL')
+        if accounting_url is None:
+            accounting_url = os.getenv('SYFTBOX_ACCOUNTING_URL')
         
-        if not service_url:
+        if not accounting_url:
             raise ValueError(
                 "Accounting service URL is required. Please either:\n"
                 "1. Set SYFTBOX_ACCOUNTING_URL in your .env file, or\n"
-                "2. Pass service_url parameter to this method"
+                "2. Pass accounting_url parameter to this method"
             )
         
         try:
             # Configure the accounting client
-            self.accounting_client.configure(service_url, email, password)
+            self.accounting_client.configure(accounting_url, email, password)
             
             # Test the connection
-            await self.accounting_client.get_account_info()
+            # await self.accounting_client.get_account_info()
             
             # Save config if explicitly requested
             if save_config:
                 self.accounting_client.save_credentials()
+
+            logger.info(f"Accounting setup successful for {self.accounting_client.get_email()}")
+
+        except Exception as e:
+            raise AuthenticationError(f"Accounting setup failed: {e}")
+        
+    async def register_accounting_async(self, email: str, password: str, organization: Optional[str] = None):
+        """
+        Register a new accounting user.
+        """
+        try:
+            await self.accounting_client.create_accounting_user(email, password, organization)
+            self.accounting_client.save_credentials()
+
+            # logger.info("Accounting setup successful")
+            await self.connect_accounting_async(email, password, self.accounting_client.accounting_url)
+            logger.info("Accounting setup completed and connected successful")
+
+        except Exception as e:
+            raise AuthenticationError(f"Accounting setup failed: {e}")
+
+    async def connect_accounting_async(self, email: str, password: str, accounting_url: Optional[str] = None, save_config: bool = False):
+        """Setup accounting credentials.
+        
+        Args:
+            email: Accounting service email
+            password: Accounting service password  
+            accounting_url: Accounting service URL (uses env var if not provided)
+            save_config: Whether to save config to file (requires explicit user consent)
+        """
+        # Get service URL from environment if not provided
+        if accounting_url is None:
+            accounting_url = os.getenv('SYFTBOX_ACCOUNTING_URL')
+        
+        if not accounting_url:
+            raise ValueError(
+                "Accounting service URL is required. Please either:\n"
+                "1. Set SYFTBOX_ACCOUNTING_URL in your .env file, or\n"
+                "2. Pass accounting_url parameter to this method"
+            )
+        
+        try:
+            # Configure the accounting client
+            self.accounting_client.configure(accounting_url, email, password)
             
-            logger.info("Accounting setup successful")
+            # Test the connection
+            # await self.accounting_client.get_account_info()
             
+            # Save config if explicitly requested
+            if save_config:
+                self.accounting_client.save_credentials()
+
+            logger.info(f"Accounting setup successful for {self.accounting_client.get_email()}")
+
         except Exception as e:
             raise AuthenticationError(f"Accounting setup failed: {e}")
         
@@ -1559,7 +1603,7 @@ class SyftBoxClient:
             return (
                 "Accounting not configured\n"
                 "   Use client.setup_accounting() to configure payment services\n"
-                "   Currently limited to free models only"
+                "   Currently limited to free services only"
             )
         
         try:
@@ -1577,7 +1621,7 @@ class SyftBoxClient:
                 f"Accounting configured\n"
                 f"   Email: {account_info['email']}\n" 
                 f"   Balance: ${account_info['balance']}\n"
-                f"   Can use both free and paid models"
+                f"   Can use both free and paid services"
             )
         except Exception as e:
             return (
@@ -1586,32 +1630,32 @@ class SyftBoxClient:
                 f"   May need to reconfigure credentials"
             )
         
-    async def _ensure_payment_setup(self, model: ModelInfo) -> Optional[str]:
-        """Ensure payment is set up for a paid model.
+    async def _ensure_payment_setup(self, service: ServiceInfo) -> Optional[str]:
+        """Ensure payment is set up for a paid service.
         
         Args:
-            model: Model that requires payment
+            service: Service that requires payment
             
         Returns:
             Transaction token if payment required, None if free
         """
-        # Check if model requires payment
+        # Check if service requires payment
         service_info = None
-        if model.supports_service(ServiceType.CHAT):
-            service_info = model.get_service_info(ServiceType.CHAT)
-        elif model.supports_service(ServiceType.SEARCH):
-            service_info = model.get_service_info(ServiceType.SEARCH)
+        if service.supports_service(ServiceType.CHAT):
+            service_info = service.get_service_info(ServiceType.CHAT)
+        elif service.supports_service(ServiceType.SEARCH):
+            service_info = service.get_service_info(ServiceType.SEARCH)
         
         if not service_info or service_info.pricing == 0:
-            return None  # Free model
+            return None  # Free service
         
-        # Model requires payment - ensure accounting is set up
+        # Service requires payment - ensure accounting is set up
         if not self.is_accounting_configured():
             if self.auto_setup_accounting:
                 print(f"\n💰 Payment Required")
-                print(f"Model '{model.name}' costs ${service_info.pricing} per request")
-                print(f"Owner: {model.owner}")
-                print(f"\nAccounting setup required for paid models.")
+                print(f"Service '{service.name}' costs ${service_info.pricing} per request")
+                print(f"Datasite: {service.datasite}")
+                print(f"\nAccounting setup required for paid services.")
                 
                 try:
                     response = input("Would you like to set up accounting now? (y/n): ").lower().strip()
@@ -1627,137 +1671,131 @@ class SyftBoxClient:
                     return None
             else:
                 raise PaymentError(
-                    f"Model '{model.name}' requires payment (${service_info.pricing}) "
+                    f"Service '{service.name}' requires payment (${service_info.pricing}) "
                     "but accounting is not configured"
                 )
         
         # Create transaction token
         try:
-            token = await self.rpc_client.create_transaction_token(model.owner)
-            logger.info(f"💰 Payment authorized: ${service_info.pricing} to {model.owner}")
+            token = await self.rpc_client.create_transaction_token(service.datasite)
+            logger.info(f"Payment authorized: ${service_info.pricing} to {service.datasite}")
             return token
         except Exception as e:
             raise PaymentError(f"Failed to create payment token: {e}")
-        
-
-
-
-
-        
 
     # Updated Service Usage Methods
     def get_statistics(self) -> Dict[str, Any]:
-        """Get statistics about discovered models.
+        """Get statistics about discovered services.
         
         Returns:
-            Dictionary with model statistics
+            Dictionary with service statistics
         """
-        models = self.discover_models(health_check="never", include_disabled=True)
+        services = self.list_services(health_check="never")
         
         # Count by service type
-        chat_models = [m for m in models if m.supports_service(ServiceType.CHAT)]
-        search_models = [m for m in models if m.supports_service(ServiceType.SEARCH)]
+        chat_services = [m for m in services if m.supports_service(ServiceType.CHAT)]
+        search_services = [m for m in services if m.supports_service(ServiceType.SEARCH)]
         
         # Count by pricing
-        free_models = [m for m in models if m.min_pricing == 0]
-        paid_models = [m for m in models if m.min_pricing > 0]
+        free_services = [m for m in services if m.min_pricing == 0]
+        paid_services = [m for m in services if m.min_pricing > 0]
         
-        # Count by owner
-        owners = {}
-        for model in models:
-            owners[model.owner] = owners.get(model.owner, 0) + 1
+        # Count by datasite
+        datasites = {}
+        for service in services:
+            datasites[service.datasite] = datasites.get(service.datasite, 0) + 1
         
         return {
-            "total_models": len(models),
-            "enabled_models": len([m for m in models if m.has_enabled_services]),
-            "disabled_models": len([m for m in models if not m.has_enabled_services]),
-            "chat_models": len(chat_models),
-            "search_models": len(search_models),
-            "free_models": len(free_models),
-            "paid_models": len(paid_models),
-            "total_owners": len(owners),
-            "avg_models_per_owner": len(models) / len(owners) if owners else 0,
-            "top_owners": sorted(owners.items(), key=lambda x: x[1], reverse=True)[:5]
+            "total_services": len(services),
+            "enabled_services": len([m for m in services if m.has_enabled_services]),
+            "disabled_services": len([m for m in services if not m.has_enabled_services]),
+            "chat_services": len(chat_services),
+            "search_services": len(search_services),
+            "free_services": len(free_services),
+            "paid_services": len(paid_services),
+            "total_datasites": len(datasites),
+            "avg_services_per_datasite": len(services) / len(datasites) if datasites else 0,
+            "top_datasites": sorted(datasites.items(), key=lambda x: x[1], reverse=True)[:5]
         }
     
     def clear_cache(self):
-        """Clear the model discovery cache."""
+        """Clear the service discovery cache."""
         self.scanner.clear_cache()
     
     # Private Helper Methods
-    def _should_do_health_check(self, health_check: str, model_count: int) -> bool:
+    def _should_do_health_check(self, health_check: str, service_count: int) -> bool:
         """Determine if health checking should be performed."""
         if health_check == "always":
             return True
         elif health_check == "never":
             return False
         elif health_check == "auto":
-            return model_count <= self.auto_health_check_threshold
+            return service_count <= self.auto_health_check_threshold
         else:
             raise ValueError(f"Invalid health_check value: {health_check}")
     
-    async def _add_health_status(self, models: List[ModelInfo]) -> List[ModelInfo]:
-        """Add health status to models."""
-        health_status = await batch_health_check(models, self.rpc_client, timeout=2.0)
+    async def _add_health_status(self, services: List[ServiceInfo]) -> List[ServiceInfo]:
+        """Add health status to services."""
+        health_status = await batch_health_check(services, self.rpc_client, timeout=2.0)
         
-        for model in models:
-            model.health_status = health_status.get(model.name, HealthStatus.UNKNOWN)
+        for service in services:
+            service.health_status = health_status.get(service.name, HealthStatus.UNKNOWN)
         
-        return models
+        return services
     
-    def _select_best_model(self, models: List[ModelInfo], 
-                          preference: QualityPreference) -> Optional[ModelInfo]:
-        """Select the best model based on preference."""
-        if not models:
+    def _select_best_service(self, services: List[ServiceInfo], 
+                          preference: QualityPreference) -> Optional[ServiceInfo]:
+        """Select the best service based on preference."""
+        if not services:
             return None
         
         if preference == QualityPreference.CHEAPEST:
-            return min(models, key=lambda m: m.min_pricing)
+            return min(services, key=lambda m: m.min_pricing)
         elif preference == QualityPreference.PREMIUM:
-            return max(models, key=lambda m: m.min_pricing)
+            return max(services, key=lambda m: m.min_pricing)
         elif preference == QualityPreference.FASTEST:
-            # Prefer models with health status ONLINE, then by pricing
-            online_models = [m for m in models if m.health_status == HealthStatus.ONLINE]
-            if online_models:
-                return min(online_models, key=lambda m: m.min_pricing)
-            return models[0]  # Fallback to first model
+            # Prefer services with health status ONLINE, then by pricing
+            online_services = [m for m in services if m.health_status == HealthStatus.ONLINE]
+            if online_services:
+                return min(online_services, key=lambda m: m.min_pricing)
+            return services[0]  # Fallback to first service
         elif preference == QualityPreference.BALANCED:
             # Balance between cost and quality indicators
-            def score_model(model: ModelInfo) -> float:
+            def score_service(service: ServiceInfo) -> float:
                 score = 0.0
                 
                 # Lower cost is better (inverse scoring)
-                if model.min_pricing == 0:
+                if service.min_pricing == 0:
                     score += 1.0  # Free is great
                 else:
-                    score += max(0, 1.0 - (model.min_pricing / 1.0))  # Diminishing returns
+                    score += max(0, 1.0 - (service.min_pricing / 1.0))  # Diminishing returns
                 
                 # Health status bonus
-                if model.health_status == HealthStatus.ONLINE:
+                if service.health_status == HealthStatus.ONLINE:
                     score += 0.5
                 
                 # Quality tags bonus
-                quality_tags = {'premium', 'gpt4', 'claude', 'high-quality', 'enterprise'}
-                tag_matches = len(set(model.tags).intersection(quality_tags))
+                quality_tags = {'paid', 'gpt4', 'claude', 'high-quality', 'enterprise'}
+                tag_matches = len(set(service.tags).intersection(quality_tags))
                 score += tag_matches * 0.1
                 
                 # Multiple services bonus
-                score += len(model.enabled_service_types) * 0.1
+                score += len(service.enabled_service_types) * 0.1
                 
                 return score
             
-            return max(models, key=score_model)
+            return max(services, key=score_service)
         else:
-            return models[0]
+            return services[0]
     
-    def _model_to_dict(self, model: ModelInfo) -> Dict[str, Any]:
-        """Convert ModelInfo to dictionary for JSON serialization."""
+    def _service_to_dict(self, service: ServiceInfo) -> Dict[str, Any]:
+        """Convert ServiceInfo to dictionary for JSON serialization."""
         return {
-            "name": model.name,
-            "owner": model.owner,
-            "summary": model.summary,
-            "description": model.description,
-            "tags": model.tags,
+            "name": service.name,
+            "datasite": service.datasite,
+            "summary": service.summary,
+            "description": service.description,
+            "tags": service.tags,
             "services": [
                 {
                     "type": service.type.value,
@@ -1765,46 +1803,46 @@ class SyftBoxClient:
                     "pricing": service.pricing,
                     "charge_type": service.charge_type.value
                 }
-                for service in model.services
+                for service in service.services
             ],
-            "config_status": model.config_status.value,
-            "health_status": model.health_status.value if model.health_status else None,
-            "delegate_email": model.delegate_email,
-            "min_pricing": model.min_pricing,
-            "max_pricing": model.max_pricing
+            "config_status": service.config_status.value,
+            "health_status": service.health_status.value if service.health_status else None,
+            "delegate_email": service.delegate_email,
+            "min_pricing": service.min_pricing,
+            "max_pricing": service.max_pricing
         }
     
-    def _format_models_summary(self, models: List[ModelInfo]) -> str:
-        """Format models as a summary."""
-        if not models:
-            return "No models found."
+    def _format_services_summary(self, services: List[ServiceInfo]) -> str:
+        """Format services as a summary."""
+        if not services:
+            return "No services found."
         
-        lines = [f"Found {len(models)} models:\n"]
+        lines = [f"Found {len(services)} services:\n"]
         
-        # Group by owner
-        by_owner = {}
-        for model in models:
-            if model.owner not in by_owner:
-                by_owner[model.owner] = []
-            by_owner[model.owner].append(model)
+        # Group by datasite
+        by_datasite = {}
+        for service in services:
+            if service.datasite not in by_datasite:
+                by_datasite[service.datasite] = []
+            by_datasite[service.datasite].append(service)
         
-        for owner, owner_models in sorted(by_owner.items()):
-            lines.append(f"📧 {owner} ({len(owner_models)} models)")
+        for datasite, datasite_services in sorted(by_datasite.items()):
+            lines.append(f"📧 {datasite} ({len(datasite_services)} services)")
             
-            for model in sorted(owner_models, key=lambda m: m.name):
-                services = ", ".join([s.type.value for s in model.services if s.enabled])
-                pricing = f"${model.min_pricing}" if model.min_pricing > 0 else "Free"
+            for service in sorted(datasite_services, key=lambda m: m.name):
+                services = ", ".join([s.type.value for s in service.services if s.enabled])
+                pricing = f"${service.min_pricing}" if service.min_pricing > 0 else "Free"
                 health = ""
-                if model.health_status:
-                    if model.health_status == HealthStatus.ONLINE:
+                if service.health_status:
+                    if service.health_status == HealthStatus.ONLINE:
                         health = " ✅"
-                    elif model.health_status == HealthStatus.OFFLINE:
+                    elif service.health_status == HealthStatus.OFFLINE:
                         health = " ❌"
-                    elif model.health_status == HealthStatus.TIMEOUT:
+                    elif service.health_status == HealthStatus.TIMEOUT:
                         health = " ⏱️"
                 
-                lines.append(f"  • {model.name} ({services}) - {pricing}{health}")
+                lines.append(f"  • {service.name} ({services}) - {pricing}{health}")
             
-            lines.append("")  # Empty line between owners
+            lines.append("")  # Empty line between datasites
         
         return "\n".join(lines)

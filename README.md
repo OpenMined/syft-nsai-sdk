@@ -1,26 +1,26 @@
 # SyftBox NSAI SDK
 
-Python SDK for discovering and using SyftBox AI models with built-in payment handling and RAG coordination.
+Python SDK for discovering and using SyftBox AI services with built-in payment handling and RAG coordination.
 
 ## Quick Start
 
 ```python
 import asyncio
-from syft_nsai_sdk import SyftBoxClient
+from syft_nsai_sdk import Client
 
 async def main():
-    async with SyftBoxClient() as client:
-        # Setup accounting for paid models
+    async with Client() as client:
+        # Setup accounting for paid services
         await client.setup_accounting(
             email,
             password,
             # service_url,
         )
         
-        # Chat with a model
+        # Chat with a service
         response = await client.chat(
-            model_name="claude-sonnet-3.5",
-            owner="aggregator@openmined.org",
+            service_name="claude-sonnet-3.5",
+            datasite="aggregator@openmined.org",
             prompt="Hello! What is syftbox?",
             temperature=0.7,
             max_tokens=200
@@ -35,21 +35,21 @@ asyncio.run(main())
 ### Model Discovery
 
 ```python
-# Discover available models
-# Discover available models
-models = client.discover_models(
+# Discover available services
+# Discover available services
+services = client.discover_services(
     service_type="chat",  # "chat" or "search"
-    owner="user@domain.com",
+    datasite="user@domain.com",
     tags=["opensource"],
     max_cost=0.10,
     health_check="auto"  # "auto", "always", "never"
 )
 
-# Find specific model
-model = client.find_model("model-name", owner="user@domain.com")
+# Find specific service
+service = client.find_service("service-name", datasite="user@domain.com")
 
-# Find best model by criteria
-best_chat = client.find_best_chat_model(
+# Find best service by criteria
+best_chat = client.find_best_chat_service(
     preference="balanced",  # "cheapest", "balanced", "premium", "fastest"
     max_cost=0.50,
     tags=["helpful"]
@@ -61,14 +61,14 @@ best_chat = client.find_best_chat_model(
 ```python
 # Direct chat
 response = await client.chat(
-    model_name="gpt-assistant",
-    owner="ai-team@company.com",
+    service_name="gpt-assistant",
+    datasite="ai-team@company.com",
     prompt="Explain quantum computing",
     temperature=0.7,
     max_tokens=500
 )
 
-# Auto-select best chat model
+# Auto-select best chat service
 response = await client.chat_with_best(
     prompt="What's the weather like?",
     max_cost=0.25,
@@ -82,14 +82,14 @@ response = await client.chat_with_best(
 ```python
 # Direct search
 results = await client.search(
-    model_name="legal-database",
-    owner="legal@company.com", 
+    service_name="legal-database",
+    datasite="legal@company.com", 
     query="employment contracts",
     limit=10,
     similarity_threshold=0.8
 )
 
-# Auto-select best search model
+# Auto-select best search service
 results = await client.search_with_best(
     query="company policies remote work",
     max_cost=0.15,
@@ -97,11 +97,11 @@ results = await client.search_with_best(
     limit=5
 )
 
-# Search multiple models
-results = await client.search_multiple_models(
-    model_names=["docs", "wiki", "policies"],
+# Search multiple services
+results = await client.search_multiple_services(
+    service_names=["docs", "wiki", "policies"],
     query="vacation policy",
-    limit_per_model=3,
+    limit_per_service=3,
     total_limit=10,
     remove_duplicates=True
 )
@@ -112,22 +112,22 @@ results = await client.search_multiple_models(
 ```python
 # Preview RAG workflow costs
 preview = client.preview_rag_workflow(
-    search_models=["legal-docs", "hr-policies"],
-    chat_model="gpt-assistant"
+    search_services=["legal-docs", "hr-policies"],
+    chat_service="gpt-assistant"
 )
 print(preview)
 
 # Chat only (no search context)
 response = await client.chat_with_search_context(
-    search_models=[],  # No search models = chat only
-    chat_model="claude-assistant",
+    search_services=[],  # No search services = chat only
+    chat_service="claude-assistant",
     prompt="What is machine learning?"
 )
 
 # RAG workflow (search + chat)
 response = await client.chat_with_search_context(
-    search_models=["legal-docs", "hr-policies", "wiki"],
-    chat_model="claude-assistant", 
+    search_services=["legal-docs", "hr-policies", "wiki"],
+    chat_service="claude-assistant", 
     prompt="What's our remote work policy?",
     max_search_results=5,
     temperature=0.7
@@ -135,8 +135,8 @@ response = await client.chat_with_search_context(
 
 # Simple search-then-chat
 response = await client.search_then_chat(
-    search_model="company-docs",
-    chat_model="helpful-assistant", 
+    search_service="company-docs",
+    chat_service="helpful-assistant", 
     prompt="How do I submit expenses?"
 )
 ```
@@ -147,15 +147,15 @@ The `chat_with_search_context()` method supports both patterns:
 ```python
 # Chat only (like frontend with no data sources)
 response = await client.chat_with_search_context(
-    search_models=[],  # Empty = chat only
-    chat_model="assistant",
+    search_services=[],  # Empty = chat only
+    chat_service="assistant",
     prompt="What is Python?"
 )
 
 # RAG workflow (like frontend with data sources selected)
 response = await client.chat_with_search_context(
-    search_models=["docs", "wiki"],  # Search + chat
-    chat_model="assistant",
+    search_services=["docs", "wiki"],  # Search + chat
+    chat_service="assistant",
     prompt="What's our policy?"
 )
 ```
@@ -163,32 +163,32 @@ response = await client.chat_with_search_context(
 ### Model Information
 
 ```python
-# List available models
-print(client.list_models(service_type="chat", format="table"))
+# List available services
+print(client.format_services(service_type="chat", format="table"))
 
-# Get model details
-details = client.show_model_details("model-name", owner="user@domain.com")
+# Get service details
+details = client.show_service_details("service-name", datasite="user@domain.com")
 
 # Show usage examples
-examples = client.show_model_usage("gpt-model", owner="ai-team@company.com")
+examples = client.show_service_usage("gpt-service", datasite="ai-team@company.com")
 
 # Get statistics
 stats = client.get_statistics()
-print(f"Total models: {stats['total_models']}")
+print(f"Total services: {stats['total_services']}")
 ```
 
 ### Health Monitoring
 
 ```python
-# Check single model health
-status = await client.check_model_health("model-name", timeout=5.0)
+# Check single service health
+status = await client.check_service_health("service-name", timeout=5.0)
 
-# Check all models
-health_status = await client.check_all_models_health(service_type="chat")
+# Check all services
+health_status = await client.check_all_services_health(service_type="chat")
 
 # Start continuous monitoring
 monitor = client.start_health_monitoring(
-    models=["model1", "model2"],
+    services=["service1", "service2"],
     check_interval=30.0
 )
 ```
@@ -208,8 +208,8 @@ print(client.show_accounting_status())
 
 # Cost estimation
 estimate = client.get_rag_cost_estimate(
-    search_models=["docs1", "docs2"], 
-    chat_model="premium-chat"
+    search_services=["docs1", "docs2"], 
+    chat_service="premium-chat"
 )
 print(f"Total cost: ${estimate['total_cost']}")
 ```
@@ -221,7 +221,7 @@ print(f"Total cost: ${estimate['total_cost']}")
 response.message.content    # String: The AI's response
 response.cost              # Float: Cost of the request  
 response.usage.total_tokens # Int: Tokens used
-response.model             # String: Model name used
+response.service             # String: Model name used
 response.provider_info     # Dict: Additional provider details
 ```
 
@@ -251,7 +251,7 @@ from syft_nsai_sdk.core.exceptions import (
 )
 
 try:
-    response = await client.chat(model_name="invalid-model", prompt="test")
+    response = await client.chat(service_name="invalid-service", prompt="test")
 except ModelNotFoundError:
     print("Model not found")
 except PaymentError:
@@ -267,8 +267,8 @@ except ValidationError as e:
 ```python
 # Create conversation manager
 conversation = client.create_conversation(
-    model_name="claude-sonnet-3.5",
-    owner="aggregator@openmined.org"
+    service_name="claude-sonnet-3.5",
+    datasite="aggregator@openmined.org"
 )
 
 # Optional: Set system message
@@ -306,7 +306,7 @@ conversation.clear_history()
 # SYFTBOX_ACCOUNTING_PASSWORD  
 # SYFTBOX_ACCOUNTING_URL
 # Custom configuration
-client = SyftBoxClient(
+client = Client(
     user_email="your@email.com",
     cache_server_url="https://custom.syftbox.net",
     auto_setup_accounting=True,

@@ -1,5 +1,5 @@
 """
-File system scanner for discovering SyftBox models across datasites
+File system scanner for discovering SyftBox services across datasites
 """
 import os
 from pathlib import Path
@@ -12,15 +12,15 @@ from ..core.exceptions import ConfigurationError
 logger = logging.getLogger(__name__)
 
 
-class ModelScanner:
-    """Scanner for discovering models across SyftBox datasites."""
+class ServiceScanner:
+    """Scanner for discovering services across SyftBox datasites."""
     
     def __init__(self, syftbox_config: SyftBoxConfig):
         self.config = syftbox_config
         self.datasites_path = syftbox_config.datasites_path
     
     def scan_all_datasites(self, exclude_current_user: bool = False) -> List[Path]:
-        """Scan all datasites for published models.
+        """Scan all datasites for published services.
         
         Args:
             exclude_current_user: If True, skip current user's datasite
@@ -54,19 +54,19 @@ class ModelScanner:
                 logger.warning(f"Error scanning datasite {datasite_dir.name}: {e}")
                 continue
         
-        logger.debug(f"Found {len(metadata_paths)} models across {len(list(self.datasites_path.iterdir()))} datasites")
+        logger.debug(f"Found {len(metadata_paths)} services across {len(list(self.datasites_path.iterdir()))} datasites")
         return metadata_paths
     
-    def scan_datasite(self, owner_email: str) -> List[Path]:
-        """Scan a specific datasite for published models.
+    def scan_datasite(self, datasite_email: str) -> List[Path]:
+        """Scan a specific datasite for published services.
         
         Args:
-            owner_email: Email of the datasite owner
+            datasite_email: Email of the datasite datasite
             
         Returns:
             List of paths to metadata.json files for this datasite
         """
-        datasite_path = self.datasites_path / owner_email
+        datasite_path = self.datasites_path / datasite_email
         
         if not datasite_path.exists():
             logger.debug(f"Datasite not found: {datasite_path}")
@@ -76,49 +76,49 @@ class ModelScanner:
         routers_path = datasite_path / "public" / "routers"
         
         if not routers_path.exists():
-            logger.debug(f"No published routers found for {owner_email}")
+            logger.debug(f"No published routers found for {datasite_email}")
             return []
         
         metadata_paths = []
         
-        for model_dir in routers_path.iterdir():
-            if not model_dir.is_dir():
+        for service_dir in routers_path.iterdir():
+            if not service_dir.is_dir():
                 continue
             
-            metadata_path = model_dir / "metadata.json"
+            metadata_path = service_dir / "metadata.json"
             if metadata_path.exists() and self.is_valid_metadata_file(metadata_path):
                 metadata_paths.append(metadata_path)
             else:
                 logger.debug(f"Invalid or missing metadata: {metadata_path}")
         
-        logger.debug(f"Found {len(metadata_paths)} models for {owner_email}")
+        logger.debug(f"Found {len(metadata_paths)} services for {datasite_email}")
         return metadata_paths
     
-    def find_metadata_files(self, model_name: Optional[str] = None, 
-                           owner_email: Optional[str] = None) -> List[Path]:
+    def find_metadata_files(self, service_name: Optional[str] = None, 
+                           datasite_email: Optional[str] = None) -> List[Path]:
         """Find specific metadata files with optional filtering.
         
         Args:
-            model_name: Optional model name to filter by
-            owner_email: Optional owner email to filter by
+            service_name: Optional service name to filter by
+            datasite_email: Optional datasite email to filter by
             
         Returns:
             List of matching metadata.json paths
         """
-        if owner_email:
+        if datasite_email:
             # Search specific datasite
-            all_paths = self.scan_datasite(owner_email)
+            all_paths = self.scan_datasite(datasite_email)
         else:
             # Search all datasites
             all_paths = self.scan_all_datasites()
         
-        if not model_name:
+        if not service_name:
             return all_paths
         
-        # Filter by model name
+        # Filter by service name
         filtered_paths = []
         for path in all_paths:
-            if path.parent.name == model_name:
+            if path.parent.name == service_name:
                 filtered_paths.append(path)
         
         return filtered_paths
@@ -145,39 +145,39 @@ class ModelScanner:
         except (json.JSONDecodeError, PermissionError, OSError):
             return False
     
-    def is_valid_model_directory(self, model_path: Path) -> bool:
-        """Check if a directory contains a valid model.
+    def is_valid_service_directory(self, service_path: Path) -> bool:
+        """Check if a directory contains a valid service.
         
         Args:
-            model_path: Path to potential model directory
+            service_path: Path to potential service directory
             
         Returns:
             True if directory contains valid metadata.json
         """
-        if not model_path.is_dir():
+        if not service_path.is_dir():
             return False
         
-        metadata_path = model_path / "metadata.json"
+        metadata_path = service_path / "metadata.json"
         return self.is_valid_metadata_file(metadata_path)
     
     def get_rpc_schema_path(self, metadata_path: Path) -> Optional[Path]:
-        """Find the RPC schema file for a given model.
+        """Find the RPC schema file for a given service.
         
         Args:
-            metadata_path: Path to the model's metadata.json
+            metadata_path: Path to the service's metadata.json
             
         Returns:
             Path to rpc.schema.json if found, None otherwise
         """
-        # Extract model info from metadata path
-        # Expected structure: datasites/{owner}/public/routers/{model}/metadata.json
+        # Extract service info from metadata path
+        # Expected structure: datasites/{datasite}/public/routers/{service}/metadata.json
         try:
-            model_name = metadata_path.parent.name
-            owner_email = metadata_path.parent.parent.parent.parent.name
+            service_name = metadata_path.parent.name
+            datasite_email = metadata_path.parent.parent.parent.parent.name
             
-            # Expected RPC schema location: datasites/{owner}/app_data/{model}/rpc/rpc.schema.json
-            rpc_schema_path = (self.datasites_path / owner_email / 
-                              "app_data" / model_name / "rpc" / "rpc.schema.json")
+            # Expected RPC schema location: datasites/{datasite}/app_data/{service}/rpc/rpc.schema.json
+            rpc_schema_path = (self.datasites_path / datasite_email / 
+                              "app_data" / service_name / "rpc" / "rpc.schema.json")
             
             if rpc_schema_path.exists():
                 return rpc_schema_path
@@ -191,31 +191,31 @@ class ModelScanner:
         
         return None
     
-    def get_model_statistics(self) -> Dict[str, int]:
-        """Get statistics about discovered models.
+    def get_service_statistics(self) -> Dict[str, int]:
+        """Get statistics about discovered services.
         
         Returns:
-            Dictionary with model discovery statistics
+            Dictionary with service discovery statistics
         """
         all_paths = self.scan_all_datasites()
         
-        # Count by owner
-        owners = {}
-        total_models = len(all_paths)
+        # Count by datasite
+        datasites = {}
+        total_services = len(all_paths)
         
         for path in all_paths:
             try:
-                # Extract owner from path
-                owner = path.parent.parent.parent.parent.name
-                owners[owner] = owners.get(owner, 0) + 1
+                # Extract datasite from path
+                datasite = path.parent.parent.parent.parent.name
+                datasites[datasite] = datasites.get(datasite, 0) + 1
             except (IndexError, AttributeError):
                 continue
         
         return {
-            "total_models": total_models,
-            "total_owners": len(owners),
-            "models_per_owner": owners,
-            "average_models_per_owner": total_models / len(owners) if owners else 0
+            "total_services": total_services,
+            "total_datasites": len(datasites),
+            "services_per_datasite": datasites,
+            "average_services_per_datasite": total_services / len(datasites) if datasites else 0
         }
     
     def list_datasites(self) -> List[str]:
@@ -234,27 +234,27 @@ class ModelScanner:
         
         return sorted(datasites)
     
-    def get_models_for_owner(self, owner_email: str) -> List[str]:
-        """Get list of model names for a specific owner.
+    def get_services_for_datasite(self, datasite_email: str) -> List[str]:
+        """Get list of service names for a specific datasite.
         
         Args:
-            owner_email: Email of the model owner
+            datasite_email: Email of the service datasite
             
         Returns:
-            List of model names owned by this user
+            List of service names owned by this user
         """
-        metadata_paths = self.scan_datasite(owner_email)
-        model_names = []
+        metadata_paths = self.scan_datasite(datasite_email)
+        service_names = []
         
         for path in metadata_paths:
-            model_name = path.parent.name
-            model_names.append(model_name)
+            service_name = path.parent.name
+            service_names.append(service_name)
         
-        return sorted(model_names)
+        return sorted(service_names)
 
 
 class FastScanner:
-    """Optimized scanner for large numbers of models."""
+    """Optimized scanner for large numbers of services."""
     
     def __init__(self, syftbox_config: SyftBoxConfig):
         self.config = syftbox_config
@@ -271,21 +271,21 @@ class FastScanner:
             List of paths to metadata.json files
         """
         if self._cache is None or force_refresh:
-            scanner = ModelScanner(self.config)
+            scanner = ServiceScanner(self.config)
             all_paths = scanner.scan_all_datasites()
             
-            # Cache by owner for faster lookups
+            # Cache by datasite for faster lookups
             self._cache = {}
             for path in all_paths:
                 try:
-                    owner = path.parent.parent.parent.parent.name
-                    if owner not in self._cache:
-                        self._cache[owner] = []
-                    self._cache[owner].append(path)
+                    datasite = path.parent.parent.parent.parent.name
+                    if datasite not in self._cache:
+                        self._cache[datasite] = []
+                    self._cache[datasite].append(path)
                 except (IndexError, AttributeError):
                     continue
             
-            logger.debug(f"Cached {len(all_paths)} models from {len(self._cache)} owners")
+            logger.debug(f"Cached {len(all_paths)} services from {len(self._cache)} datasites")
         
         # Return flattened list
         all_paths = []
@@ -294,20 +294,20 @@ class FastScanner:
         
         return all_paths
     
-    def get_cached_models_for_owner(self, owner_email: str) -> List[Path]:
-        """Get cached models for specific owner.
+    def get_cached_services_for_datasite(self, datasite_email: str) -> List[Path]:
+        """Get cached services for specific datasite.
         
         Args:
-            owner_email: Email of the model owner
+            datasite_email: Email of the service datasite
             
         Returns:
-            List of cached metadata paths for this owner
+            List of cached metadata paths for this datasite
         """
         if self._cache is None:
             self.scan_with_cache()
         
-        return self._cache.get(owner_email, [])
+        return self._cache.get(datasite_email, [])
     
     def clear_cache(self):
-        """Clear the model cache."""
+        """Clear the service cache."""
         self._cache = None

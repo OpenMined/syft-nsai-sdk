@@ -1,30 +1,30 @@
 """
-Health check utilities for SyftBox models
+Health check utilities for SyftBox services
 """
 import asyncio
 from typing import List, Dict, Any, Optional, Tuple
 import time
 import logging
 
-from ..core.types import ModelInfo, HealthStatus
+from ..core.types import ServiceInfo, HealthStatus
 from ..core.exceptions import HealthCheckError, NetworkError, RPCError
 from ..clients.rpc_client import SyftBoxRPCClient
 
 logger = logging.getLogger(__name__)
 
 
-async def check_model_health(model_info: ModelInfo, 
+async def check_service_health(service_info: ServiceInfo, 
                             rpc_client: SyftBoxRPCClient,
                             timeout: float = 2.0) -> HealthStatus:
-    """Check health of a single model.
+    """Check health of a single service.
     
     Args:
-        model_info: Model to check
+        service_info: Service to check
         rpc_client: RPC client for making calls
         timeout: Timeout in seconds for health check
         
     Returns:
-        Health status of the model
+        Health status of the service
     """
     try:
         # Create a temporary client with shorter timeout for health checks
@@ -37,7 +37,7 @@ async def check_model_health(model_info: ModelInfo,
         )
         
         try:
-            response = await health_client.call_health(model_info)
+            response = await health_client.call_health(service_info)
             
             # Parse health response
             if isinstance(response, dict):
@@ -58,46 +58,46 @@ async def check_model_health(model_info: ModelInfo,
     except asyncio.TimeoutError:
         return HealthStatus.TIMEOUT
     except (NetworkError, RPCError) as e:
-        logger.debug(f"Health check failed for {model_info.name}: {e}")
+        logger.debug(f"Health check failed for {service_info.name}: {e}")
         return HealthStatus.OFFLINE
     except Exception as e:
-        logger.warning(f"Unexpected error in health check for {model_info.name}: {e}")
+        logger.warning(f"Unexpected error in health check for {service_info.name}: {e}")
         return HealthStatus.UNKNOWN
 
 
-async def batch_health_check(models: List[ModelInfo],
+async def batch_health_check(services: List[ServiceInfo],
                             rpc_client: SyftBoxRPCClient,
                             timeout: float = 2.0,
                             max_concurrent: int = 10) -> Dict[str, HealthStatus]:
-    """Check health of multiple models concurrently.
+    """Check health of multiple services concurrently.
     
     Args:
-        models: List of models to check
+        services: List of services to check
         rpc_client: RPC client for making calls
         timeout: Timeout per health check
         max_concurrent: Maximum concurrent health checks
         
     Returns:
-        Dictionary mapping model names to health status
+        Dictionary mapping service names to health status
     """
-    if not models:
+    if not services:
         return {}
     
     semaphore = asyncio.Semaphore(max_concurrent)
     
-    async def check_single_model(model: ModelInfo) -> Tuple[str, HealthStatus]:
+    async def check_single_service(service: ServiceInfo) -> Tuple[str, HealthStatus]:
         async with semaphore:
-            health = await check_model_health(model, rpc_client, timeout)
-            return model.name, health
+            health = await check_service_health(service, rpc_client, timeout)
+            return service.name, health
     
     # Start all health checks concurrently
-    tasks = [check_single_model(model) for model in models]
+    tasks = [check_single_service(service) for service in services]
     
     start_time = time.time()
     results = await asyncio.gather(*tasks, return_exceptions=True)
     end_time = time.time()
     
-    logger.info(f"Batch health check completed in {end_time - start_time:.2f}s for {len(models)} models")
+    logger.info(f"Batch health check completed in {end_time - start_time:.2f}s for {len(services)} services")
     
     # Process results
     health_status = {}
@@ -106,14 +106,14 @@ async def batch_health_check(models: List[ModelInfo],
             logger.error(f"Health check task failed: {result}")
             continue
         
-        model_name, status = result
-        health_status[model_name] = status
+        service_name, status = result
+        health_status[service_name] = status
     
     return health_status
 
 
 class HealthMonitor:
-    """Continuous health monitoring for models."""
+    """Continuous health monitoring for services."""
     
     def __init__(self, rpc_client: SyftBoxRPCClient, check_interval: float = 30.0):
         """Initialize health monitor.
@@ -124,73 +124,73 @@ class HealthMonitor:
         """
         self.rpc_client = rpc_client
         self.check_interval = check_interval
-        self.monitored_models: List[ModelInfo] = []
+        self.monitored_services: List[ServiceInfo] = []
         self.health_status: Dict[str, HealthStatus] = {}
         self.last_check_time: Optional[float] = None
         self._monitoring_task: Optional[asyncio.Task] = None
         self._callbacks: List[callable] = []
     
-    def add_model(self, model_info: ModelInfo):
-        """Add a model to monitoring.
+    def add_service(self, service_info: ServiceInfo):
+        """Add a service to monitoring.
         
         Args:
-            model_info: Model to monitor
+            service_info: Service to monitor
         """
-        if model_info not in self.monitored_models:
-            self.monitored_models.append(model_info)
-            logger.info(f"Added {model_info.name} to health monitoring")
+        if service_info not in self.monitored_services:
+            self.monitored_services.append(service_info)
+            logger.info(f"Added {service_info.name} to health monitoring")
     
-    def remove_model(self, model_name: str):
-        """Remove a model from monitoring.
+    def remove_service(self, service_name: str):
+        """Remove a service from monitoring.
         
         Args:
-            model_name: Name of model to remove
+            service_name: Name of service to remove
         """
-        self.monitored_models = [
-            model for model in self.monitored_models 
-            if model.name != model_name
+        self.monitored_services = [
+            service for service in self.monitored_services 
+            if service.name != service_name
         ]
         
-        if model_name in self.health_status:
-            del self.health_status[model_name]
+        if service_name in self.health_status:
+            del self.health_status[service_name]
         
-        logger.info(f"Removed {model_name} from health monitoring")
+        logger.info(f"Removed {service_name} from health monitoring")
     
     def add_callback(self, callback: callable):
         """Add callback for health status changes.
         
         Args:
             callback: Function to call when health status changes
-                     Signature: callback(model_name: str, old_status: HealthStatus, new_status: HealthStatus)
+                     Signature: callback(service_name: str, old_status: HealthStatus, new_status: HealthStatus)
         """
         self._callbacks.append(callback)
     
-    async def check_all_models(self) -> Dict[str, HealthStatus]:
-        """Check health of all monitored models.
+    async def check_all_services(self) -> Dict[str, HealthStatus]:
+        """Check health of all monitored services.
         
         Returns:
-            Current health status of all models
+            Current health status of all services
         """
-        if not self.monitored_models:
+        if not self.monitored_services:
             return {}
         
         new_status = await batch_health_check(
-            self.monitored_models,
+            self.monitored_services,
             self.rpc_client,
             timeout=2.0
         )
         
         # Check for status changes and trigger callbacks
-        for model_name, new_health in new_status.items():
-            old_health = self.health_status.get(model_name)
+        for service_name, new_health in new_status.items():
+            old_health = self.health_status.get(service_name)
             
             if old_health != new_health:
-                logger.info(f"Health status changed for {model_name}: {old_health} -> {new_health}")
+                logger.info(f"Health status changed for {service_name}: {old_health} -> {new_health}")
                 
                 # Trigger callbacks
                 for callback in self._callbacks:
                     try:
-                        callback(model_name, old_health, new_health)
+                        callback(service_name, old_health, new_health)
                     except Exception as e:
                         logger.error(f"Health callback error: {e}")
         
@@ -200,36 +200,36 @@ class HealthMonitor:
         
         return self.health_status
     
-    def get_model_health(self, model_name: str) -> Optional[HealthStatus]:
-        """Get current health status of a model.
+    def get_service_health(self, service_name: str) -> Optional[HealthStatus]:
+        """Get current health status of a service.
         
         Args:
-            model_name: Name of the model
+            service_name: Name of the service
             
         Returns:
             Current health status, or None if not monitored
         """
-        return self.health_status.get(model_name)
+        return self.health_status.get(service_name)
     
-    def get_healthy_models(self) -> List[str]:
-        """Get list of currently healthy model names.
+    def get_healthy_services(self) -> List[str]:
+        """Get list of currently healthy service names.
         
         Returns:
-            List of model names that are online
+            List of service names that are online
         """
         return [
-            model_name for model_name, status in self.health_status.items()
+            service_name for service_name, status in self.health_status.items()
             if status == HealthStatus.ONLINE
         ]
     
-    def get_unhealthy_models(self) -> List[str]:
-        """Get list of currently unhealthy model names.
+    def get_unhealthy_services(self) -> List[str]:
+        """Get list of currently unhealthy service names.
         
         Returns:
-            List of model names that are offline or having issues
+            List of service names that are offline or having issues
         """
         return [
-            model_name for model_name, status in self.health_status.items()
+            service_name for service_name, status in self.health_status.items()
             if status in [HealthStatus.OFFLINE, HealthStatus.TIMEOUT, HealthStatus.UNKNOWN]
         ]
     
@@ -241,7 +241,7 @@ class HealthMonitor:
         """
         if not self.health_status:
             return {
-                "total_models": 0,
+                "total_services": 0,
                 "healthy": 0,
                 "unhealthy": 0,
                 "unknown": 0,
@@ -253,7 +253,7 @@ class HealthMonitor:
             status_counts[status] = status_counts.get(status, 0) + 1
         
         return {
-            "total_models": len(self.health_status),
+            "total_services": len(self.health_status),
             "healthy": status_counts.get(HealthStatus.ONLINE, 0),
             "unhealthy": (
                 status_counts.get(HealthStatus.OFFLINE, 0) +
@@ -295,7 +295,7 @@ class HealthMonitor:
         try:
             while True:
                 try:
-                    await self.check_all_models()
+                    await self.check_all_services()
                 except Exception as e:
                     logger.error(f"Error in health monitoring loop: {e}")
                 
@@ -326,12 +326,12 @@ def format_health_status(status: HealthStatus) -> str:
     return f"{status.value.title()} {icon}"
 
 
-async def get_model_response_time(model_info: ModelInfo, 
+async def get_service_response_time(service_info: ServiceInfo, 
                                  rpc_client: SyftBoxRPCClient) -> Optional[float]:
-    """Measure response time for a model's health endpoint.
+    """Measure response time for a service's health endpoint.
     
     Args:
-        model_info: Model to test
+        service_info: Service to test
         rpc_client: RPC client for making calls
         
     Returns:
@@ -339,7 +339,7 @@ async def get_model_response_time(model_info: ModelInfo,
     """
     try:
         start_time = time.time()
-        await check_model_health(model_info, rpc_client, timeout=10.0)
+        await check_service_health(service_info, rpc_client, timeout=10.0)
         end_time = time.time()
         return end_time - start_time
     except Exception:

@@ -16,10 +16,10 @@ from rich.panel import Panel
 from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich import print as rprint
 
-from ..main import SyftBoxClient
+from ..main import Client
 from ..core.types import ServiceType, HealthStatus
 from ..core.exceptions import (
-    SyftBoxNotFoundError, ModelNotFoundError, PaymentError,
+    SyftBoxNotFoundError, ServiceNotFoundError, PaymentError,
     AuthenticationError, NetworkError
 )
 
@@ -27,20 +27,20 @@ from ..core.exceptions import (
 console = Console()
 app = typer.Typer(
     name="syftbox-sdk",
-    help="SyftBox NSAI SDK - Discover and use AI models across the SyftBox network",
+    help="SyftBox NSAI SDK - Discover and use AI services across the SyftBox network",
     add_completion=False,
     rich_markup_mode="rich"
 )
 
 # Global client instance
-_client: Optional[SyftBoxClient] = None
+_client: Optional[Client] = None
 
-def get_client() -> SyftBoxClient:
+def get_client() -> Client:
     """Get or create client instance."""
     global _client
     if _client is None:
         try:
-            _client = SyftBoxClient()
+            _client = Client()
         except SyftBoxNotFoundError as e:
             console.print(f"[red]Error:[/red] {e}")
             console.print("\n[yellow]SyftBox installation required:[/yellow]")
@@ -54,20 +54,20 @@ def get_client() -> SyftBoxClient:
     return _client
 
 @app.command()
-def list_models(
+def format_services(
     service: Optional[str] = typer.Option(None, "--service", "-s", help="Filter by service type (chat, search)"),
-    owner: Optional[str] = typer.Option(None, "--owner", "-o", help="Filter by owner email"),
+    datasite: Optional[str] = typer.Option(None, "--datasite", "-o", help="Filter by datasite email"),
     tags: Optional[str] = typer.Option(None, "--tags", "-t", help="Filter by tags (comma-separated)"),
     max_cost: Optional[float] = typer.Option(None, "--max-cost", "-c", help="Maximum cost per request"),
     health_check: str = typer.Option("auto", "--health-check", "-h", help="Health check mode (auto, always, never)"),
     format: str = typer.Option("table", "--format", "-f", help="Output format (table, json, summary)"),
-    free_only: bool = typer.Option(False, "--free-only", help="Show only free models"),
-    paid_only: bool = typer.Option(False, "--paid-only", help="Show only paid models"),
+    free_only: bool = typer.Option(False, "--free-only", help="Show only free services"),
+    paid_only: bool = typer.Option(False, "--paid-only", help="Show only paid services"),
 ):
-    """List available models with optional filtering."""
+    """List available services with optional filtering."""
     client = get_client()
     
-    with console.status("[bold blue]Discovering models..."):
+    with console.status("[bold blue]Discovering services..."):
         try:
             # Parse service type
             service_type = None
@@ -84,10 +84,10 @@ def list_models(
             if tags:
                 tag_list = [tag.strip() for tag in tags.split(",")]
             
-            # Discover models
+            # Discover services
             kwargs = {
                 "service_type": service_type,
-                "owner": owner,
+                "datasite": datasite,
                 "tags": tag_list,
                 "max_cost": max_cost,
                 "health_check": health_check,
@@ -95,66 +95,66 @@ def list_models(
                 "paid_only": paid_only,
             }
             
-            models = client.discover_models(**{k: v for k, v in kwargs.items() if v is not None})
+            services = client.discover_services(**{k: v for k, v in kwargs.items() if v is not None})
             
         except Exception as e:
-            console.print(f"[red]Error discovering models:[/red] {e}")
+            console.print(f"[red]Error discovering services:[/red] {e}")
             raise typer.Exit(1)
     
-    if not models:
-        console.print("[yellow]No models found matching the criteria.[/yellow]")
+    if not services:
+        console.print("[yellow]No services found matching the criteria.[/yellow]")
         return
     
     # Display results
     if format == "table":
-        console.print(client.list_models(service_type=service_type, health_check=health_check))
+        console.print(client.format_services(service_type=service_type, health_check=health_check))
     elif format == "json":
-        model_dicts = [client._model_to_dict(model) for model in models]
-        print(json.dumps(model_dicts, indent=2))
+        service_dicts = [client._service_to_dict(service) for service in services]
+        print(json.dumps(service_dicts, indent=2))
     elif format == "summary":
-        console.print(client._format_models_summary(models))
+        console.print(client._format_services_summary(services))
     else:
         console.print(f"[red]Invalid format:[/red] {format}")
         raise typer.Exit(1)
 
 @app.command()
-def model_info(
-    name: str = typer.Argument(..., help="Model name to show info for"),
-    owner: Optional[str] = typer.Option(None, "--owner", "-o", help="Model owner (if ambiguous)"),
+def service_info(
+    name: str = typer.Argument(..., help="Service name to show info for"),
+    datasite: Optional[str] = typer.Option(None, "--datasite", "-o", help="Service datasite (if ambiguous)"),
 ):
-    """Show detailed information about a specific model."""
+    """Show detailed information about a specific service."""
     client = get_client()
     
-    with console.status(f"[bold blue]Looking up model '{name}'..."):
-        model = client.find_model(name, owner)
+    with console.status(f"[bold blue]Looking up service '{name}'..."):
+        service = client.find_service(name, datasite)
     
-    if not model:
-        console.print(f"[red]Model not found:[/red] {name}")
-        if owner:
-            console.print(f"Searched for models owned by: {owner}")
+    if not service:
+        console.print(f"[red]Service not found:[/red] {name}")
+        if datasite:
+            console.print(f"Searched for services owned by: {datasite}")
         
-        # Suggest similar models
-        all_models = client.discover_models(health_check="never")
-        similar = [m for m in all_models if name.lower() in m.name.lower()]
+        # Suggest similar services
+        all_services = client.discover_services(health_check="never")
+        similar = [m for m in all_services if name.lower() in m.name.lower()]
         if similar:
             console.print(f"\n[yellow]Did you mean one of these?[/yellow]")
             for m in similar[:5]:
-                console.print(f"  • {m.name} (by {m.owner})")
+                console.print(f"  • {m.name} (by {m.datasite})")
         
         raise typer.Exit(1)
     
-    console.print(client.show_model_details(name, owner))
+    console.print(client.show_service_details(name, datasite))
 
 @app.command()
 def chat(
     message: str = typer.Argument(..., help="Message to send"),
-    model: Optional[str] = typer.Option(None, "--model", "-m", help="Specific model to use"),
+    service: Optional[str] = typer.Option(None, "--service", "-m", help="Specific service to use"),
     max_cost: float = typer.Option(1.0, "--max-cost", "-c", help="Maximum cost willing to pay"),
     max_tokens: Optional[int] = typer.Option(None, "--max-tokens", help="Maximum tokens to generate"),
     temperature: Optional[float] = typer.Option(None, "--temperature", help="Sampling temperature (0.0-1.0)"),
-    preference: str = typer.Option("balanced", "--preference", "-p", help="Model selection preference"),
+    preference: str = typer.Option("balanced", "--preference", "-p", help="Service selection preference"),
 ):
-    """Send a chat message to an AI model."""
+    """Send a chat message to an AI service."""
     client = get_client()
     
     async def run_chat():
@@ -162,7 +162,7 @@ def chat(
             try:
                 response = await client.chat(
                     message=message,
-                    model_name=model,
+                    service_name=service,
                     max_cost=max_cost,
                     max_tokens=max_tokens,
                     temperature=temperature,
@@ -170,7 +170,7 @@ def chat(
                 )
                 
                 # Display response
-                console.print(f"\n[bold green]Response from {response.model}:[/bold green]")
+                console.print(f"\n[bold green]Response from {response.service}:[/bold green]")
                 console.print(Panel(response.message.content, border_style="green"))
                 
                 # Show cost if applicable
@@ -181,15 +181,15 @@ def chat(
                 if response.usage.total_tokens > 0:
                     console.print(f"[dim]Tokens used: {response.usage.total_tokens}[/dim]")
                 
-            except ModelNotFoundError as e:
-                console.print(f"[red]Model not found:[/red] {e}")
+            except ServiceNotFoundError as e:
+                console.print(f"[red]Service not found:[/red] {e}")
                 raise typer.Exit(1)
             except PaymentError as e:
                 console.print(f"[red]Payment error:[/red] {e}")
                 console.print("\n[yellow]Try:[/yellow]")
                 console.print("• Use --max-cost to increase cost limit")
                 console.print("• Run [cyan]syftbox-sdk setup-accounting[/cyan] to configure payments")
-                console.print("• Use [cyan]syftbox-sdk list-models --free-only[/cyan] to find free models")
+                console.print("• Use [cyan]syftbox-sdk list-services --free-only[/cyan] to find free services")
                 raise typer.Exit(1)
             except Exception as e:
                 console.print(f"[red]Chat failed:[/red] {e}")
@@ -200,12 +200,12 @@ def chat(
 @app.command()
 def search(
     query: str = typer.Argument(..., help="Search query"),
-    model: Optional[str] = typer.Option(None, "--model", "-m", help="Specific model to use"),
+    service: Optional[str] = typer.Option(None, "--service", "-m", help="Specific service to use"),
     max_cost: float = typer.Option(1.0, "--max-cost", "-c", help="Maximum cost willing to pay"),
     limit: int = typer.Option(5, "--limit", "-l", help="Maximum number of results"),
     threshold: Optional[float] = typer.Option(None, "--threshold", help="Minimum similarity score"),
 ):
-    """Search documents using an AI model."""
+    """Search documents using an AI service."""
     client = get_client()
     
     async def run_search():
@@ -213,7 +213,7 @@ def search(
             try:
                 response = await client.search(
                     query=query,
-                    model_name=model,
+                    service_name=service,
                     max_cost=max_cost,
                     limit=limit,
                     similarity_threshold=threshold
@@ -237,8 +237,8 @@ def search(
                 if response.cost and response.cost > 0:
                     console.print(f"\n[dim]Cost: ${response.cost}[/dim]")
                 
-            except ModelNotFoundError as e:
-                console.print(f"[red]Model not found:[/red] {e}")
+            except ServiceNotFoundError as e:
+                console.print(f"[red]Service not found:[/red] {e}")
                 raise typer.Exit(1)
             except PaymentError as e:
                 console.print(f"[red]Payment error:[/red] {e}")
@@ -251,44 +251,44 @@ def search(
 
 @app.command()
 def health_check(
-    model: Optional[str] = typer.Option(None, "--model", "-m", help="Check specific model"),
-    all_models: bool = typer.Option(False, "--all", help="Check all models"),
-    service: Optional[str] = typer.Option(None, "--service", "-s", help="Filter by service type"),
+    service: Optional[str] = typer.Option(None, "--service", "-m", help="Check specific service"),
+    all_services: bool = typer.Option(False, "--all", help="Check all services"),
+    serviceType: Optional[str] = typer.Option(None, "--service", "-s", help="Filter by service type"),
     timeout: float = typer.Option(2.0, "--timeout", "-t", help="Health check timeout"),
 ):
-    """Check health status of models."""
+    """Check health status of services."""
     client = get_client()
     
     async def run_health_check():
-        if model:
-            # Check specific model
-            with console.status(f"[bold blue]Checking health of '{model}'..."):
+        if service:
+            # Check specific service
+            with console.status(f"[bold blue]Checking health of '{service}'..."):
                 try:
-                    status = await client.check_model_health(model, timeout)
+                    status = await client.check_service_health(service, timeout)
                     icon = "✅" if status == HealthStatus.ONLINE else "❌" if status == HealthStatus.OFFLINE else "⏱️" if status == HealthStatus.TIMEOUT else "❓"
-                    console.print(f"{model}: {status.value.title()} {icon}")
-                except ModelNotFoundError:
-                    console.print(f"[red]Model not found:[/red] {model}")
+                    console.print(f"{service}: {status.value.title()} {icon}")
+                except ServiceNotFoundError:
+                    console.print(f"[red]Service not found:[/red] {service}")
                     raise typer.Exit(1)
-        elif all_models:
-            # Check all models
-            service_type = ServiceType(service) if service else None
+        elif all_services:
+            # Check all services
+            service_type = ServiceType(serviceType) if serviceType else None
             
-            with console.status("[bold blue]Checking health of all models..."):
+            with console.status("[bold blue]Checking health of all services..."):
                 try:
-                    health_status = await client.check_all_models_health(service_type, timeout)
+                    health_status = await client.check_all_services_health(service_type, timeout)
                     
                     if not health_status:
-                        console.print("[yellow]No models found to check.[/yellow]")
+                        console.print("[yellow]No services found to check.[/yellow]")
                         return
                     
                     # Create health summary table
-                    table = Table(title="Model Health Status")
-                    table.add_column("Model", style="cyan")
+                    table = Table(title="Service Health Status")
+                    table.add_column("Service", style="cyan")
                     table.add_column("Status", style="bold")
                     table.add_column("Health", justify="center")
                     
-                    for model_name, status in sorted(health_status.items()):
+                    for service_name, status in sorted(health_status.items()):
                         if status == HealthStatus.ONLINE:
                             health_icon = "✅"
                             status_style = "green"
@@ -303,7 +303,7 @@ def health_check(
                             status_style = "dim"
                         
                         table.add_row(
-                            model_name,
+                            service_name,
                             f"[{status_style}]{status.value.title()}[/{status_style}]",
                             health_icon
                         )
@@ -322,7 +322,7 @@ def health_check(
                     console.print(f"[red]Health check failed:[/red] {e}")
                     raise typer.Exit(1)
         else:
-            console.print("[red]Error:[/red] Must specify either --model or --all")
+            console.print("[red]Error:[/red] Must specify either --service or --all")
             raise typer.Exit(1)
     
     asyncio.run(run_health_check())
@@ -373,7 +373,7 @@ def setup_accounting():
         try:
             load_dotenv()
             console.print("[bold blue]Setting up SyftBox Accounting Service[/bold blue]")
-            console.print("This will configure payment credentials for using paid models.\n")
+            console.print("This will configure payment credentials for using paid services.\n")
             
             # Get service URL
             default_url = os.getenv("SYFTBOX_ACCOUNTING_URL", "")
@@ -418,7 +418,7 @@ def setup_accounting():
 
 @app.command()
 def stats():
-    """Show statistics about discovered models."""
+    """Show statistics about discovered services."""
     client = get_client()
     
     with console.status("[bold blue]Gathering statistics..."):
@@ -429,27 +429,27 @@ def stats():
             raise typer.Exit(1)
     
     # Create stats table
-    table = Table(title="SyftBox Model Statistics")
+    table = Table(title="SyftBox Service Statistics")
     table.add_column("Metric", style="cyan")
     table.add_column("Value", style="bold")
     
-    table.add_row("Total Models", str(stats["total_models"]))
-    table.add_row("Enabled Models", str(stats["enabled_models"]))
-    table.add_row("Disabled Models", str(stats["disabled_models"]))
-    table.add_row("Chat Models", str(stats["chat_models"]))
-    table.add_row("Search Models", str(stats["search_models"]))
-    table.add_row("Free Models", str(stats["free_models"]))
-    table.add_row("Paid Models", str(stats["paid_models"]))
-    table.add_row("Total Owners", str(stats["total_owners"]))
-    table.add_row("Avg Models/Owner", f"{stats['avg_models_per_owner']:.1f}")
+    table.add_row("Total Services", str(stats["total_services"]))
+    table.add_row("Enabled Services", str(stats["enabled_services"]))
+    table.add_row("Disabled Services", str(stats["disabled_services"]))
+    table.add_row("Chat Services", str(stats["chat_services"]))
+    table.add_row("Search Services", str(stats["search_services"]))
+    table.add_row("Free Services", str(stats["free_services"]))
+    table.add_row("Paid Services", str(stats["paid_services"]))
+    table.add_row("Total Owners", str(stats["total_datasites"]))
+    table.add_row("Avg Services/Datasite", f"{stats['avg_services_per_datasite']:.1f}")
     
     console.print(table)
     
-    # Top owners
-    if stats["top_owners"]:
-        console.print("\n[bold]Top Model Owners:[/bold]")
-        for owner, count in stats["top_owners"]:
-            console.print(f"  {owner}: {count} models")
+    # Top datasites
+    if stats["top_datasites"]:
+        console.print("\n[bold]Top Service Owners:[/bold]")
+        for datasite, count in stats["top_datasites"]:
+            console.print(f"  {datasite}: {count} services")
 
 @app.command()
 def version():

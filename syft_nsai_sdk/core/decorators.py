@@ -7,7 +7,7 @@ from .exceptions import AuthenticationError
 
 
 def require_account(func: Callable) -> Callable:
-    """Decorator that requires account setup before model operations.
+    """Decorator that requires account setup before service operations.
     
     Args:
         func: The function to decorate
@@ -19,7 +19,7 @@ def require_account(func: Callable) -> Callable:
     async def async_wrapper(self, *args, **kwargs) -> Any:
         if not getattr(self, '_account_configured', False):
             raise AuthenticationError(
-                "Account setup required before using models. "
+                "Account setup required before using services. "
                 "Please run: await client.setup_accounting(email, password)"
             )
         return await func(self, *args, **kwargs)
@@ -28,7 +28,7 @@ def require_account(func: Callable) -> Callable:
     def sync_wrapper(self, *args, **kwargs) -> Any:
         if not getattr(self, '_account_configured', False):
             raise AuthenticationError(
-                "Account setup required before using models. "
+                "Account setup required before using services. "
                 "Please run: await client.setup_accounting(email, password)"
             )
         return func(self, *args, **kwargs)

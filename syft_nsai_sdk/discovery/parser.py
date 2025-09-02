@@ -1,17 +1,17 @@
 """
-Parser for SyftBox model metadata and RPC schema files
+Parser for SyftBox service metadata and RPC schema files
 """
 import json
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 from datetime import datetime
 
-from ..core.types import ModelInfo, ServiceInfo, ServiceType, PricingChargeType, ModelStatus
+from ..core.types import ServiceInfo, ServiceItem, ServiceType, PricingChargeType, ServiceStatus
 from ..core.exceptions import MetadataParsingError
 
 
 class MetadataParser:
-    """Parser for model metadata.json and rpc.schema.json files."""
+    """Parser for service metadata.json and rpc.schema.json files."""
     
     @staticmethod
     def parse_metadata(metadata_path: Path) -> Dict[str, Any]:
@@ -67,7 +67,7 @@ class MetadataParser:
         return True
     
     @classmethod
-    def parse_services(cls, services_data: List[Dict[str, Any]]) -> List[ServiceInfo]:
+    def parse_services(cls, services_data: List[Dict[str, Any]]) -> List[ServiceItem]:
         """Parse services array from metadata."""
         services = []
         
@@ -92,7 +92,7 @@ class MetadataParser:
                 except ValueError:
                     charge_type = PricingChargeType.PER_REQUEST
                 
-                service = ServiceInfo(
+                service = ServiceItem(
                     type=service_type,
                     enabled=enabled,
                     pricing=pricing,
@@ -107,15 +107,15 @@ class MetadataParser:
         return services
     
     @classmethod
-    def create_model_info(cls, 
+    def create_service_info(cls, 
                          metadata_path: Path,
                          metadata: Dict[str, Any],
-                         rpc_schema: Optional[Dict[str, Any]] = None) -> ModelInfo:
-        """Create ModelInfo from parsed metadata."""
+                         rpc_schema: Optional[Dict[str, Any]] = None) -> ServiceInfo:
+        """Create ServiceInfo from parsed metadata."""
         
         # Extract basic information
         name = metadata.get("project_name", "")
-        owner = metadata.get("author", "")
+        datasite = metadata.get("author", "")
         summary = metadata.get("summary", "")
         description = metadata.get("description", "")
         tags = metadata.get("tags", [])
@@ -126,7 +126,7 @@ class MetadataParser:
         
         # Determine config status
         has_enabled_services = any(service.enabled for service in services)
-        config_status = ModelStatus.ACTIVE if has_enabled_services else ModelStatus.DISABLED
+        config_status = ServiceStatus.ACTIVE if has_enabled_services else ServiceStatus.DISABLED
         
         # Extract optional fields
         delegate_email = metadata.get("delegate_email")
@@ -136,17 +136,17 @@ class MetadataParser:
         rpc_schema_path = None
         if metadata_path.parent.name != "metadata.json":
             # Try to find rpc.schema.json in the expected location
-            owner_email = owner
-            model_name = name
-            # Expected path: datasites/{owner}/app_data/{model}/rpc/rpc.schema.json
+            datasite_email = datasite
+            service_name = name
+            # Expected path: datasites/{datasite}/app_data/{service}/rpc/rpc.schema.json
             potential_rpc_path = (metadata_path.parent.parent.parent.parent / 
-                                 owner_email / "app_data" / model_name / "rpc" / "rpc.schema.json")
+                                 datasite_email / "app_data" / service_name / "rpc" / "rpc.schema.json")
             if potential_rpc_path.exists():
                 rpc_schema_path = potential_rpc_path
         
-        return ModelInfo(
+        return ServiceInfo(
             name=name,
-            owner=owner,
+            datasite=datasite,
             summary=summary,
             description=description,
             tags=tags,
@@ -160,8 +160,8 @@ class MetadataParser:
         )
     
     @classmethod
-    def parse_model_from_files(cls, metadata_path: Path) -> ModelInfo:
-        """Parse a complete ModelInfo from metadata file and optional RPC schema."""
+    def parse_service_from_files(cls, metadata_path: Path) -> ServiceInfo:
+        """Parse a complete ServiceInfo from metadata file and optional RPC schema."""
         
         # Parse metadata
         metadata = cls.parse_metadata(metadata_path)
@@ -177,14 +177,14 @@ class MetadataParser:
         rpc_schema = {}
         
         # Look for RPC schema in expected locations
-        owner = metadata.get("author", "")
-        model_name = metadata.get("project_name", "")
+        datasite = metadata.get("author", "")
+        service_name = metadata.get("project_name", "")
         
-        if owner and model_name:
-            # Try: datasites/{owner}/app_data/{model}/rpc/rpc.schema.json
+        if datasite and service_name:
+            # Try: datasites/{datasite}/app_data/{service}/rpc/rpc.schema.json
             datasites_root = metadata_path.parent.parent.parent.parent
             potential_rpc_paths = [
-                datasites_root / owner / "app_data" / model_name / "rpc" / "rpc.schema.json",
+                datasites_root / datasite / "app_data" / service_name / "rpc" / "rpc.schema.json",
                 metadata_path.parent / "rpc.schema.json",  # Same directory as metadata
                 metadata_path.parent / "rpc" / "rpc.schema.json",  # Subdirectory
             ]
@@ -198,8 +198,8 @@ class MetadataParser:
                         # Continue trying other paths
                         continue
         
-        # Create model info
-        return cls.create_model_info(metadata_path, metadata, rpc_schema)
+        # Create service info
+        return cls.create_service_info(metadata_path, metadata, rpc_schema)
 
 
 class SchemaValidator:
@@ -258,16 +258,16 @@ class SchemaValidator:
         return warnings
     
     @classmethod
-    def validate_model_info(cls, model_info: ModelInfo) -> List[str]:
-        """Validate complete ModelInfo and return list of warnings."""
+    def validate_service_info(cls, service_info: ServiceInfo) -> List[str]:
+        """Validate complete ServiceInfo and return list of warnings."""
         warnings = []
         
         # Basic validation
-        if not model_info.name:
-            warnings.append("Missing model name")
-        if not model_info.owner or '@' not in model_info.owner:
-            warnings.append("Missing or invalid owner email")
-        if not model_info.services:
+        if not service_info.name:
+            warnings.append("Missing service name")
+        if not service_info.datasite or '@' not in service_info.datasite:
+            warnings.append("Missing or invalid datasite email")
+        if not service_info.services:
             warnings.append("No services defined")
         
         # Service validation
@@ -277,11 +277,11 @@ class SchemaValidator:
                 "pricing": service.pricing,
                 "enabled": service.enabled
             }
-            for service in model_info.services
+            for service in service_info.services
         ]
         
         warnings.extend(cls.validate_service_types(services_data))
         warnings.extend(cls.validate_pricing(services_data))
-        warnings.extend(cls.validate_rpc_schema(model_info.rpc_schema))
+        warnings.extend(cls.validate_rpc_schema(service_info.rpc_schema))
         
         return warnings

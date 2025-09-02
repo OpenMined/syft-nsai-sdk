@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     project_version: Optional[str] = Field(None, env="PROJECT_VERSION")
     project_description: Optional[str] = Field(None, env="PROJECT_DESCRIPTION")
     
-    model_config = SettingsConfigDict(
+    service_config = SettingsConfigDict(
         env_file=".env", 
         env_file_encoding="utf-8",
         extra="ignore"  # Ignore extra environment variables

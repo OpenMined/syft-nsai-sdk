@@ -1,10 +1,17 @@
 """
 SyftBox Accounting Client for managing payments and transactions
 """
+import json
+import os
 import logging
+
+from pathlib import Path
+from datetime import datetime
 from typing import Any, Dict, Optional
+
 from syft_accounting_sdk import UserClient, ServiceException
 
+from ..core.types import UserAccount, APIException
 from ..core.exceptions import PaymentError, AuthenticationError
 
 logger = logging.getLogger(__name__)
@@ -14,29 +21,118 @@ class AccountingClient:
     """Client for handling accounting operations."""
     
     def __init__(self, 
-                 service_url: Optional[str] = None,
+                 accounting_url: Optional[str] = None,
                  credentials: Optional[Dict[str, str]] = None):
         """Initialize accounting client.
         
         Args:
-            service_url: URL of the accounting service
-            credentials: Dict with 'email', 'password', and optionally 'service_url'
+            accounting_url: URL of the accounting service
+            credentials: Dict with 'email', 'password', and optionally 'accounting_url'
         """
-        self.service_url = service_url
+        self.accounting_url = accounting_url
         self._credentials = credentials
         self._client = None
-    
-    def configure(self, service_url: str, email: str, password: str):
+
+    def create_accounting_user(
+        self,
+        email: str,
+        password: Optional[str] = None,
+        organization: Optional[str] = None,
+    ) -> UserAccount:
+        """Create a user account on the service."""
+        try:
+            user, user_pwd = UserClient.create_user(
+                url=self.accounting_url,
+                organization=organization,
+                email=email,
+                password=password,
+            )
+
+            # Initialize _credentials if None
+            if self._credentials is None:
+                self._credentials = {}
+
+            self._credentials['email'] = email
+            self._credentials['password'] = user_pwd
+            self._credentials['organization'] = organization
+
+            return UserAccount(
+                email=email,
+                password=user_pwd,
+                organization=organization,
+                balance=getattr(user, 'balance', 0.0)  # Default to 0.0 if not available
+            )
+        except ServiceException as e:
+            logger.error(
+                f"Failed to create user account: {e.message} with {e.status_code}"
+            )
+            if e.status_code == 409:
+                raise APIException(
+                    f"User account already exists: {e.message}",
+                    status_code=e.status_code,
+                )
+            else:
+                raise APIException(
+                    f"Failed to create user account: {e.message} with {e.status_code}",
+                    status_code=e.status_code,
+                )
+        # return user, user_pwd
+        # Create UserAccount object with required fields
+        # return UserAccount(
+        #     email=email,
+        #     password=user_pwd,
+        #     organization=organization,
+        #     balance=getattr(user, 'balance', 0.0)  # Default to 0.0 if not available
+        # )
+
+    # def add_or_update_credentials(
+    #     self,
+    #     email: str,
+    #     organization: Optional[str] = None,
+    #     password: Optional[str] = None,
+    # ) -> UserAccount:
+    #     """Add or update user account credentials to the repository."""
+
+    #     try:
+    #         credentials = self.repository.add_or_update_credentials(
+    #             email=email,
+    #             password=password,
+    #             accounting_url=self.accounting_config.url,
+    #             organization=organization,
+    #         )
+    #     except Exception as e:
+    #         logger.error(f"Failed to add or update credentials: {e}")
+    #         raise APIException(
+    #             f"Failed to add or update credentials: {e}",
+    #             status_code=500,
+    #         )
+
+    #     try:
+    #         user_info = self.client.get_user_info()
+    #     except ServiceException as e:
+    #         raise APIException(
+    #             f"Failed to get user info: {e}",
+    #             status_code=e.status_code,
+    #         )
+
+    #     return UserAccount(
+    #         email=credentials.email,
+    #         organization=credentials.organization,
+    #         balance=user_info.balance,
+    #         password=credentials.password,
+    #     )
+
+    def configure(self, accounting_url: str, email: str, password: str):
         """Configure accounting client.
         
         Args:
-            service_url: Accounting service URL
+            accounting_url: Accounting service URL
             email: User email
             password: User password
         """
-        self.service_url = service_url
+        self.accounting_url = accounting_url
         self._credentials = {
-            "service_url": service_url,
+            "accounting_url": accounting_url,
             "email": email,
             "password": password
         }
@@ -55,13 +151,13 @@ class AccountingClient:
         """Get or create accounting client."""
         if self._client is None:
             # Try to get service URL from multiple sources
-            service_url = self.service_url
+            accounting_url = self.accounting_url
             
-            # Fallback to credentials if service_url not set
-            if not service_url and self._credentials:
-                service_url = self._credentials.get("service_url")
+            # Fallback to credentials if accounting_url not set
+            if not accounting_url and self._credentials:
+                accounting_url = self._credentials.get("accounting_url")
             
-            if not service_url:
+            if not accounting_url:
                 raise AuthenticationError("No accounting service URL configured")
             
             if not self._credentials:
@@ -69,7 +165,7 @@ class AccountingClient:
             
             try:
                 self._client = UserClient(
-                    url=service_url,
+                    url=accounting_url,
                     email=self._credentials["email"],
                     password=self._credentials["password"]
                 )
@@ -79,10 +175,10 @@ class AccountingClient:
         return self._client
     
     async def create_transaction_token(self, recipient_email: str) -> str:
-        """Create a transaction token for paying a model owner.
+        """Create a transaction token for paying a service datasite.
         
         Args:
-            recipient_email: Email of the model owner to pay
+            recipient_email: Email of the service datasite to pay
             
         Returns:
             Transaction token string
@@ -146,10 +242,6 @@ class AccountingClient:
         Args:
             config_path: Path to save config (default: ~/.syftbox/accounting.json)
         """
-        import json
-        import os
-        from pathlib import Path
-        from datetime import datetime
         
         if not self._credentials:
             raise ValueError("No credentials to save")
@@ -161,10 +253,11 @@ class AccountingClient:
         
         try:
             config = {
-                "service_url": self.service_url,
+                "service_url": self.accounting_url,
                 "email": self._credentials["email"],
                 "password": self._credentials["password"],
-                "created_at": datetime.now().isoformat()
+                "created_at": datetime.now().isoformat(),
+                "organization": self._credentials["organization"],
             }
             
             with open(config_path, 'w') as f:
@@ -176,6 +269,27 @@ class AccountingClient:
         except Exception as e:
             raise PaymentError(f"Failed to save credentials: {e}")
     
+    @classmethod
+    def setup_accounting_discovery(cls) -> tuple['AccountingClient', bool]:
+        """Try to auto-discover credentials and return client + success status."""
+        
+        # Try environment variables
+        try:
+            client = cls.from_environment()
+            return client, True  # Successfully configured
+        except AuthenticationError:
+            pass
+        
+        # Try config file
+        try:
+            client = cls.load_from_config()
+            return client, True  # Successfully configured
+        except AuthenticationError:
+            pass
+        
+        # No credentials found
+        return cls(), False  # Not configured
+
     @classmethod
     def load_from_config(cls, config_path: Optional[str] = None) -> 'AccountingClient':
         """Load accounting client from saved config.
@@ -198,7 +312,7 @@ class AccountingClient:
             
             client = cls()
             client.configure(
-                service_url=config["service_url"],
+                accounting_url=config["service_url"],
                 email=config["email"],
                 password=config["password"]
             )
@@ -223,18 +337,18 @@ class AccountingClient:
         """
         import os
         
-        service_url = os.getenv("SYFTBOX_ACCOUNTING_URL")
+        accounting_url = os.getenv("SYFTBOX_ACCOUNTING_URL")
         email = os.getenv("SYFTBOX_ACCOUNTING_EMAIL")
         password = os.getenv("SYFTBOX_ACCOUNTING_PASSWORD")
         
-        if not all([service_url, email, password]):
+        if not all([accounting_url, email, password]):
             missing = []
-            if not service_url: missing.append("SYFTBOX_ACCOUNTING_URL")
+            if not accounting_url: missing.append("SYFTBOX_ACCOUNTING_URL")
             if not email: missing.append("SYFTBOX_ACCOUNTING_EMAIL") 
             if not password: missing.append("SYFTBOX_ACCOUNTING_PASSWORD")
             
             raise AuthenticationError(f"Missing environment variables: {', '.join(missing)}")
         
         client = cls()
-        client.configure(service_url, email, password)
+        client.configure(accounting_url, email, password)
         return client

@@ -592,7 +592,7 @@ def cached_async_response(cache: ResponseCache, ttl: Optional[float] = None, mem
 
 # Cache configuration for different types of data
 CACHE_CONFIGS = {
-    'model_discovery': {'ttl': 300, 'memory_only': False},      # 5 minutes
+    'service_discovery': {'ttl': 300, 'memory_only': False},      # 5 minutes
     'health_check': {'ttl': 60, 'memory_only': True},          # 1 minute, memory only
     'chat_response': {'ttl': 0, 'memory_only': True},          # No cache for chat
     'search_response': {'ttl': 600, 'memory_only': False},     # 10 minutes
@@ -605,7 +605,7 @@ def get_cache_config(cache_type: str) -> Dict[str, Any]:
     """Get cache configuration for a specific type.
     
     Args:
-        cache_type: Type of cache (model_discovery, health_check, etc.)
+        cache_type: Type of cache (service_discovery, health_check, etc.)
         
     Returns:
         Cache configuration dictionary

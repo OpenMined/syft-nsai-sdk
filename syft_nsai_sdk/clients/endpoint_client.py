@@ -12,12 +12,12 @@ class SyftURLBuilder:
     """Builder for constructing SyftBox URLs."""
     
     @staticmethod
-    def build_syft_url(owner: str, app_name: str, endpoint: str, params: Optional[Dict[str, str]] = None) -> str:
+    def build_syft_url(datasite: str, app_name: str, endpoint: str, params: Optional[Dict[str, str]] = None) -> str:
         """Build a syft:// URL for RPC calls.
         
         Args:
-            owner: Email of the model owner
-            app_name: Name of the application/model
+            datasite: Email of the service datasite
+            app_name: Name of the application/service
             endpoint: RPC endpoint (e.g., 'chat', 'search', 'health')
             params: Optional query parameters
             
@@ -25,12 +25,12 @@ class SyftURLBuilder:
             Complete syft:// URL
         """
         # Clean inputs
-        owner = owner.strip()
+        datasite = datasite.strip()
         app_name = app_name.strip()
         endpoint = endpoint.strip().lstrip('/')
         
         # Build base URL
-        base_url = f"syft://{owner}/app_data/{app_name}/rpc/{endpoint}"
+        base_url = f"syft://{datasite}/app_data/{app_name}/rpc/{endpoint}"
         
         # Add query parameters if provided
         if params:
@@ -62,10 +62,10 @@ class SyftURLBuilder:
             if parsed.scheme != 'syft':
                 raise ValueError(f"Invalid scheme: {parsed.scheme}, expected 'syft'")
             
-            # Extract owner from hostname
-            owner = parsed.hostname
-            if not owner:
-                raise ValueError("Missing owner in syft URL")
+            # Extract datasite from hostname
+            datasite = parsed.hostname
+            if not datasite:
+                raise ValueError("Missing datasite in syft URL")
             
             # Parse path components
             path_parts = [part for part in parsed.path.split('/') if part]
@@ -91,7 +91,7 @@ class SyftURLBuilder:
                 flattened_params[key] = values[0] if len(values) == 1 else values
             
             return {
-                'owner': owner,
+                'datasite': datasite,
                 'app_name': app_name,
                 'endpoint': endpoint,
                 'params': flattened_params,
@@ -185,24 +185,24 @@ class CacheServerEndpoints:
         return base_url
 
 
-class ModelEndpoints:
-    """Constructs model-specific endpoint URLs."""
+class ServiceEndpoints:
+    """Constructs service-specific endpoint URLs."""
     
-    def __init__(self, owner: str, model_name: str):
-        """Initialize with model details.
+    def __init__(self, datasite: str, service_name: str):
+        """Initialize with service details.
         
         Args:
-            owner: Email of the model owner
-            model_name: Name of the model
+            datasite: Email of the service datasite
+            service_name: Name of the service
         """
-        self.owner = owner
-        self.model_name = model_name
+        self.datasite = datasite
+        self.service_name = service_name
     
     def chat_url(self, **params) -> str:
         """Build syft URL for chat endpoint."""
         return SyftURLBuilder.build_syft_url(
-            self.owner, 
-            self.model_name, 
+            self.datasite, 
+            self.service_name, 
             "chat", 
             params
         )
@@ -213,8 +213,8 @@ class ModelEndpoints:
             params["query"] = query
         
         return SyftURLBuilder.build_syft_url(
-            self.owner, 
-            self.model_name, 
+            self.datasite, 
+            self.service_name, 
             "search", 
             params
         )
@@ -222,24 +222,24 @@ class ModelEndpoints:
     def health_url(self) -> str:
         """Build syft URL for health endpoint."""
         return SyftURLBuilder.build_syft_url(
-            self.owner, 
-            self.model_name, 
+            self.datasite, 
+            self.service_name, 
             "health"
         )
     
     def openapi_url(self) -> str:
         """Build syft URL for OpenAPI specification."""
         return SyftURLBuilder.build_syft_url(
-            self.owner, 
-            self.model_name, 
+            self.datasite, 
+            self.service_name, 
             "syft/openapi.json"
         )
     
     def custom_endpoint_url(self, endpoint: str, **params) -> str:
         """Build syft URL for custom endpoint."""
         return SyftURLBuilder.build_syft_url(
-            self.owner, 
-            self.model_name, 
+            self.datasite, 
+            self.service_name, 
             endpoint, 
             params
         )
@@ -258,14 +258,14 @@ def validate_syft_url(syft_url: str) -> bool:
         parsed = SyftURLBuilder.parse_syft_url(syft_url)
         
         # Check required components
-        required_fields = ['owner', 'app_name', 'endpoint']
+        required_fields = ['datasite', 'app_name', 'endpoint']
         for field in required_fields:
             if not parsed.get(field):
                 return False
         
-        # Validate owner format (should be email)
-        owner = parsed['owner']
-        if '@' not in owner or '.' not in owner.split('@')[1]:
+        # Validate datasite format (should be email)
+        datasite = parsed['datasite']
+        if '@' not in datasite or '.' not in datasite.split('@')[1]:
             return False
         
         return True
@@ -274,27 +274,27 @@ def validate_syft_url(syft_url: str) -> bool:
         return False
 
 
-def extract_model_info_from_url(syft_url: str) -> Dict[str, str]:
-    """Extract model information from syft URL.
+def extract_service_info_from_url(syft_url: str) -> Dict[str, str]:
+    """Extract service information from syft URL.
     
     Args:
         syft_url: The syft URL to parse
         
     Returns:
-        Dictionary with model information
+        Dictionary with service information
     """
     try:
         parsed = SyftURLBuilder.parse_syft_url(syft_url)
         
         return {
-            'owner': parsed['owner'],
-            'model_name': parsed['app_name'],
+            'datasite': parsed['datasite'],
+            'service_name': parsed['app_name'],
             'endpoint': parsed['endpoint'],
-            'display_name': f"{parsed['app_name']} by {parsed['owner']}"
+            'display_name': f"{parsed['app_name']} by {parsed['datasite']}"
         }
         
     except ValueError as e:
-        logger.error(f"Failed to extract model info from URL '{syft_url}': {e}")
+        logger.error(f"Failed to extract service info from URL '{syft_url}': {e}")
         return {}
 
 
@@ -337,16 +337,16 @@ def normalize_cache_server_url(url: str) -> str:
 
 
 # Convenience functions
-def build_chat_url(owner: str, model_name: str) -> str:
+def build_chat_url(datasite: str, service_name: str) -> str:
     """Quick helper to build chat URL."""
-    return ModelEndpoints(owner, model_name).chat_url()
+    return ServiceEndpoints(datasite, service_name).chat_url()
 
 
-def build_search_url(owner: str, model_name: str, query: Optional[str] = None) -> str:
+def build_search_url(datasite: str, service_name: str, query: Optional[str] = None) -> str:
     """Quick helper to build search URL."""
-    return ModelEndpoints(owner, model_name).search_url(query)
+    return ServiceEndpoints(datasite, service_name).search_url(query)
 
 
-def build_health_url(owner: str, model_name: str) -> str:
+def build_health_url(datasite: str, service_name: str) -> str:
     """Quick helper to build health URL."""
-    return ModelEndpoints(owner, model_name).health_url()
+    return ServiceEndpoints(datasite, service_name).health_url()

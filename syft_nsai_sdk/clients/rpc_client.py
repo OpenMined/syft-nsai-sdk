@@ -1,5 +1,5 @@
 """
-SyftBox RPC client for communicating with models via cache server
+SyftBox RPC client for communicating with services via cache server
 """
 import asyncio
 import json
@@ -9,7 +9,7 @@ import httpx
 import logging
 
 from ..core.exceptions import NetworkError, RPCError, PollingTimeoutError, PollingError
-from ..core.types import ModelInfo
+from ..core.types import ServiceInfo
 from ..core.exceptions import PaymentError, AuthenticationError
 from ..utils.spinner import AsyncSpinner
 from .accounting_client import AccountingClient
@@ -18,11 +18,11 @@ logger = logging.getLogger(__name__)
 
 
 class SyftBoxRPCClient:
-    """Client for making RPC calls to SyftBox models via cache server."""
+    """Client for making RPC calls to SyftBox services via cache server."""
     
     def __init__(self, 
             cache_server_url: str = "https://syftbox.net",
-            from_email: str = None,
+            # from_email: str = None,
             timeout: float = 30.0,
             max_poll_attempts: int = 30,
             poll_interval: float = 3.0,
@@ -38,8 +38,9 @@ class SyftBoxRPCClient:
             poll_interval: Seconds between polling attempts
             accounting_client: Optional accounting client for payments
         """
+
         self.cache_server_url = cache_server_url.rstrip('/')
-        self.from_email = from_email
+        self.from_email = "guest@syft.org" or accounting_client.get_email()
         self.timeout = timeout
         self.max_poll_attempts = max_poll_attempts
         self.poll_interval = poll_interval
@@ -64,12 +65,12 @@ class SyftBoxRPCClient:
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         await self.close()
     
-    def build_syft_url(self, owner: str, model_name: str, endpoint: str) -> str:
+    def build_syft_url(self, datasite: str, service_name: str, endpoint: str) -> str:
         """Build a syft:// URL for RPC calls.
         
         Args:
-            owner: Email of the model owner
-            model_name: Name of the model
+            datasite: Email of the service datasite
+            service_name: Name of the service
             endpoint: RPC endpoint (e.g., 'chat', 'search', 'health')
             
         Returns:
@@ -78,139 +79,8 @@ class SyftBoxRPCClient:
         # Clean endpoint - remove leading slash if present
         endpoint = endpoint.lstrip('/')
         
-        # Build syft URL: syft://owner/app_data/model_name/rpc/endpoint
-        return f"syft://{owner}/app_data/{model_name}/rpc/{endpoint}"
-    
-    async def call_rpc1(self, 
-                       syft_url: str, 
-                       payload: Optional[Dict[str, Any]] = None,  
-                       headers: Optional[Dict[str, str]] = None,
-                       show_spinner: bool = True,
-                    ) -> Dict[str, Any]:
-        """Make an RPC call to a SyftBox model.
-        
-        Args:
-            syft_url: The syft:// URL to call
-            payload: JSON payload to send (optional)
-            headers: Additional headers (optional)
-            
-        Returns:
-            Response data from the model
-            
-        Raises:
-            NetworkError: For HTTP/network issues
-            RPCError: For RPC-specific errors
-            PollingTimeoutError: When polling times out
-        """
-        try:
-            # Initialize payload if None
-            if payload is None:
-                payload = {}
-
-            # Extract recipient email for accounting token
-            recipient_email = syft_url.split('//')[1].split('/')[0]
-            
-            # Create accounting token if client is configured
-            if self.accounting_client.is_configured():
-                transaction_token = await self.accounting_client.create_transaction_token(
-                    recipient_email=recipient_email
-                )
-                payload["transaction_token"] = transaction_token
-            
-            # payload["stream"] = False
-
-            # Build request headers
-            request_headers = {
-                "Content-Type": "application/json",
-                "Accept": "application/json",
-                "x-syft-from": self.from_email,
-                **(headers or {})
-            }
-            
-            # Build request URL
-            request_url = f"{self.cache_server_url}/api/v1/send/msg"
-
-            # Build query parameters
-            params = {
-                "x-syft-url": syft_url,
-                "x-syft-from": self.from_email
-            }
-
-            # Add raw parameter if specified in headers
-            if headers and headers.get("x-syft-raw"):
-                params["x-syft-raw"] = headers["x-syft-raw"]
-            
-            logger.debug(f"Making RPC call to {syft_url}")
-
-            # Serialize payload to JSON string and set Content-Length
-            if payload:
-                payload_json = json.dumps(payload)
-                request_headers["Content-Length"] = str(len(payload_json.encode('utf-8')))
-            else:
-                payload_json = None
-    
-    
-            # Make the request
-            # logger.info(f"Sending request to {request_url} with params {params} and payload {payload}")
-            response = await self.client.post(
-                request_url,
-                params=params,
-                headers=request_headers,
-                # json=payload,
-                data=payload_json,
-            )
-            
-            # Handle response
-            if response.status_code == 200:
-                # Immediate response
-                data = response.json()
-                logger.debug(f"Got immediate response from {syft_url}")
-                return data
-            
-            elif response.status_code == 202:
-                # Async response - need to poll
-                data = response.json()
-                request_id = data.get("request_id")
-                
-                if not request_id:
-                    raise RPCError("Received 202 but no request_id", syft_url)
-                
-                logger.debug(f"Got async response, polling with request_id: {request_id}")
-                
-                # Extract poll URL from response
-                poll_url_path = None
-                if "data" in data and "poll_url" in data["data"]:
-                    poll_url_path = data["data"]["poll_url"]
-                elif "location" in response.headers:
-                    poll_url_path = response.headers["location"]
-                
-                if not poll_url_path:
-                    raise RPCError("Async response but no poll URL found", syft_url)
-                
-                # Poll for the actual response
-                return await self._poll_for_response(poll_url_path, syft_url, request_id, show_spinner)
-
-            else:
-                # Error response
-                try:
-                    error_data = response.json()
-                    error_msg = error_data.get("message", f"HTTP {response.status_code}")
-                    logger.info(f"Got error response from {error_msg}")
-                except:
-                    error_msg = f"HTTP {response.status_code}: {response.text}"
-                    logger.debug(f"Got error message from {error_msg}")
-                raise NetworkError(
-                    f"RPC call failed: {error_msg}",
-                    syft_url,
-                    response.status_code
-                )
-        
-        except httpx.TimeoutException:
-            raise NetworkError(f"Request timeout after {self.timeout}s", syft_url)
-        except httpx.RequestError as e:
-            raise NetworkError(f"Request failed: {e}", syft_url)
-        except json.JSONDecodeError as e:
-            raise RPCError(f"Invalid JSON response: {e}", syft_url)
+        # Build syft URL: syft://datasite/app_data/service_name/rpc/endpoint
+        return f"syft://{datasite}/app_data/{service_name}/rpc/{endpoint}"
         
     async def call_rpc(self, 
                     syft_url: str, 
@@ -219,7 +89,7 @@ class SyftBoxRPCClient:
                     method: str = "POST",
                     show_spinner: bool = True,
                     ) -> Dict[str, Any]:
-        """Make an RPC call to a SyftBox model.
+        """Make an RPC call to a SyftBox service.
         
         Args:
             syft_url: The syft:// URL to call
@@ -228,7 +98,7 @@ class SyftBoxRPCClient:
             method: HTTP method to use (GET or POST)
             
         Returns:
-            Response data from the model
+            Response data from the service
             
         Raises:
             NetworkError: For HTTP/network issues
@@ -378,7 +248,7 @@ class SyftBoxRPCClient:
         # Start spinner if enabled and requested
         spinner = None
         if show_spinner:
-            spinner = AsyncSpinner("Waiting for model response")
+            spinner = AsyncSpinner("Waiting for service response")
             await spinner.start_async()
         try:
             for attempt in range(1, self.max_poll_attempts + 1):
@@ -410,7 +280,7 @@ class SyftBoxRPCClient:
                                 pass
                             elif data["status"] == "error":
                                 error_msg = data.get("message", "Unknown error during processing")
-                                raise RPCError(f"Model error: {error_msg}", syft_url)
+                                raise RPCError(f"Service error: {error_msg}", syft_url)
                             else:
                                 # Other status, return as-is
                                 return data
@@ -475,89 +345,89 @@ class SyftBoxRPCClient:
             if spinner:
                 await spinner.stop_async("Response received")
 
-    async def call_health(self, model_info: ModelInfo) -> Dict[str, Any]:
-        """Call the health endpoint of a model.
+    async def call_health(self, service_info: ServiceInfo) -> Dict[str, Any]:
+        """Call the health endpoint of a service.
         
         Args:
-            model_info: Model information
+            service_info: Service information
             
         Returns:
             Health response data
         """
-        syft_url = self.build_syft_url(model_info.owner, model_info.name, "health")
+        syft_url = self.build_syft_url(service_info.datasite, service_info.name, "health")
         # return await self.call_rpc(syft_url, show_spinner=False)
         return await self.call_rpc(syft_url, payload=None, method="GET", show_spinner=False)
         # return await self.call_rpc(syft_url, method="GET", show_spinner=False)
     
-    async def call_chat1(self, model_info: ModelInfo, request_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Call the chat endpoint of a model.
+    async def call_chat1(self, service_info: ServiceInfo, request_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Call the chat endpoint of a service.
         
         Args:
-            model_info: Model information
+            service_info: Service information
             request_data: Chat request payload
             
         Returns:
             Chat response data
         """
-        syft_url = self.build_syft_url(model_info.owner, model_info.name, "chat")
+        syft_url = self.build_syft_url(service_info.datasite, service_info.name, "chat")
         return await self.call_rpc(syft_url, request_data)
     
-    async def call_search1(self, model_info: ModelInfo, request_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Call the search endpoint of a model.
+    async def call_search1(self, service_info: ServiceInfo, request_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Call the search endpoint of a service.
         
         Args:
-            model_info: Model information
+            service_info: Service information
             request_data: Search request payload
             
         Returns:
             Search response data
         """
-        syft_url = self.build_syft_url(model_info.owner, model_info.name, "search")
+        syft_url = self.build_syft_url(service_info.datasite, service_info.name, "search")
         return await self.call_rpc(syft_url, request_data)
     
-    async def call_chat(self, model_info: ModelInfo, request_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Call the chat endpoint of a model."""
-        # Map router model names to actual model names if needed
-        if "model" in request_data:
+    async def call_chat(self, service_info: ServiceInfo, request_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Call the chat endpoint of a service."""
+        # Map router service names to actual service names if needed
+        if "service" in request_data:
             request_data = request_data.copy()  # Don't modify original
-            request_data["model"] = self._map_model_name(request_data["model"], model_info)
+            request_data["service"] = self._map_service_name(request_data["service"], service_info)
         
-        syft_url = self.build_syft_url(model_info.owner, model_info.name, "chat")
+        syft_url = self.build_syft_url(service_info.datasite, service_info.name, "chat")
         return await self.call_rpc(syft_url, request_data)
     
-    async def call_search(self, model_info: ModelInfo, request_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Call the search endpoint of a model.
+    async def call_search(self, service_info: ServiceInfo, request_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Call the search endpoint of a service.
         
         Args:
-            model_info: Model information
+            service_info: Service information
             request_data: Search request payload
             
         Returns:
             Search response data
         """
-        # Map router model names to actual model names if needed
-        if "model" in request_data:
+        # Map router service names to actual service names if needed
+        if "service" in request_data:
             request_data = request_data.copy()  # Don't modify original
-            request_data["model"] = self._map_model_name(request_data["model"], model_info)
+            request_data["service"] = self._map_service_name(request_data["service"], service_info)
         
-        syft_url = self.build_syft_url(model_info.owner, model_info.name, "search")
+        syft_url = self.build_syft_url(service_info.datasite, service_info.name, "search")
         return await self.call_rpc(syft_url, request_data)
 
-    def _map_model_name(self, model_name: str, model_info: ModelInfo) -> str:
-        """Map router model names to actual underlying model names."""
+    def _map_service_name(self, service_name: str, service_info: ServiceInfo) -> str:
+        """Map router service names to actual underlying service names."""
         # Hard-coded mapping for known Ollama routers
-        if model_info.name in ["carl-model", "carl-free"]:
-            logger.debug(f"Mapping {model_name} to tinyllama:latest for known Ollama router")
+        if service_info.name in ["carl-service", "carl-free"]:
+            logger.debug(f"Mapping {service_name} to tinyllama:latest for known Ollama router")
             return "tinyllama:latest"
         
         # Tag-based detection for other Ollama routers
-        if model_info.tags and "ollama" in [tag.lower() for tag in model_info.tags]:
-            logger.debug(f"Mapping {model_name} to tinyllama:latest based on ollama tag")
+        if service_info.tags and "ollama" in [tag.lower() for tag in service_info.tags]:
+            logger.debug(f"Mapping {service_name} to tinyllama:latest based on ollama tag")
             return "tinyllama:latest"
         
         # For other routers, use the original name
-        logger.debug(f"Using original model name: {model_name}")
-        return model_name
+        logger.debug(f"Using original service name: {service_name}")
+        return service_name
     
     def configure_accounting(self, service_url: str, email: str, password: str):
         """Configure accounting client.

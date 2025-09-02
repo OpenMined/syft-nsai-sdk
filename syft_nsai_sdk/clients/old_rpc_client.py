@@ -1,5 +1,5 @@
 """
-SyftBox RPC client for communicating with models via cache server
+SyftBox RPC client for communicating with services via cache server
 """
 import asyncio
 import json
@@ -9,7 +9,7 @@ import httpx
 import logging
 
 from ..core.exceptions import NetworkError, RPCError, PollingTimeoutError, PollingError
-from ..core.types import ModelInfo
+from ..core.types import ServiceInfo
 from ..core.exceptions import PaymentError, AuthenticationError
 from ..utils.spinner import AsyncSpinner
 from syft_accounting_sdk import UserClient, ServiceException
@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 
 class SyftBoxRPCClient:
-    """Client for making RPC calls to SyftBox models via cache server."""
+    """Client for making RPC calls to SyftBox services via cache server."""
     
     def __init__(self, 
             cache_server_url: str = "https://syftbox.net",
@@ -68,12 +68,12 @@ class SyftBoxRPCClient:
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         await self.close()
     
-    def build_syft_url(self, owner: str, model_name: str, endpoint: str) -> str:
+    def build_syft_url(self, datasite: str, service_name: str, endpoint: str) -> str:
         """Build a syft:// URL for RPC calls.
         
         Args:
-            owner: Email of the model owner
-            model_name: Name of the model
+            datasite: Email of the service datasite
+            service_name: Name of the service
             endpoint: RPC endpoint (e.g., 'chat', 'search', 'health')
             
         Returns:
@@ -82,12 +82,12 @@ class SyftBoxRPCClient:
         # Clean endpoint - remove leading slash if present
         endpoint = endpoint.lstrip('/')
         
-        # Build syft URL: syft://owner/app_data/model_name/rpc/endpoint
-        return f"syft://{owner}/app_data/{model_name}/rpc/{endpoint}"
+        # Build syft URL: syft://datasite/app_data/service_name/rpc/endpoint
+        return f"syft://{datasite}/app_data/{service_name}/rpc/{endpoint}"
     
     async def call_rpc(self, syft_url: str, payload: Optional[Dict[str, Any]] = None, 
                     headers: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
-        """Make an RPC call to a SyftBox model.
+        """Make an RPC call to a SyftBox service.
         
         Args:
             syft_url: The syft:// URL to call
@@ -95,7 +95,7 @@ class SyftBoxRPCClient:
             headers: Additional headers (optional)
             
         Returns:
-            Response data from the model
+            Response data from the service
             
         Raises:
             NetworkError: For HTTP/network issues
@@ -228,7 +228,7 @@ class SyftBoxRPCClient:
         poll_url = urljoin(self.cache_server_url, poll_url_path.lstrip('/'))
 
         # Start spinner if enabled
-        spinner = AsyncSpinner("Waiting for model response")
+        spinner = AsyncSpinner("Waiting for service response")
         await spinner.start_async()
         try:
             for attempt in range(1, self.max_poll_attempts + 1):
@@ -260,7 +260,7 @@ class SyftBoxRPCClient:
                                 pass
                             elif data["status"] == "error":
                                 error_msg = data.get("message", "Unknown error during processing")
-                                raise RPCError(f"Model error: {error_msg}", syft_url)
+                                raise RPCError(f"Service error: {error_msg}", syft_url)
                             else:
                                 # Other status, return as-is
                                 return data
@@ -324,42 +324,42 @@ class SyftBoxRPCClient:
             # Always stop spinner, even if an exception occurs
             await spinner.stop_async("Response received")
 
-    async def call_health(self, model_info: ModelInfo) -> Dict[str, Any]:
-        """Call the health endpoint of a model.
+    async def call_health(self, service_info: ServiceInfo) -> Dict[str, Any]:
+        """Call the health endpoint of a service.
         
         Args:
-            model_info: Model information
+            service_info: Service information
             
         Returns:
             Health response data
         """
-        syft_url = self.build_syft_url(model_info.owner, model_info.name, "health")
+        syft_url = self.build_syft_url(service_info.datasite, service_info.name, "health")
         return await self.call_rpc(syft_url)
     
-    async def call_chat(self, model_info: ModelInfo, request_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Call the chat endpoint of a model.
+    async def call_chat(self, service_info: ServiceInfo, request_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Call the chat endpoint of a service.
         
         Args:
-            model_info: Model information
+            service_info: Service information
             request_data: Chat request payload
             
         Returns:
             Chat response data
         """
-        syft_url = self.build_syft_url(model_info.owner, model_info.name, "chat")
+        syft_url = self.build_syft_url(service_info.datasite, service_info.name, "chat")
         return await self.call_rpc(syft_url, request_data)
     
-    async def call_search(self, model_info: ModelInfo, request_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Call the search endpoint of a model.
+    async def call_search(self, service_info: ServiceInfo, request_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Call the search endpoint of a service.
         
         Args:
-            model_info: Model information
+            service_info: Service information
             request_data: Search request payload
             
         Returns:
             Search response data
         """
-        syft_url = self.build_syft_url(model_info.owner, model_info.name, "search")
+        syft_url = self.build_syft_url(service_info.datasite, service_info.name, "search")
         return await self.call_rpc(syft_url, request_data)
     
     def configure_accounting(self, service_url: str, email: str, password: str):
@@ -416,10 +416,10 @@ class SyftBoxRPCClient:
         return self._accounting_client
     
     async def create_transaction_token(self, recipient_email: str) -> str:
-        """Create a transaction token for paying a model owner.
+        """Create a transaction token for paying a service datasite.
         
         Args:
-            recipient_email: Email of the model owner to pay
+            recipient_email: Email of the service datasite to pay
             
         Returns:
             Transaction token string

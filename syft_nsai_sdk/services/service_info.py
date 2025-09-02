@@ -1,30 +1,30 @@
 """
-ModelInfo data class and related utilities
+ServiceInfo data class and related utilities
 """
 from dataclasses import dataclass, field
 from typing import List, Dict, Any, Optional
 from pathlib import Path
 from datetime import datetime
 
-from ..core.types import ServiceInfo, ServiceType, ModelStatus, HealthStatus
+from ..core.types import ServiceItem, ServiceType, ServiceStatus, HealthStatus
 
 
 @dataclass
-class ModelInfo:
-    """Complete information about a discovered SyftBox model."""
+class ServiceInfo:
+    """Complete information about a discovered SyftBox service."""
     
     # Basic metadata
     name: str
-    owner: str
+    datasite: str
     summary: str
     description: str
     tags: List[str] = field(default_factory=list)
     
     # Service configuration
-    services: List[ServiceInfo] = field(default_factory=list)
+    services: List[ServiceItem] = field(default_factory=list)
     
     # Status information
-    config_status: ModelStatus = ModelStatus.DISABLED
+    config_status: ServiceStatus = ServiceStatus.DISABLED
     health_status: Optional[HealthStatus] = None
     
     # Delegation information
@@ -66,7 +66,7 @@ class ModelInfo:
     
     @property
     def has_enabled_services(self) -> bool:
-        """Check if model has any enabled services."""
+        """Check if service has any enabled services."""
         return any(service.enabled for service in self.services)
     
     @property
@@ -84,7 +84,7 @@ class ModelInfo:
         """Get list of all service types (enabled and disabled)."""
         return [service.type for service in self.services]
     
-    def get_service_info(self, service_type: ServiceType) -> Optional[ServiceInfo]:
+    def get_service_info(self, service_type: ServiceType) -> Optional[ServiceItem]:
         """Get service information for a specific service type."""
         for service in self.services:
             if service.type == service_type:
@@ -92,12 +92,12 @@ class ModelInfo:
         return None
     
     def supports_service(self, service_type: ServiceType) -> bool:
-        """Check if model supports and has enabled a specific service type."""
+        """Check if service supports and has enabled a specific service type."""
         service = self.get_service_info(service_type)
         return service is not None and service.enabled
     
     def has_service(self, service_type: ServiceType) -> bool:
-        """Check if model has a service type (regardless of enabled status)."""
+        """Check if service has a service type (regardless of enabled status)."""
         return any(service.type == service_type for service in self.services)
     
     # Pricing-related properties
@@ -145,27 +145,27 @@ class ModelInfo:
     
     @property
     def is_healthy(self) -> bool:
-        """Check if model is healthy (online)."""
+        """Check if service is healthy (online)."""
         return self.health_status == HealthStatus.ONLINE
     
     @property
     def is_available(self) -> bool:
-        """Check if model is available (has enabled services and is healthy or health unknown)."""
+        """Check if service is available (has enabled services and is healthy or health unknown)."""
         return (self.has_enabled_services and 
                 (self.health_status is None or 
                  self.health_status in [HealthStatus.ONLINE, HealthStatus.UNKNOWN]))
     
     @property
     def is_active(self) -> bool:
-        """Check if model is active (enabled services and active config status)."""
+        """Check if service is active (enabled services and active config status)."""
         return (self.has_enabled_services and 
-                self.config_status == ModelStatus.ACTIVE)
+                self.config_status == ServiceStatus.ACTIVE)
     
     # Delegate-related properties
     
     @property
     def has_delegate(self) -> bool:
-        """Check if model has a delegate."""
+        """Check if service has a delegate."""
         return self.delegate_email is not None
     
     @property
@@ -183,42 +183,42 @@ class ModelInfo:
     
     @property
     def has_metadata_file(self) -> bool:
-        """Check if model has an accessible metadata file."""
+        """Check if service has an accessible metadata file."""
         return self.metadata_path is not None and self.metadata_path.exists()
     
     @property
     def has_rpc_schema(self) -> bool:
-        """Check if model has an RPC schema."""
+        """Check if service has an RPC schema."""
         return bool(self.rpc_schema) or (
             self.rpc_schema_path is not None and self.rpc_schema_path.exists()
         )
     
     @property
     def has_endpoints_documented(self) -> bool:
-        """Check if model has documented endpoints."""
+        """Check if service has documented endpoints."""
         return bool(self.endpoints)
     
     # Tag-related methods
     
     def has_tag(self, tag: str) -> bool:
-        """Check if model has a specific tag (case-insensitive)."""
+        """Check if service has a specific tag (case-insensitive)."""
         return tag.lower() in [t.lower() for t in self.tags]
     
     def has_any_tags(self, tags: List[str]) -> bool:
-        """Check if model has any of the specified tags."""
-        model_tags = [t.lower() for t in self.tags]
-        return any(tag.lower() in model_tags for tag in tags)
+        """Check if service has any of the specified tags."""
+        service_tags = [t.lower() for t in self.tags]
+        return any(tag.lower() in service_tags for tag in tags)
     
     def has_all_tags(self, tags: List[str]) -> bool:
-        """Check if model has all of the specified tags."""
-        model_tags = [t.lower() for t in self.tags]
-        return all(tag.lower() in model_tags for tag in tags)
+        """Check if service has all of the specified tags."""
+        service_tags = [t.lower() for t in self.tags]
+        return all(tag.lower() in service_tags for tag in tags)
     
     def get_matching_tags(self, tags: List[str]) -> List[str]:
         """Get list of tags that match the provided tags."""
-        model_tags_lower = {t.lower(): t for t in self.tags}
-        return [model_tags_lower[tag.lower()] for tag in tags 
-                if tag.lower() in model_tags_lower]
+        service_tags_lower = {t.lower(): t for t in self.tags}
+        return [service_tags_lower[tag.lower()] for tag in tags 
+                if tag.lower() in service_tags_lower]
     
     # Utility methods
     
@@ -240,7 +240,7 @@ class ModelInfo:
         }
     
     def get_status_summary(self) -> Dict[str, Any]:
-        """Get summary of model status."""
+        """Get summary of service status."""
         return {
             'config_status': self.config_status.value,
             'health_status': self.health_status.value if self.health_status else None,
@@ -255,7 +255,7 @@ class ModelInfo:
         """Get summary of metadata and file information."""
         return {
             'name': self.name,
-            'owner': self.owner,
+            'datasite': self.datasite,
             'summary': self.summary,
             'tags': self.tags,
             'version': self.version,
@@ -268,11 +268,11 @@ class ModelInfo:
         }
     
     def to_dict(self) -> Dict[str, Any]:
-        """Convert ModelInfo to dictionary for serialization."""
+        """Convert ServiceInfo to dictionary for serialization."""
         return {
             # Basic info
             'name': self.name,
-            'owner': self.owner,
+            'datasite': self.datasite,
             'summary': self.summary,
             'description': self.description,
             'tags': self.tags,
@@ -321,9 +321,9 @@ class ModelInfo:
         }
     
     def __repr__(self) -> str:
-        """String representation of ModelInfo."""
+        """String representation of ServiceInfo."""
         service_types = ', '.join([s.type.value for s in self.services if s.enabled])
-        return (f"ModelInfo(name='{self.name}', owner='{self.owner}', "
+        return (f"ServiceInfo(name='{self.name}', datasite='{self.datasite}', "
                 f"services=[{service_types}], status={self.config_status.value})")
     
     def __str__(self) -> str:
@@ -340,132 +340,132 @@ class ModelInfo:
         
         pricing = f"${self.min_pricing}" if self.min_pricing > 0 else "Free"
         
-        return f"{self.name} by {self.owner} ({pricing}){health_indicator}"
+        return f"{self.name} by {self.datasite} ({pricing}){health_indicator}"
     
     def __eq__(self, other) -> bool:
-        """Check equality based on name and owner."""
-        if not isinstance(other, ModelInfo):
+        """Check equality based on name and datasite."""
+        if not isinstance(other, ServiceInfo):
             return False
-        return self.name == other.name and self.owner == other.owner
+        return self.name == other.name and self.datasite == other.datasite
     
     def __hash__(self) -> int:
-        """Hash based on name and owner."""
-        return hash((self.name, self.owner))
+        """Hash based on name and datasite."""
+        return hash((self.name, self.datasite))
 
 
-# Utility functions for working with ModelInfo objects
+# Utility functions for working with ServiceInfo objects
 
-def group_models_by_owner(models: List[ModelInfo]) -> Dict[str, List[ModelInfo]]:
-    """Group models by owner email."""
+def group_services_by_datasite(services: List[ServiceInfo]) -> Dict[str, List[ServiceInfo]]:
+    """Group services by datasite email."""
     groups = {}
-    for model in models:
-        if model.owner not in groups:
-            groups[model.owner] = []
-        groups[model.owner].append(model)
+    for service in services:
+        if service.datasite not in groups:
+            groups[service.datasite] = []
+        groups[service.datasite].append(service)
     return groups
 
 
-def group_models_by_service_type(models: List[ModelInfo]) -> Dict[ServiceType, List[ModelInfo]]:
-    """Group models by service type."""
+def group_services_by_service_type(services: List[ServiceInfo]) -> Dict[ServiceType, List[ServiceInfo]]:
+    """Group services by service type."""
     groups = {}
-    for model in models:
-        for service_type in model.enabled_service_types:
+    for service in services:
+        for service_type in service.enabled_service_types:
             if service_type not in groups:
                 groups[service_type] = []
-            groups[service_type].append(model)
+            groups[service_type].append(service)
     return groups
 
 
-def group_models_by_status(models: List[ModelInfo]) -> Dict[str, List[ModelInfo]]:
-    """Group models by availability status."""
+def group_services_by_status(services: List[ServiceInfo]) -> Dict[str, List[ServiceInfo]]:
+    """Group services by availability status."""
     groups = {
         'available': [],
         'unavailable': [],
         'unknown': []
     }
     
-    for model in models:
-        if model.is_available:
-            groups['available'].append(model)
-        elif model.health_status == HealthStatus.OFFLINE:
-            groups['unavailable'].append(model)
+    for service in services:
+        if service.is_available:
+            groups['available'].append(service)
+        elif service.health_status == HealthStatus.OFFLINE:
+            groups['unavailable'].append(service)
         else:
-            groups['unknown'].append(model)
+            groups['unknown'].append(service)
     
     return groups
 
 
-def sort_models_by_preference(models: List[ModelInfo], 
-                            preference: str = "balanced") -> List[ModelInfo]:
-    """Sort models by preference (cheapest, premium, balanced)."""
+def sort_services_by_preference(services: List[ServiceInfo], 
+                            preference: str = "balanced") -> List[ServiceInfo]:
+    """Sort services by preference (cheapest, paid, balanced)."""
     if preference == "cheapest":
-        return sorted(models, key=lambda m: m.min_pricing)
-    elif preference == "premium":
-        return sorted(models, key=lambda m: m.max_pricing, reverse=True)
+        return sorted(services, key=lambda m: m.min_pricing)
+    elif preference == "paid":
+        return sorted(services, key=lambda m: m.max_pricing, reverse=True)
     elif preference == "balanced":
-        def score(model):
+        def score(service):
             # Balance cost (lower is better) and quality indicators
-            cost_score = 1.0 / (model.min_pricing + 0.01)
+            cost_score = 1.0 / (service.min_pricing + 0.01)
             
             # Quality indicators
             quality_score = 0
-            quality_tags = {'premium', 'gpt4', 'claude', 'enterprise', 'high-quality'}
-            quality_score += len(set(model.tags).intersection(quality_tags)) * 0.5
+            quality_tags = {'paid', 'gpt4', 'claude', 'enterprise', 'high-quality'}
+            quality_score += len(set(service.tags).intersection(quality_tags)) * 0.5
             
             # Health bonus
-            if model.health_status == HealthStatus.ONLINE:
+            if service.health_status == HealthStatus.ONLINE:
                 quality_score += 1.0
             
             # Service variety bonus
-            quality_score += len(model.enabled_service_types) * 0.2
+            quality_score += len(service.enabled_service_types) * 0.2
             
             return cost_score + quality_score
         
-        return sorted(models, key=score, reverse=True)
+        return sorted(services, key=score, reverse=True)
     else:
-        return models
+        return services
 
 
-def filter_healthy_models(models: List[ModelInfo]) -> List[ModelInfo]:
-    """Filter models to only include healthy ones."""
-    return [model for model in models if model.is_healthy]
+def filter_healthy_services(services: List[ServiceInfo]) -> List[ServiceInfo]:
+    """Filter services to only include healthy ones."""
+    return [service for service in services if service.is_healthy]
 
 
-def filter_available_models(models: List[ModelInfo]) -> List[ModelInfo]:
-    """Filter models to only include available ones."""
-    return [model for model in models if model.is_available]
+def filter_available_services(services: List[ServiceInfo]) -> List[ServiceInfo]:
+    """Filter services to only include available ones."""
+    return [service for service in services if service.is_available]
 
 
-def get_model_statistics(models: List[ModelInfo]) -> Dict[str, Any]:
-    """Get comprehensive statistics about a list of models."""
-    if not models:
+def get_service_statistics(services: List[ServiceInfo]) -> Dict[str, Any]:
+    """Get comprehensive statistics about a list of services."""
+    if not services:
         return {}
     
     # Basic counts
-    total = len(models)
-    enabled = len([m for m in models if m.has_enabled_services])
-    healthy = len([m for m in models if m.is_healthy])
-    free = len([m for m in models if m.is_free])
-    paid = len([m for m in models if m.is_paid])
+    total = len(services)
+    enabled = len([m for m in services if m.has_enabled_services])
+    healthy = len([m for m in services if m.is_healthy])
+    free = len([m for m in services if m.is_free])
+    paid = len([m for m in services if m.is_paid])
     
     # Service type counts
     service_counts = {}
     for service_type in ServiceType:
         service_counts[service_type.value] = len([
-            m for m in models if m.supports_service(service_type)
+            m for m in services if m.supports_service(service_type)
         ])
     
-    # Owner statistics
-    owners = list(set(m.owner for m in models))
-    models_per_owner = {}
-    for owner in owners:
-        models_per_owner[owner] = len([m for m in models if m.owner == owner])
+    # Datasite statistics
+    datasites = list(set(m.datasite for m in services))
+    services_per_datasite = {}
+    for datasite in datasites:
+        services_per_datasite[datasite] = len([m for m in services if m.datasite == datasite])
     
     # Pricing statistics
-    paid_models = [m for m in models if m.is_paid]
+    paid_services = [m for m in services if m.is_paid]
     pricing_stats = {}
-    if paid_models:
-        prices = [m.min_pricing for m in paid_models]
+    if paid_services:
+        prices = [m.min_pricing for m in paid_services]
         pricing_stats = {
             'min_price': min(prices),
             'max_price': max(prices),
@@ -475,8 +475,8 @@ def get_model_statistics(models: List[ModelInfo]) -> Dict[str, Any]:
     
     # Tag statistics
     all_tags = []
-    for model in models:
-        all_tags.extend(model.tags)
+    for service in services:
+        all_tags.extend(service.tags)
     
     tag_counts = {}
     for tag in all_tags:
@@ -485,15 +485,15 @@ def get_model_statistics(models: List[ModelInfo]) -> Dict[str, Any]:
     top_tags = sorted(tag_counts.items(), key=lambda x: x[1], reverse=True)[:10]
     
     return {
-        'total_models': total,
-        'enabled_models': enabled,
-        'healthy_models': healthy,
-        'free_models': free,
-        'paid_models': paid,
+        'total_services': total,
+        'enabled_services': enabled,
+        'healthy_services': healthy,
+        'free_services': free,
+        'paid_services': paid,
         'service_counts': service_counts,
-        'total_owners': len(owners),
-        'avg_models_per_owner': total / len(owners) if owners else 0,
-        'top_owners': sorted(models_per_owner.items(), 
+        'total_datasites': len(datasites),
+        'avg_services_per_datasite': total / len(datasites) if datasites else 0,
+        'top_datasites': sorted(services_per_datasite.items(), 
                            key=lambda x: x[1], reverse=True)[:5],
         'pricing_stats': pricing_stats,
         'total_tags': len(set(all_tags)),

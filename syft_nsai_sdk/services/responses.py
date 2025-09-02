@@ -3,7 +3,7 @@ Response data classes for SyftBox services
 """
 from typing import List, Optional, Dict, Any, Union
 from dataclasses import dataclass, field
-from pydantic import BaseModel, Field, field_validator, validator
+from pydantic import BaseModel, Field, field_validator
 from datetime import datetime
 from enum import Enum
 import uuid
@@ -38,13 +38,13 @@ class BaseResponse:
     error_details: Optional[Dict[str, Any]] = None
 
 
-# Pydantic models for validation and serialization
-class LogProbsModel(BaseModel):
+# Pydantic services for validation and serialization
+class LogProbsService(BaseModel):
     """Log probabilities for generated tokens."""
     token_logprobs: Dict[str, float] = Field(..., description="Map of tokens to log probabilities")
 
 
-class ChatUsageModel(BaseModel):
+class ChatUsageService(BaseModel):
     """Token usage information."""
     prompt_tokens: int = Field(..., ge=0, description="Tokens in the prompt")
     completion_tokens: int = Field(..., ge=0, description="Tokens in the completion")
@@ -59,7 +59,7 @@ class ChatUsageModel(BaseModel):
         return v
 
 
-class ChatMessageModel(BaseModel):
+class ChatMessageService(BaseModel):
     """Chat message in response."""
     role: str = Field(..., description="Message role")
     content: str = Field(..., description="Message content")
@@ -72,22 +72,22 @@ class ChatMessageModel(BaseModel):
         return v
 
 
-class ChatResponseModel(BaseModel):
-    """Pydantic model for chat responses."""
+class ChatResponseService(BaseModel):
+    """Pydantic service for chat responses."""
     id: str = Field(..., description="Unique response ID")
-    model: str = Field(..., description="Model that generated the response")
-    message: ChatMessageModel = Field(..., description="Generated message")
+    service: str = Field(..., description="Service that generated the response")
+    message: ChatMessageService = Field(..., description="Generated message")
     finish_reason: Optional[str] = Field(None, description="Why generation stopped")
-    usage: ChatUsageModel = Field(..., description="Token usage information")
+    usage: ChatUsageService = Field(..., description="Token usage information")
     cost: Optional[float] = Field(None, ge=0, description="Cost of the request")
     provider_info: Optional[Dict[str, Any]] = Field(None, description="Provider-specific information")
-    logprobs: Optional[LogProbsModel] = Field(None, description="Log probabilities")
+    logprobs: Optional[LogProbsService] = Field(None, description="Log probabilities")
     
     class Config:
         schema_extra = {
             "example": {
                 "id": "chat-12345",
-                "model": "gpt-4",
+                "service": "gpt-4",
                 "message": {
                     "role": "assistant",
                     "content": "Hello! How can I help you today?"
@@ -103,7 +103,7 @@ class ChatResponseModel(BaseModel):
         }
 
 
-class DocumentResultModel(BaseModel):
+class DocumentResultService(BaseModel):
     """Document search result."""
     id: str = Field(..., description="Document identifier")
     score: float = Field(..., ge=0, le=1, description="Similarity score")
@@ -112,11 +112,11 @@ class DocumentResultModel(BaseModel):
     embedding: Optional[List[float]] = Field(None, description="Document embedding vector")
 
 
-class SearchResponseModel(BaseModel):
-    """Pydantic model for search responses."""
+class SearchResponseService(BaseModel):
+    """Pydantic service for search responses."""
     id: str = Field(..., description="Unique response ID")
     query: str = Field(..., description="Original search query")
-    results: List[DocumentResultModel] = Field(..., description="Search results")
+    results: List[DocumentResultService] = Field(..., description="Search results")
     cost: Optional[float] = Field(None, ge=0, description="Cost of the request")
     provider_info: Optional[Dict[str, Any]] = Field(None, description="Provider-specific information")
     
@@ -138,7 +138,7 @@ class SearchResponseModel(BaseModel):
         }
 
 
-class HealthStatusModel(BaseModel):
+class HealthStatusService(BaseModel):
     """Health check status information."""
     status: str = Field(..., description="Health status (ok, error)")
     uptime: Optional[float] = Field(None, description="Service uptime in seconds")
@@ -146,8 +146,8 @@ class HealthStatusModel(BaseModel):
     details: Optional[Dict[str, Any]] = Field(None, description="Additional health details")
 
 
-class HealthResponseModel(BaseModel):
-    """Pydantic model for health check responses."""
+class HealthResponseService(BaseModel):
+    """Pydantic service for health check responses."""
     id: str = Field(..., description="Unique response ID")
     project_name: str = Field(..., description="Name of the project/service")
     status: str = Field(..., description="Overall health status")
@@ -159,7 +159,7 @@ class HealthResponseModel(BaseModel):
 @dataclass
 class ChatResponse(BaseResponse):
     """Chat response data class."""
-    model: str
+    service: str
     message: ChatMessage
     usage: ChatUsage
     finish_reason: Optional[str] = None
@@ -186,7 +186,7 @@ class ChatResponse(BaseResponse):
         
         return cls(
             id=data.get('id', str(uuid.uuid4())),
-            model=data.get('model', 'unknown'),
+            service=data.get('service', 'unknown'),
             message=message,
             usage=usage,
             finish_reason=data.get('finishReason'),
@@ -199,7 +199,7 @@ class ChatResponse(BaseResponse):
         """Convert to dictionary for serialization."""
         return {
             "id": self.id,
-            "model": self.model,
+            "service": self.service,
             "message": {
                 "role": self.message.role,
                 "content": self.message.content,
@@ -418,11 +418,11 @@ class ResponseParser:
 
 
 # Factory functions for creating responses
-def create_successful_chat_response(model: str, content: str, **kwargs) -> ChatResponse:
+def create_successful_chat_response(service: str, content: str, **kwargs) -> ChatResponse:
     """Create a successful chat response."""
     return ChatResponse(
         id=str(uuid.uuid4()),
-        model=model,
+        service=service,
         message=ChatMessage(role="assistant", content=content),
         usage=ChatUsage(prompt_tokens=0, completion_tokens=0, total_tokens=0),
         **kwargs

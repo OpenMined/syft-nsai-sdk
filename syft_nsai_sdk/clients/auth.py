@@ -245,7 +245,7 @@ class CredentialManager:
             with open(self.credentials_file, 'w') as f:
                 json.dump(credentials, f, indent=2)
             
-            # Set restrictive permissions (owner read/write only)
+            # Set restrictive permissions (datasite read/write only)
             os.chmod(self.credentials_file, 0o600)
             
             logger.info(f"Credentials saved for {email}")
