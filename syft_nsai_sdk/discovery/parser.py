@@ -152,6 +152,7 @@ class MetadataParser:
             tags=tags,
             services=services,
             config_status=config_status,
+            health_status=None,
             delegate_email=delegate_email,
             endpoints=endpoints,
             rpc_schema=rpc_schema or {},

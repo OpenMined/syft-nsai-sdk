@@ -6,8 +6,6 @@ import uuid
 import logging
 from typing import List, Optional, Dict, Any
 
-from typer import prompt
-
 from ..core.types import (
     ServiceInfo, 
     ChatMessage, 
@@ -20,6 +18,7 @@ from ..core.types import (
 )
 from ..core.exceptions import ServiceNotSupportedError, RPCError, ValidationError, raise_service_not_supported
 from ..clients.rpc_client import SyftBoxRPCClient
+from ..utils.estimator import CostEstimator
 
 logger = logging.getLogger(__name__)
 
@@ -102,7 +101,7 @@ class ChatService:
                     
                     return ChatResponse(
                         id=body.get("id", str(uuid.uuid4())),
-                        service=body.get("service", self.service_info.name),
+                        model=body.get("model", self.service_info.name),
                         message=message,
                         usage=usage,
                         cost=body.get("cost"),
@@ -128,7 +127,7 @@ class ChatService:
                 
                 return ChatResponse(
                     id=response_data.get("id", str(uuid.uuid4())),
-                    service=response_data.get("service", self.service_info.name),
+                    model=response_data.get("model", self.service_info.name),
                     message=message,
                     usage=usage,
                     cost=response_data.get("cost"),
@@ -146,7 +145,7 @@ class ChatService:
                 
                 return ChatResponse(
                     id=str(uuid.uuid4()),
-                    service=self.service_info.name,
+                    model=self.service_info.name,
                     message=message,
                     usage=usage,
                     cost=response_data.get("cost"),
@@ -167,7 +166,7 @@ class ChatService:
                 
                 return ChatResponse(
                     id=str(uuid.uuid4()),
-                    service=self.service_info.name,
+                    model=self.service_info.name,
                     message=message,
                     usage=usage
                 )
@@ -187,23 +186,23 @@ class ChatService:
             Chat response
         """
         # Validate required parameters
-        if "prompt" not in params:
-            raise ValidationError("'prompt' parameter is required")
+        if "messages" not in params:
+            raise ValidationError("'messages' parameter is required")
         
         # Extract standard parameters
         params = params.copy()
-        prompt = params.pop("prompt")
+        messages = params.pop("messages")
         temperature = params.pop("temperature", None)
         max_tokens = params.pop("max_tokens", None)
         
         # Build messages
-        messages = [{"role": "user", "content": prompt}]
+        # messages = [{"role": "user", "content": messages}]
         
         # Build RPC payload with all parameters
         account_email = self.rpc_client.accounting_client.get_email()
         payload = {
             "user_email": account_email,
-            "service": self.service_info.name,
+            "model": self.service_info.name,
             "messages": messages
         }
         
@@ -225,7 +224,7 @@ class ChatService:
         response_data = await self.rpc_client.call_chat(self.service_info, payload)
         return self._parse_rpc_response(response_data)
     
-    def estimate_cost(self, message_count: int = 1) -> float:
+    def estimate_cost1(self, message_count: int = 1) -> float:
         """Estimate cost for a chat request."""
         chat_service_info = self.service_info.get_service_info(ServiceType.CHAT)
         if not chat_service_info:
@@ -233,13 +232,12 @@ class ChatService:
         
         if chat_service_info.charge_type == PricingChargeType.PER_REQUEST:
             return chat_service_info.pricing * message_count
-        elif chat_service_info.charge_type == PricingChargeType.PER_TOKEN:
-            # Use actual per-token pricing from service info
-            estimated_tokens = message_count * 50  # Still need rough token estimate
-            return chat_service_info.pricing * estimated_tokens
         else:
             return chat_service_info.pricing
-    
+        
+    def estimate_cost(self, message_count: int = 1) -> float:
+        return CostEstimator.estimate_chat_cost(self.service_info, message_count)
+
     @property
     def pricing(self) -> float:
         """Get pricing for chat service."""
@@ -251,112 +249,3 @@ class ChatService:
         """Get charge type for chat service."""
         chat_service = self.service_info.get_service_info(ServiceType.CHAT)
         return chat_service.charge_type.value if chat_service else "per_request"
-    
-class ConversationManager:
-    """Helper class for managing multi-turn conversations."""
-    
-    def __init__(self, chat_service: ChatService):
-        """Initialize conversation manager.
-        
-        Args:
-            chat_service: Chat service to use
-        """
-        self.chat_service = chat_service
-        # self.messages: List[ChatMessage] = []
-        self.messages: List[Dict[str, str]] = []
-        self.system_message: Optional[str] = None
-        self.max_exchanges = 2
-
-    def _build_context_prompt(self, new_message: str) -> str:
-        """Build a context-aware prompt from conversation history."""
-        parts = []
-        
-        if self.system_message:
-            parts.append(f"system: {self.system_message}")
-        
-        # Add conversation history
-        for msg in self.messages:
-            # Ensure content is properly cleaned
-            content = str(msg["content"]).strip()
-            parts.append(f"{msg['role']}: {content}")
-        
-        parts.append(f"user: {new_message.strip()}")
-        parts.append("assistant:")
-        
-        context = "\n".join(parts)
-        
-        return context
-    
-    def _auto_trim(self):
-        """Automatically trim conversation to keep only recent exchanges."""
-        max_messages = self.max_exchanges * 2  # Each exchange = user + assistant
-        if len(self.messages) > max_messages:
-            # Keep only the most recent exchanges
-            self.messages = self.messages[-max_messages:]
-    
-    def set_system_message(self, message: str):
-        """Set or update the system message.
-        
-        Args:
-            message: System message content
-        """
-        self.system_message = message
-    
-    def add_message1(self, role: str, content: str, name: Optional[str] = None):
-        """Add a message to the conversation.
-        
-        Args:
-            role: Message role (user, assistant, system)
-            content: Message content
-            name: Optional message author name
-        """
-        message = ChatMessage(role=role, content=content, name=name)
-        self.messages.append(message)
-
-    def add_message(self, role: str, content: str, name: Optional[str] = None):
-        msg = {"role": role, "content": content}
-        if name:
-            msg["name"] = name
-        self.messages.append(msg)
-    
-    async def send_message(self, message: str, **kwargs) -> ChatResponse:
-        """Send a message and update conversation history."""
-        # Build context and send message
-        context_prompt = self._build_context_prompt(message)
-        params = {"prompt": context_prompt, **kwargs}
-        response = await self.chat_service.chat_with_params(params)
-        
-        # Update conversation history
-        self.messages.append({"role": "user", "content": message})
-        self.messages.append({"role": "assistant", "content": response.message.content})
-        
-        # Auto-trim to keep only recent exchanges
-        self._auto_trim()
-        
-        return response
-    
-    def set_max_exchanges(self, max_exchanges: int):
-        """Set maximum number of exchanges to retain."""
-        self.max_exchanges = max_exchanges
-        self._auto_trim()  # Trim immediately if needed
-    
-    def clear_history(self):
-        """Clear conversation history."""
-        self.messages = []
-        
-    def get_conversation_summary(self) -> Dict[str, Any]:
-        """Get summary of current conversation.
-        
-        Returns:
-            Dictionary with conversation statistics
-        """
-        user_messages = [msg for msg in self.messages if msg["role"] == "user"]
-        assistant_messages = [msg for msg in self.messages if msg["role"] == "assistant"]
-        
-        return {
-            "total_messages": len(self.messages),
-            "user_messages": len(user_messages),
-            "assistant_messages": len(assistant_messages),
-            "has_system_message": self.system_message is not None,
-            "estimated_tokens": sum(len(msg["content"].split()) for msg in self.messages) * 1.3
-        }

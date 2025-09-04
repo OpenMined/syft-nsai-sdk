@@ -22,7 +22,6 @@ class SyftBoxRPCClient:
     
     def __init__(self, 
             cache_server_url: str = "https://syftbox.net",
-            # from_email: str = None,
             timeout: float = 30.0,
             max_poll_attempts: int = 30,
             poll_interval: float = 3.0,
@@ -32,7 +31,6 @@ class SyftBoxRPCClient:
         
         Args:
             cache_server_url: URL of the SyftBox cache server
-            from_email: Email to use for x-syft-from header
             timeout: Request timeout in seconds
             max_poll_attempts: Maximum polling attempts for async responses
             poll_interval: Seconds between polling attempts
@@ -163,6 +161,7 @@ class SyftBoxRPCClient:
                 if payload_json:
                     post_headers["Content-Length"] = str(len(payload_json.encode('utf-8')))
 
+                # Make POST request to the service
                 response = await self.client.post(
                     request_url,
                     params=params,
@@ -174,7 +173,6 @@ class SyftBoxRPCClient:
             if response.status_code == 200:
                 # Immediate response
                 data = response.json()
-                logger.debug(f"Got immediate response from {syft_url}")
                 return data
             
             elif response.status_code == 202:
@@ -355,46 +353,31 @@ class SyftBoxRPCClient:
             Health response data
         """
         syft_url = self.build_syft_url(service_info.datasite, service_info.name, "health")
-        # return await self.call_rpc(syft_url, show_spinner=False)
         return await self.call_rpc(syft_url, payload=None, method="GET", show_spinner=False)
-        # return await self.call_rpc(syft_url, method="GET", show_spinner=False)
     
-    async def call_chat1(self, service_info: ServiceInfo, request_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Call the chat endpoint of a service.
+    # async def call_health1(self, service_info: ServiceInfo) -> Dict[str, Any]:
+    #     """Call the health endpoint of a service."""
+    #     syft_url = self.build_syft_url(service_info.datasite, service_info.name, "health")
+    #     logger.info(f"Health check URL for {service_info.name}: {syft_url}")  # Add this
         
-        Args:
-            service_info: Service information
-            request_data: Chat request payload
-            
-        Returns:
-            Chat response data
-        """
-        syft_url = self.build_syft_url(service_info.datasite, service_info.name, "chat")
-        return await self.call_rpc(syft_url, request_data)
-    
-    async def call_search1(self, service_info: ServiceInfo, request_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Call the search endpoint of a service.
-        
-        Args:
-            service_info: Service information
-            request_data: Search request payload
-            
-        Returns:
-            Search response data
-        """
-        syft_url = self.build_syft_url(service_info.datasite, service_info.name, "search")
-        return await self.call_rpc(syft_url, request_data)
+    #     try:
+    #         response = await self.call_rpc(syft_url, payload=None, method="GET", show_spinner=False)
+    #         logger.info(f"Health check response for {service_info.name}: {response}")  # Add this
+    #         return response
+    #     except Exception as e:
+    #         logger.error(f"Health check failed for {service_info.name}: {e}")  # Add this
+    #         raise
     
     async def call_chat(self, service_info: ServiceInfo, request_data: Dict[str, Any]) -> Dict[str, Any]:
         """Call the chat endpoint of a service."""
-        # Map router service names to actual service names if needed
-        if "service" in request_data:
-            request_data = request_data.copy()  # Don't modify original
-            request_data["service"] = self._map_service_name(request_data["service"], service_info)
-        
+        # Hard-code service name to tinyllama:latest
+        if "model" in request_data:
+            request_data = request_data.copy()
+            request_data["model"] = "tinyllama:latest"
+
         syft_url = self.build_syft_url(service_info.datasite, service_info.name, "chat")
         return await self.call_rpc(syft_url, request_data)
-    
+
     async def call_search(self, service_info: ServiceInfo, request_data: Dict[str, Any]) -> Dict[str, Any]:
         """Call the search endpoint of a service.
         
@@ -405,29 +388,13 @@ class SyftBoxRPCClient:
         Returns:
             Search response data
         """
-        # Map router service names to actual service names if needed
-        if "service" in request_data:
-            request_data = request_data.copy()  # Don't modify original
-            request_data["service"] = self._map_service_name(request_data["service"], service_info)
-        
+        # Hard-code service name to tinyllama:latest
+        if "model" in request_data:
+            request_data = request_data.copy()
+            request_data["model"] = "tinyllama:latest"
+
         syft_url = self.build_syft_url(service_info.datasite, service_info.name, "search")
         return await self.call_rpc(syft_url, request_data)
-
-    def _map_service_name(self, service_name: str, service_info: ServiceInfo) -> str:
-        """Map router service names to actual underlying service names."""
-        # Hard-coded mapping for known Ollama routers
-        if service_info.name in ["carl-service", "carl-free"]:
-            logger.debug(f"Mapping {service_name} to tinyllama:latest for known Ollama router")
-            return "tinyllama:latest"
-        
-        # Tag-based detection for other Ollama routers
-        if service_info.tags and "ollama" in [tag.lower() for tag in service_info.tags]:
-            logger.debug(f"Mapping {service_name} to tinyllama:latest based on ollama tag")
-            return "tinyllama:latest"
-        
-        # For other routers, use the original name
-        logger.debug(f"Using original service name: {service_name}")
-        return service_name
     
     def configure_accounting(self, service_url: str, email: str, password: str):
         """Configure accounting client.

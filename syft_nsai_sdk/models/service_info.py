@@ -1,7 +1,7 @@
 """
 ServiceInfo data class and related utilities
 """
-from dataclasses import dataclass, field
+from dataclasses import Field, dataclass, field
 from typing import List, Dict, Any, Optional
 from pathlib import Path
 from datetime import datetime
@@ -14,10 +14,10 @@ class ServiceInfo:
     """Complete information about a discovered SyftBox service."""
     
     # Basic metadata
-    name: str
-    datasite: str
-    summary: str
-    description: str
+    name: str = Field(..., description="Service name")
+    datasite: str = Field(..., description="Data site")
+    summary: str = Field(..., description="Service summary")
+    description: str = Field(..., description="Service description")
     tags: List[str] = field(default_factory=list)
     
     # Service configuration

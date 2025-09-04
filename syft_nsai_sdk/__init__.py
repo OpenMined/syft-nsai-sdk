@@ -16,7 +16,6 @@ from .core.types import (
     ServiceType,
     ServiceStatus, 
     HealthStatus,
-    QualityPreference,
     PricingChargeType,
     ServiceItem,
     ServiceInfo,
@@ -33,6 +32,7 @@ from .core.types import (
 from .core.exceptions import (
     SyftBoxSDKError,
     SyftBoxNotFoundError,
+    SyftBoxNotRunningError,
     ConfigurationError,
     ServiceNotFoundError,
     ServiceNotSupportedError,
@@ -58,8 +58,8 @@ from .core.config import (
 )
 
 # Service clients (for advanced usage)
-from .services.chat import ChatService, ConversationManager
-from .services.search import SearchService, BatchSearchService
+from .services.chat import ChatService
+from .services.search import SearchService
 from .services.health import HealthMonitor
 
 # Filtering utilities
@@ -155,7 +155,6 @@ __all__ = [
     "ServiceType",
     "ServiceStatus",
     "HealthStatus", 
-    "QualityPreference",
     "PricingChargeType",
     "ServiceItem",
     "ServiceInfo",
@@ -170,6 +169,7 @@ __all__ = [
     # Exceptions
     "SyftBoxSDKError",
     "SyftBoxNotFoundError",
+    "SyftBoxNotRunningError",
     "ConfigurationError",
     "ServiceNotFoundError",
     "ServiceNotSupportedError",
@@ -195,7 +195,6 @@ __all__ = [
     
     # Services
     "ChatService",
-    "ConversationManager",
     "SearchService",
     "BatchSearchService", 
     "HealthMonitor",

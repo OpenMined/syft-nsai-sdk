@@ -3,18 +3,24 @@ Main SyftBox NSAI SDK client
 """
 import os
 import asyncio
+import asyncio
+import nest_asyncio
 import logging
+
 from typing import List, Optional, Dict, Any, Union
 from pathlib import Path
 from dotenv import load_dotenv
+from dataclasses import dataclass
 
+from .core import Service
+from .core import Pipeline
 from .core.decorators import require_account
 from .core.config import ConfigManager
 from .core.types import (
-    ServiceInfo, 
-    ServiceType, 
+    ServiceInfo,
+    ServiceSpec, 
+    ServiceType,
     HealthStatus, 
-    QualityPreference,
     ChatMessage, 
     ChatResponse, 
     SearchResponse, 
@@ -25,9 +31,9 @@ from .core.exceptions import (
     AuthenticationError, 
     PaymentError, 
     SyftBoxNotFoundError, 
-    ServiceNotFoundError, 
-    ServiceNotSupportedError,
     SyftBoxNotRunningError, 
+    ServiceNotSupportedError,
+    ServiceNotFoundError,
     ValidationError,
     raise_service_not_found, 
     raise_service_not_supported
@@ -37,15 +43,15 @@ from .discovery.parser import MetadataParser
 from .discovery.filters import ServiceFilter, FilterCriteria, FilterBuilder
 from .clients.rpc_client import SyftBoxRPCClient
 from .clients.accounting_client import AccountingClient
-from .services.chat import ChatService, ConversationManager
-from .services.search import SearchService, BatchSearchService
+from .services.chat import ChatService
+from .services.search import SearchService
 from .services.health import check_service_health, batch_health_check, HealthMonitor
-from .services.services_list import ServicesList
+from .models.services_list import ServicesList
 from .utils.formatting import format_services_table, format_service_details
 
-from syft_accounting_sdk import UserClient, ServiceException
-
 logger = logging.getLogger(__name__)
+
+nest_asyncio.apply()
 load_dotenv()
 
 class Client:
@@ -53,7 +59,6 @@ class Client:
     
     def __init__(self, 
                 syftbox_config_path: Optional[Path] = None,
-                # user_email: str = "guest@syft.org",
                 cache_server_url: Optional[str] = None,
                 accounting_client: Optional[AccountingClient] = None,
                 auto_setup_accounting: bool = True,
@@ -78,7 +83,7 @@ class Client:
 
         # Then check if running  
         if not self.config_manager.is_syftbox_running():
-            raise SyftBoxNotFoundError(self.config_manager.get_startup_instructions())
+            raise SyftBoxNotRunningError(self.config_manager.get_startup_instructions())
         
         # Store config for later use
         self.config = self.config_manager.config
@@ -95,7 +100,32 @@ class Client:
             if self.accounting_client.is_configured():
                 self._account_configured = True
         else:
-            self.accounting_client = self._setup_default_accounting()
+            # Inlined _setup_default_accounting logic
+            client, is_configured = AccountingClient.setup_accounting_discovery()
+            
+            if is_configured:
+                self._account_configured = True
+                logger.info(f"Found existing accounting credentials for {client.get_email()}")
+            else:
+                """Display account setup instructions to user."""
+                print("\n" + "="*60)
+                print("NO ACTIVE ACCOUNT FOUND!")
+                print("="*60)
+                print("You are currently limited to SyftBox free services.")
+                print("New users receive $20 in free credits upon first connection to the accounting service.")
+                print("To use SyftBox paid services, you need to set up an account.")
+                print("")
+                print("Please run:")
+                print("  await client.register_accounting(email, password) to create an account.")
+                print("  await client.connect_accounting(email, password) to connect to an existing account.")
+                print("")
+                print("Or set environment variables:")
+                print("  SYFTBOX_ACCOUNTING_EMAIL=your_email@example.com")
+                print("  SYFTBOX_ACCOUNTING_PASSWORD=your_password")
+                print("  SYFTBOX_ACCOUNTING_URL=https://service.url")
+                print("="*60)
+
+            self.accounting_client = client
         
         # Set up RPC client
         # from_email = user_email
@@ -120,67 +150,6 @@ class Client:
 
         # Load user email from config if not provided (from_email and self._account_configured)
         logger.info(f"Client initialized for {self.config.email}")
-        # if self._account_configured:
-        #     logger.info(f"Client initialized for {self.accounting_client.get_email()}")
-        # # if from_email:
-        # #     logger.info(f"Client initialized for {self.accounting_client.get_email()}")
-        # else:
-        #     logger.info("Client initialized in guest mode (no user account provided)")
-
-    # def _setup_default_accounting1(self) -> AccountingClient:
-    #     """Check for existing accounting credentials and guide user if none exist."""
-    #     # Try loading from environment variables
-    #     try:
-    #         client = AccountingClient.from_environment()
-    #         self._account_configured = True
-    #         logger.info("Found existing accounting credentials in environment")
-    #         return client
-    #     except AuthenticationError:
-    #         pass
-        
-    #     # Try loading from saved config file
-    #     try:
-    #         client = AccountingClient.load_from_config()
-    #         self._account_configured = True
-    #         logger.info("Found existing accounting credentials in config file")
-    #         return client
-    #     except AuthenticationError:
-    #         pass
-        
-    #     # No credentials found - inform user
-    #     self._show_setup_message()
-    #     return AccountingClient()
-    
-    def _setup_default_accounting(self) -> AccountingClient:
-        client, is_configured = AccountingClient.setup_accounting_discovery()
-        
-        if is_configured:
-            self._account_configured = True
-            # logger.info(await client.get_account_info())  # Validate credentials
-            logger.info(f"Found existing accounting credentials for {client.get_email()}")
-        else:
-            self._show_setup_message()
-        
-        return client
-    
-    def _show_setup_message(self):
-        """Display account setup instructions to user."""
-        print("\n" + "="*60)
-        print("NO ACTIVE ACCOUNT FOUND!")
-        print("="*60)
-        print("You are currently limited to SyftBox free services.")
-        print("New users receive $20 in free credits upon first connection to the accounting service.")
-        print("To use SyftBox paid services, you need to set up an account.")
-        print("")
-        print("Please run:")
-        print("  await client.register_accounting(email, password) to create an account.")
-        print("  await client.connect_accounting(email, password) to connect to an existing account.")
-        print("")
-        print("Or set environment variables:")
-        print("  SYFTBOX_ACCOUNTING_EMAIL=your_email@example.com")
-        print("  SYFTBOX_ACCOUNTING_PASSWORD=your_password")
-        print("  SYFTBOX_ACCOUNTING_URL=https://service.url")
-        print("="*60)
     
     async def close(self):
         """Close client and cleanup resources."""
@@ -261,14 +230,16 @@ class Client:
         if should_health_check:
             # Check if we're in Jupyter to avoid asyncio.run() issues
             try:
-                import IPython
-                ipython = IPython.get_ipython()
-                if ipython is not None and hasattr(ipython, 'kernel'):
-                    # We're in Jupyter, skip health check to avoid asyncio issues
-                    logger.info("Skipping health check in Jupyter environment to avoid asyncio issues")
-                else:
-                    # Not in Jupyter, safe to use asyncio.run()
-                    filtered_services = asyncio.run(self._add_health_status(filtered_services))
+                filtered_services = asyncio.run(self._add_health_status(filtered_services))
+                # filtered_services = asyncio.run(self._add_health_status(filtered_services))
+                # import IPython
+                # ipython = IPython.get_ipython()
+                # if ipython is not None and hasattr(ipython, 'kernel'):
+                #     # We're in Jupyter, skip health check to avoid asyncio issues
+                #     logger.info("Skipping health check in Jupyter environment to avoid asyncio issues")
+                # else:
+                #     # Not in Jupyter, safe to use asyncio.run()
+                #     filtered_services = asyncio.run(self._add_health_status(filtered_services))
             except ImportError:
                 # IPython not available, safe to use asyncio.run()
                 filtered_services = asyncio.run(self._add_health_status(filtered_services))
@@ -279,7 +250,7 @@ class Client:
         logger.info(f"Discovered {len(filtered_services)} services (health_check={should_health_check})")
         return ServicesList(filtered_services, self)
     
-    def get_service(self, service_name: str, datasite: Optional[str] = None) -> Optional[ServiceInfo]:
+    def get_service1(self, service_name: str, datasite: Optional[str] = None) -> Optional[ServiceInfo]:
         """Find a specific service by name.
         
         Args:
@@ -299,93 +270,96 @@ class Client:
         
         return None
     
-    # Display Methods 
-    def format_services(self, 
-                   service_type: Optional[ServiceType] = None,
-                   health_check: str = "auto",
-                   format: str = "table") -> str:
-        """List available services in a user-friendly format.
+    def get_service2(self, service_name: str) -> Optional[ServiceInfo]:
+        """Find a specific service by name.
         
         Args:
-            service_type: Optional service type filter
-            health_check: Health checking mode ("auto", "always", "never")
-            format: Output format ("table", "json", "summary")
+            service_name: Name of the service to find
             
         Returns:
-            Formatted string with service information
+            ServiceInfo if found, None otherwise
         """
-        services = self.list_services(
-            service_type=service_type,
-            health_check=health_check
-        )
+        if "/" in service_name:
+            datasite, name = service_name.split("/", 1)
+            # services = self.list_services(name=service_name, datasite=datasite, health_check="never")
         
-        if format == "table":
-            return format_services_table(services)
-        elif format == "json":
-            import json
-            service_dicts = [self._service_to_dict(service) for service in services]
-            return json.dumps(service_dicts, indent=2)
-        elif format == "summary":
-            return self._format_services_summary(services)
+        # Find exact match
+        # for service in services:
+        #     if service.name == service_name:
+        #         if datasite is None or service.datasite == datasite:
+        #             return service
+        
+        # Try direct lookup
+        service = self._lookup_service_direct(name, datasite)
+        if service:
+            return service
+        
+        # Handle not found with helpful errors
+        if datasite:
+            raise ServiceNotFoundError(f"Service '{service_name}' not found for datasite '{datasite}'")
         else:
-            return [self._service_to_dict(service) for service in services]
+            # Check for ambiguous names
+            similar_services = self._find_services_by_name(service_name)  # Minimal scan
+            if len(similar_services) > 1:
+                datasites = [s.datasite for s in similar_services]
+                raise ValidationError(
+                    f"Multiple services named '{service_name}' found. "
+                    f"Please specify datasite. Available datasites: {', '.join(datasites)}"
+                )
+            else:
+                raise ServiceNotFoundError(f"Service '{service_name}' not found!")
     
-    def show_service_details(self, service_name: str, datasite: Optional[str] = None) -> str:
-        """Show detailed information about a specific service.
+    def get_service(self, service_name: str) -> ServiceInfo:
+        datasite, name = service_name.split("/", 1)
+        metadata_path = self.scanner.get_service_path(datasite, name)
         
-        Args:
-            service_name: Name of the service
-            datasite: Optional datasite to narrow search
-            
-        Returns:
-            Formatted service details
-        """
-        service = self.get_service(service_name, datasite)
-        if not service:
-            return f"Service '{service_name}' not found"
+        if not metadata_path:
+            raise ServiceNotFoundError(f"'{service_name}'")
         
-        return format_service_details(service)
-    
+        return self.parser.parse_service_from_files(metadata_path)
+
+    async def get_service_async(self, service_name: str) -> ServiceInfo:
+        datasite, name = service_name.split("/", 1)
+        metadata_path = self.scanner.get_service_path(datasite, name)
+        
+        if not metadata_path:
+            raise ServiceNotFoundError(f"'{service_name}'")
+        
+        return self.parser.parse_service_from_files(metadata_path)
+
     # Service Usage Methods
     @require_account
-    def chat(self,
-                   service_name: str,
-                   prompt: str,
-                   datasite: Optional[str] = None,
-                   temperature: Optional[float] = None,
-                   max_tokens: Optional[int] = None,
-                   auto_pay: bool = True,
-                   **kwargs) -> ChatResponse:
+    def chat1(self,
+            service_name: str,
+            messages: str,
+            temperature: Optional[float] = None,
+            max_tokens: Optional[int] = None,
+            **kwargs
+        ) -> ChatResponse:
         """Chat with a specific service.
         
         Args:
-            service_name: Name of the service to use (REQUIRED)
+            service_name: Name of the service to use
             prompt: Message to send
             datasite: Datasite email (required if service name is ambiguous)
             temperature: Sampling temperature (0.0-1.0)
             max_tokens: Maximum tokens to generate
-            auto_pay: Automatically handle payment for paid services
             **kwargs: Additional service-specific parameters
             
         Returns:
             Chat response from the specified service
-            
-        Example:
-            response = await client.chat(
-                service_name="public-tinnyllama",
-                datasite="irina@openmined.org", 
-                prompt="Hello! Testing the API",
-                temperature=0.7
-            )
         """
         # Find the specific service
-        service = self.get_service(service_name, datasite)
+        [datasite, name] = service_name.split("/")
+        service = self.get_service(service_name)
         if not service:
             if datasite:
+                # raise ServiceNotFoundError(f"Service '{service_name}' not found!")
                 raise ServiceNotFoundError(f"Service '{service_name}' not found for datasite '{datasite}'")
+
             else:
                 # Show available services with same name
-                similar_services = [m for m in self.list_services() if m.name == service_name]
+                similar_services = [m for m in self.list_services() if m.name == name]
                 if len(similar_services) > 1:
                     datasites = [m.datasite for m in similar_services]
                     raise ValidationError(
@@ -393,7 +367,7 @@ class Client:
                         f"Please specify datasite. Available datasites: {', '.join(datasites)}"
                     )
                 else:
-                    raise ServiceNotFoundError(f"Service '{service_name}' not found")
+                    raise ServiceNotFoundError(f"Service '{service_name}' not found!")
         
         # Check if service supports chat
         if not service.supports_service(ServiceType.CHAT):
@@ -402,7 +376,7 @@ class Client:
         
         # Build request parameters
         chat_params = {
-            "prompt": prompt,
+            "messages": messages,
             "temperature": temperature,
             "max_tokens": max_tokens,
             **kwargs
@@ -415,51 +389,83 @@ class Client:
         chat_service = ChatService(service, self.rpc_client)
 
         return asyncio.run(chat_service.chat_with_params(chat_params))
+    
+    @require_account
+    def chat(self,
+            service_name: str,
+            messages: str,
+            temperature: Optional[float] = None,
+            max_tokens: Optional[int] = None,
+            **kwargs
+        ) -> ChatResponse:
+        """Chat with a specific service.
+        
+        Args:
+            service_name: Datasite/Name of the service to use
+            messages: Message to send
+            temperature: Sampling temperature (0.0-1.0)
+            max_tokens: Maximum tokens to generate
+            **kwargs: Additional service-specific parameters
+            
+        Returns:
+            Chat response from the specified service
+        """
+        
+        # Find the specific service
+        service = self.get_service(service_name)
+        logger.info(f"Using service: {service.name} from datasite: {service.datasite}") 
+        
+        # Validate service supports chat
+        if not service.supports_service(ServiceType.CHAT):
+            raise_service_not_supported(service.name, "chat", service)
+        
+        # Build request parameters
+        chat_params = {
+            "messages": messages,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+            **kwargs
+        }
+        
+        # Remove None values
+        chat_params = {k: v for k, v in chat_params.items() if v is not None}
+        
+        # Execute chat
+        chat_service = ChatService(service, self.rpc_client)
+        return asyncio.run(chat_service.chat_with_params(chat_params))
 
     @require_account
     def search(self,
                     service_name: str, 
-                    query: str,
-                    datasite: Optional[str] = None,
-                    limit: Optional[int] = None,
+                    message: str,
+                    topK: Optional[int] = None,
                     similarity_threshold: Optional[float] = None,
                     **kwargs) -> SearchResponse:
         """Search with a specific service.
         
         Args:
-            service_name: Name of the service to use (REQUIRED)
-            query: Search query
-            datasite: Datasite email (required if service name is ambiguous)
-            limit: Maximum number of results
+            service_name: Datasite/Name of the service to use
+            message: Search message
+            topK: Maximum number of results
             similarity_threshold: Minimum similarity score
             **kwargs: Additional service-specific parameters
             
         Returns:
             Search response from the specified service
-            
-        Example:
-            results = await client.search(
-                service_name="the-city",
-                query="latest news",
-                datasite="speters@thecity.nyc"
-            )
         """
+
         # Find the specific service
-        service = self.get_service(service_name, datasite)
-        if not service:
-            if datasite:
-                raise ServiceNotFoundError(f"Service '{service_name}' not found for datasite '{datasite}'")
-            else:
-                raise ServiceNotFoundError(f"Service '{service_name}' not found")
+        service = self.get_service(service_name)
+        logger.info(f"Using service: {service.name} from datasite: {service.datasite}") 
         
-        # Check if service supports search
+        # Validate service supports search
         if not service.supports_service(ServiceType.SEARCH):
-            raise ValidationError(f"Service '{service_name}' does not support search service")
+            raise_service_not_supported(service.name, "search", service)
         
         # Build request parameters
         search_params = {
-            "query": query,
-            "limit": limit,
+            "message": message,
+            "topK": topK,
             "similarity_threshold": similarity_threshold,
             **kwargs
         }
@@ -479,7 +485,6 @@ class Client:
                    datasite: Optional[str] = None,
                    temperature: Optional[float] = None,
                    max_tokens: Optional[int] = None,
-                   auto_pay: bool = True,
                    **kwargs) -> ChatResponse:
         """Chat with a specific service.
         
@@ -489,7 +494,6 @@ class Client:
             datasite: Datasite email (required if service name is ambiguous)
             temperature: Sampling temperature (0.0-1.0)
             max_tokens: Maximum tokens to generate
-            auto_pay: Automatically handle payment for paid services
             **kwargs: Additional service-specific parameters
             
         Returns:
@@ -598,7 +602,7 @@ class Client:
         return await search_service.search_with_params(search_params)
     
     # Service Parameters
-    def get_service_parameters(self, service_name: str, datasite: Optional[str] = None) -> Dict[str, Any]:
+    def get_parameters(self, service_name: str, datasite: Optional[str] = None) -> Dict[str, Any]:
         """Get available parameters for a specific service."""
         service = self.get_service(service_name, datasite)
         if not service:
@@ -769,641 +773,52 @@ class Client:
         
         return "\n".join(examples)
     
-    # RAG Workflow
-    @require_account
-    async def chat_with_search_context(self,
-                                    search_services: Union[str, List[str], List[Dict[str, str]]],
-                                    chat_service: str,
-                                    prompt: str,
-                                    chat_datasite: Optional[str] = None,
-                                    max_search_results: int = 3,
-                                    search_similarity_threshold: Optional[float] = None,
-                                    context_format: str = "frontend",  # "frontend" or "simple"
-                                    **chat_kwargs) -> ChatResponse:
-        """Perform search across multiple services then chat with context injection.
-        
-        This method replicates the frontend pattern where users can:
-        1. Chat only (if no search_services provided)
-        2. Search + Chat (if search_services provided - becomes RAG workflow)
+    # Display Methods 
+    def format_services(self, 
+                   service_type: Optional[ServiceType] = None,
+                   health_check: str = "auto",
+                   format: str = "table") -> str:
+        """List available services in a user-friendly format.
         
         Args:
-            search_services: Search services to query (OPTIONAL). Can be:
-                        - None or [] for chat-only
-                        - Single service name: "service-name"
-                        - List of names: ["service1", "service2"] 
-                        - List with datasites: [{"name": "service1", "datasite": "user@email.com"}]
-            chat_service: Name of chat service for final response (REQUIRED)
-            prompt: User's question/prompt
-            chat_datasite: Datasite of chat service (if ambiguous)
-            max_search_results: Max results per search service (ignored if no search)
-            search_similarity_threshold: Minimum similarity score (ignored if no search)
-            context_format: How to format context ("frontend" matches web app, "simple" is cleaner)
-            **chat_kwargs: Additional parameters for chat request (temperature, max_tokens, etc.)
+            service_type: Optional service type filter
+            health_check: Health checking mode ("auto", "always", "never")
+            format: Output format ("table", "json", "summary")
             
         Returns:
-            ChatResponse with or without search context
-            
-        Example:
-            # Chat only (like frontend with no data sources selected)
-            response = await client.chat_with_search_context(
-                search_services=[],  # No search - just chat
-                chat_service="gpt-assistant", 
-                prompt="What is machine learning?"
-            )
-            
-            # RAG workflow (like frontend with data sources selected)
-            response = await client.chat_with_search_context(
-                search_services=["legal-docs", "company-policies"],
-                chat_service="gpt-assistant", 
-                prompt="What are our remote work policies?",
-                max_search_results=5,
-                temperature=0.7
-            )
+            Formatted string with service information
         """
-        logger.info(f"Starting RAG workflow: search → chat")
-        
-        # Normalize search services to list of dicts
-        search_service_specs = self._normalize_service_specs(search_services)
-        
-        if not search_service_specs:
-            # No search services - do chat only (like frontend with no data sources)
-            logger.info(f"Chat-only mode: no search services specified")
-            
-            # Find and validate chat service
-            chat_service_info = self.get_service(chat_service, chat_datasite)
-            if not chat_service_info:
-                raise ServiceNotFoundError(f"Chat service '{chat_service}' not found" + 
-                                    (f" for datasite '{chat_datasite}'" if chat_datasite else ""))
-            
-            if not chat_service_info.supports_service(ServiceType.CHAT):
-                raise ValidationError(f"Service '{chat_service}' does not support chat service")
-            
-            # Direct chat without search context
-            chat_service = ChatService(chat_service_info, self.rpc_client)
-            
-            # Build simple messages (just system + user)
-            messages = [
-                ChatMessage(
-                    role="system",
-                    content=(
-                        "You are a helpful AI assistant. Use your general knowledge to provide "
-                        "comprehensive and helpful responses to user questions."
-                    )
-                ),
-                ChatMessage(role="user", content=prompt)
-            ]
-            
-            chat_response = await chat_service.send_conversation(
-                messages=messages,
-                **chat_kwargs
-            )
-            
-            # Add metadata indicating this was chat-only
-            if chat_response.provider_info is None:
-                chat_response.provider_info = {}
-            
-            chat_response.provider_info.update({
-                "rag_workflow": False,
-                "chat_only": True,
-                "search_services_used": [],
-                "search_results_count": 0,
-                "context_injected": False
-            })
-            
-            logger.info(f"✅ Chat-only completed - Cost: ${chat_response.cost:.4f}")
-            return chat_response
-        
-        # Step 1: Search across specified services (RAG mode)
-        logger.info(f"🔍 RAG mode: searching {len(search_service_specs)} services for context")
-        search_responses = []
-        
-        for service_spec in search_service_specs:
-            service_name = service_spec["name"]
-            datasite = service_spec.get("datasite")
-            
-            try:
-                search_response = await self.search(
-                    service_name=service_name,
-                    query=prompt,  # Use the prompt as search query
-                    datasite=datasite,
-                    limit=max_search_results,
-                    similarity_threshold=search_similarity_threshold
-                )
-                search_responses.append(search_response)
-                logger.debug(f"✅ Search completed: {service_name} returned {len(search_response.results)} results")
-                
-            except Exception as e:
-                logger.warning(f"⚠️ Search failed for {service_name}: {e}")
-                # Continue with other services - graceful degradation
-                continue
-        
-        # Step 2: Aggregate and format search results
-        all_results = []
-        total_search_cost = 0.0
-        
-        for response in search_responses:
-            all_results.extend(response.results)
-            total_search_cost += response.cost or 0.0
-        
-        logger.info(f"📊 Aggregated {len(all_results)} total results from {len(search_responses)} successful searches")
-        
-        # Step 3: Format context for chat injection
-        if all_results:
-            context_message = self._format_search_context(all_results, context_format)
-            logger.debug(f"📝 Formatted context: {len(context_message)} characters")
-        else:
-            context_message = None
-            logger.info("⚠️ No search results found - proceeding with chat only")
-        
-        # Step 4: Build enhanced message sequence
-        messages = [
-            ChatMessage(
-                role="system",
-                content=(
-                    "You are a helpful AI assistant that can answer questions using both provided sources "
-                    "and your general knowledge.\n\n"
-                    "When sources are provided, use them as your primary information and supplement with "
-                    "your general knowledge when helpful. If you don't know the answer from the sources, "
-                    "you can still use your general knowledge to provide a helpful response.\n\n"
-                    "When no sources are provided, rely on your general knowledge to answer the question comprehensively."
-                )
-            )
-        ]
-        
-        # Add context if we have search results
-        if context_message:
-            messages.append(
-                ChatMessage(
-                    role="system", 
-                    content=f"Here is relevant source context to help answer the user's question:\n\n{context_message}"
-                )
-            )
-        
-        # Add user prompt
-        messages.append(ChatMessage(role="user", content=prompt))
-        
-        # Step 5: Send to chat service
-        logger.info(f"Sending enhanced prompt to chat service: {chat_service}")
-        
-        # Find and validate chat service
-        chat_service_info = self.get_service(chat_service, chat_datasite)
-        if not chat_service_info:
-            raise ServiceNotFoundError(f"Chat service '{chat_service}' not found" + 
-                                (f" for datasite '{chat_datasite}'" if chat_datasite else ""))
-        
-        if not chat_service_info.supports_service(ServiceType.CHAT):
-            raise ValidationError(f"Service '{chat_service}' does not support chat service")
-        
-        # Create chat service and send enhanced conversation
-        chat_service = ChatService(chat_service_info, self.rpc_client)
-        
-        try:
-            chat_response = await chat_service.send_conversation(
-                messages=messages,
-                **chat_kwargs
-            )
-            
-            # Enhance response with RAG metadata
-            if chat_response.provider_info is None:
-                chat_response.provider_info = {}
-            
-            chat_response.provider_info.update({
-                "rag_workflow": True,
-                "search_services_used": [spec["name"] for spec in search_service_specs],
-                "search_results_count": len(all_results),
-                "total_search_cost": total_search_cost,
-                "context_injected": context_message is not None
-            })
-            
-            # Add combined cost
-            chat_response.cost = (chat_response.cost or 0.0) + total_search_cost
-            
-            logger.info(f"RAG workflow completed - Total cost: ${chat_response.cost:.4f}")
-            return chat_response
-            
-        except Exception as e:
-            logger.error(f"Chat request failed in RAG workflow: {e}")
-            raise
-
-    @require_account
-    async def search_multiple_services(self,
-                                    service_names: Union[List[str], List[Dict[str, str]]],
-                                    query: str,
-                                    limit_per_service: int = 3,
-                                    total_limit: Optional[int] = None,
-                                    similarity_threshold: Optional[float] = None,
-                                    remove_duplicates: bool = True,
-                                    sort_by_score: bool = True,
-                                    **search_kwargs) -> SearchResponse:
-        """Search across multiple services and aggregate results.
-        
-        Args:
-            service_names: List of service names or service specs with datasites
-            query: Search query
-            limit_per_service: Max results per individual service
-            total_limit: Max results in final aggregated response (None = no limit)
-            similarity_threshold: Minimum similarity score
-            remove_duplicates: Remove duplicate content based on content hash
-            sort_by_score: Sort final results by similarity score (descending)
-            **search_kwargs: Additional parameters for search requests
-            
-        Returns:
-            SearchResponse with aggregated results from all services
-            
-        Example:
-            # Search multiple data sources
-            results = await client.search_multiple_services(
-                service_names=["legal-docs", "company-wiki", "slack-archive"],
-                query="vacation policy changes",
-                limit_per_service=5,
-                total_limit=10
-            )
-        """
-        logger.info(f"Multi-service search across {len(service_names)} services")
-        
-        # Normalize service specs
-        service_specs = self._normalize_service_specs(service_names)
-        
-        all_results = []
-        total_cost = 0.0
-        successful_services = []
-        failed_services = []
-        
-        # Search each service
-        for service_spec in service_specs:
-            service_name = service_spec["name"]
-            datasite = service_spec.get("datasite")
-            
-            try:
-                response = await self.search(
-                    service_name=service_name,
-                    query=query,
-                    datasite=datasite,
-                    limit=limit_per_service,
-                    similarity_threshold=similarity_threshold,
-                    **search_kwargs
-                )
-                
-                all_results.extend(response.results)
-                total_cost += response.cost or 0.0
-                successful_services.append(service_name)
-                
-                logger.debug(f"✅ {service_name}: {len(response.results)} results")
-                
-            except Exception as e:
-                logger.warning(f"⚠️ Search failed for {service_name}: {e}")
-                failed_services.append({"service": service_name, "error": str(e)})
-                continue
-        
-        # Remove duplicates if requested
-        if remove_duplicates:
-            all_results = self._remove_duplicate_results(all_results)
-            logger.debug(f"🔄 Deduplication: {len(all_results)} unique results remain")
-        
-        # Sort by score if requested
-        if sort_by_score:
-            all_results.sort(key=lambda r: r.score, reverse=True)
-        
-        # Apply total limit
-        if total_limit and len(all_results) > total_limit:
-            all_results = all_results[:total_limit]
-            logger.debug(f"✂️ Limited to top {total_limit} results")
-        
-        # Create aggregated response
-        aggregated_response = SearchResponse(
-            id=f"multi-search-{hash(query) % 10000}",
-            query=query,
-            results=all_results,
-            cost=total_cost,
-            provider_info={
-                "multi_service_search": True,
-                "successful_services": successful_services,
-                "failed_services": failed_services,
-                "total_services_searched": len(successful_services),
-                "deduplication_applied": remove_duplicates,
-                "sorted_by_score": sort_by_score
-            }
+        services = self.list_services(
+            service_type=service_type,
+            health_check=health_check
         )
         
-        logger.info(f"Multi-search completed: {len(all_results)} results from {len(successful_services)}/{len(service_specs)} services")
-        
-        return aggregated_response
+        if format == "table":
+            return format_services_table(services)
+        elif format == "json":
+            import json
+            service_dicts = [self._service_to_dict(service) for service in services]
+            return json.dumps(service_dicts, indent=2)
+        elif format == "summary":
+            return self._format_services_summary(services)
+        else:
+            return [self._service_to_dict(service) for service in services]
     
-    @require_account
-    async def search_then_chat(self,
-                            search_service: str,
-                            chat_service: str,
-                            prompt: str,
-                            search_datasite: Optional[str] = None,
-                            chat_datasite: Optional[str] = None,
-                            **kwargs) -> ChatResponse:
-        """Simplified single-service search then chat workflow.
-        
-        Args:
-            search_service: Name of service to search
-            chat_service: Name of service to chat with
-            prompt: User prompt (used for both search and chat)
-            search_datasite: Datasite of search service
-            chat_datasite: Datasite of chat service
-            **kwargs: Additional parameters for both search and chat
-            
-        Returns:
-            ChatResponse with search context
-            
-        Example:
-            response = await client.search_then_chat(
-                search_service="company-docs",
-                chat_service="assistant-gpt",
-                prompt="How do I submit expenses?"
-            )
-        """
-        return await self.chat_with_search_context(
-            search_services=[{"name": search_service, "datasite": search_datasite} if search_datasite else search_service],
-            chat_service=chat_service,
-            prompt=prompt,
-            chat_datasite=chat_datasite,
-            **kwargs
-        )
-
-    # Private methods to support RAG coordination
-    def _normalize_service_specs(self, services: Union[str, List[str], List[Dict[str, str]]]) -> List[Dict[str, str]]:
-        """Normalize various service specification formats to list of dicts.
-        
-        Args:
-            services: Services in various formats
-            
-        Returns:
-            List of service specs with 'name' and optional 'datasite' keys
-        """
-        if isinstance(services, str):
-            # Single service name
-            return [{"name": services}]
-        
-        elif isinstance(services, list):
-            normalized = []
-            for service in services:
-                if isinstance(service, str):
-                    # List of service names
-                    normalized.append({"name": service})
-                elif isinstance(service, dict):
-                    # List of service specs
-                    if "name" not in service:
-                        raise ValidationError(f"Service spec missing 'name' key: {service}")
-                    normalized.append(service)
-                else:
-                    raise ValidationError(f"Invalid service specification: {service}")
-            return normalized
-        
-        else:
-            raise ValidationError(f"Invalid services format: {type(services)}")
-
-    def _format_search_context(self, results: List[DocumentResult], format_type: str = "frontend") -> str:
-        """Format search results as context for chat injection.
-        
-        Args:
-            results: Search results to format
-            format_type: "frontend" (matches web app) or "simple"
-            
-        Returns:
-            Formatted context string
-        """
-        if not results:
-            return ""
-        
-        if format_type == "frontend":
-            # Match the exact frontend pattern: [filename]\nContent
-            formatted_parts = []
-            for result in results:
-                filename = result.metadata.get("filename", "unknown") if result.metadata else "unknown"
-                formatted_parts.append(f"[{filename}]\n{result.content}")
-            
-            return "\n\n".join(formatted_parts)
-        
-        elif format_type == "simple":
-            # Cleaner format for direct SDK usage
-            formatted_parts = []
-            for i, result in enumerate(results, 1):
-                source = result.metadata.get("filename", f"Source {i}") if result.metadata else f"Source {i}"
-                formatted_parts.append(f"## {source}\n{result.content}")
-            
-            return "\n\n".join(formatted_parts)
-        
-        else:
-            raise ValidationError(f"Unknown context format: {format_type}")
-
-    def _remove_duplicate_results(self, results: List[DocumentResult]) -> List[DocumentResult]:
-        """Remove duplicate results based on content similarity.
-        
-        Args:
-            results: List of search results
-            
-        Returns:
-            Deduplicated list of results
-        """
-        if not results:
-            return results
-        
-        # Simple deduplication based on content hash
-        seen_hashes = set()
-        unique_results = []
-        
-        for result in results:
-            content_hash = hash(result.content.strip().lower())
-            if content_hash not in seen_hashes:
-                seen_hashes.add(content_hash)
-                unique_results.append(result)
-        
-        return unique_results
-
-    def get_rag_cost_estimate(self,
-                            search_services: Union[str, List[str], List[Dict[str, str]]],
-                            chat_service: str,
-                            chat_datasite: Optional[str] = None) -> Dict[str, Any]:
-        """Get cost estimate for RAG workflow before execution.
-        
-        Provides transparent cost breakdown so users can make informed decisions
-        about which services to use (matching the frontend's cost preview).
-        
-        Args:
-            search_services: Search services to estimate
-            chat_service: Chat service to estimate
-            chat_datasite: Datasite of chat service
-            
-        Returns:
-            Dictionary with cost breakdown and service details
-            
-        Example:
-            # Preview costs before RAG workflow
-            estimate = client.get_rag_cost_estimate(
-                search_services=["docs-1", "docs-2"],
-                chat_service="paid-chat"
-            )
-            print(f"Total cost: ${estimate['total_cost']}")
-            print(f"Services: {estimate['service_summary']}")
-        """
-        search_service_specs = self._normalize_service_specs(search_services)
-        
-        breakdown = {
-            "search_services": [],
-            "chat_service": None,
-            "search_cost": 0.0,
-            "chat_cost": 0.0, 
-            "total_cost": 0.0,
-            "service_summary": {
-                "search_count": len(search_service_specs),
-                "search_names": [spec["name"] for spec in search_service_specs],
-                "chat_name": chat_service
-            }
-        }
-        
-        # Get search service costs
-        for spec in search_service_specs:
-            service = self.get_service(spec["name"], spec.get("datasite"))
-            if service:
-                search_service = service.get_service_info(ServiceType.SEARCH)
-                if search_service:
-                    service_cost = search_service.pricing
-                    breakdown["search_cost"] += service_cost
-                    breakdown["search_services"].append({
-                        "name": service.name,
-                        "datasite": service.datasite,
-                        "cost": service_cost,
-                        "charge_type": search_service.charge_type.value
-                    })
-        
-        # Get chat service cost
-        chat_service_info = self.get_service(chat_service, chat_datasite)
-        if chat_service_info:
-            chat_service = chat_service_info.get_service_info(ServiceType.CHAT)
-            if chat_service:
-                breakdown["chat_cost"] = chat_service.pricing
-                breakdown["chat_service"] = {
-                    "name": chat_service_info.name,
-                    "datasite": chat_service_info.datasite,
-                    "cost": chat_service.pricing,
-                    "charge_type": chat_service.charge_type.value
-                }
-        
-        breakdown["total_cost"] = breakdown["search_cost"] + breakdown["chat_cost"]
-        
-        return breakdown
-
-    def preview_rag_workflow(self,
-                            search_services: Union[str, List[str], List[Dict[str, str]]],
-                            chat_service: str,
-                            chat_datasite: Optional[str] = None) -> str:
-        """Preview RAG workflow with service details and costs.
-        
-        Provides a human-readable preview of the RAG workflow showing exactly
-        which services will be used and their costs (transparency like frontend).
-        
-        Args:
-            search_services: Search services for the workflow
-            chat_service: Chat service for the workflow  
-            chat_datasite: Datasite of chat service
-            
-        Returns:
-            Formatted preview string
-            
-        Example:
-            preview = client.preview_rag_workflow(
-                search_services=["legal-docs", "hr-policies"],
-                chat_service="gpt-assistant"
-            )
-            print(preview)
-        """
-        estimate = self.get_rag_cost_estimate(search_services, chat_service, chat_datasite)
-        
-        lines = [
-            "RAG Workflow Preview",
-            "=" * 30,
-            "",
-            f"Search Phase ({len(estimate['search_services'])} services):"
-        ]
-        
-        if estimate["search_services"]:
-            for service in estimate["search_services"]:
-                cost_str = f"${service['cost']:.4f}" if service['cost'] > 0 else "Free"
-                lines.append(f"  • {service['name']} by {service['datasite']} - {cost_str}")
-            lines.append(f"  Subtotal: ${estimate['search_cost']:.4f}")
-        else:
-            lines.append("  • No valid search services found")
-        
-        lines.extend([
-            "",
-            "Chat Phase:"
-        ])
-        
-        if estimate["chat_service"]:
-            chat = estimate["chat_service"]
-            cost_str = f"${chat['cost']:.4f}" if chat['cost'] > 0 else "Free"
-            lines.append(f"  • {chat['name']} by {chat['datasite']} - {cost_str}")
-        else:
-            lines.append("  • Chat service not found")
-        
-        lines.extend([
-            "",
-            f"Total Estimated Cost: ${estimate['total_cost']:.4f}",
-            "",
-            "To execute: client.chat_with_search_context(...)"
-        ])
-        
-        return "\n".join(lines)
-    
-    def get_chat_service(self, service_name: str) -> ChatService:
-        """Get a chat service for a specific service.
+    def show_service_details(self, service_name: str, datasite: Optional[str] = None) -> str:
+        """Show detailed information about a specific service.
         
         Args:
             service_name: Name of the service
+            datasite: Optional datasite to narrow search
             
         Returns:
-            ChatService instance
+            Formatted service details
         """
-        service = self.get_service(service_name)
-        if not service:
-            raise_service_not_found(service_name)
-        
-        return ChatService(service, self.rpc_client)
-    
-    def get_search_service(self, service_name: str) -> SearchService:
-        """Get a search service for a specific service.
-        
-        Args:
-            service_name: Name of the service
-            
-        Returns:
-            SearchService instance
-        """
-        service = self.get_service(service_name)
-        if not service:
-            raise_service_not_found(service_name)
-        
-        return SearchService(service, self.rpc_client)
-    
-    def create_conversation(self, service_name: str, datasite: Optional[str] = None) -> ConversationManager:
-        """Create a conversation manager for a chat service.
-        
-        Args:
-            service_name: Name of the chat service
-            datasite: Datasite email (required if service name is ambiguous)
-            
-        Returns:
-            ConversationManager instance
-        """
-        # Find and validate service
         service = self.get_service(service_name, datasite)
         if not service:
-            if datasite:
-                raise ServiceNotFoundError(f"Service '{service_name}' not found for datasite '{datasite}'")
-            else:
-                raise ServiceNotFoundError(f"Service '{service_name}' not found")
+            return f"Service '{service_name}' not found"
         
-        if not service.supports_service(ServiceType.CHAT):
-            raise ValidationError(f"Service '{service_name}' does not support chat service")
-        
-        # Create chat service and conversation manager
-        chat_service = ChatService(service, self.rpc_client)
-        return ConversationManager(chat_service)
+        return format_service_details(service)
     
     # Health Monitoring Methods
     async def check_service_health(self, service_name: str, timeout: float = 2.0) -> HealthStatus:
@@ -1586,13 +1001,13 @@ class Client:
         """Check if accounting is properly configured."""
         return self.accounting_client.is_configured()
     
-    async def get_account_info(self) -> Dict[str, Any]:
+    def get_account_info(self) -> Dict[str, Any]:
         """Get account information and balance."""
         if not self.is_accounting_configured():
             return {"error": "Accounting not configured"}
         
         try:
-            return await self.accounting_client.get_account_info()
+            return asyncio.run(self.accounting_client.get_account_info())
         except Exception as e:
             logger.error(f"Failed to get account info: {e}")
             return {"error": str(e)}
@@ -1607,7 +1022,6 @@ class Client:
             )
         
         try:
-            import asyncio
             account_info = asyncio.run(self.get_account_info())
             
             if "error" in account_info:
@@ -1630,7 +1044,50 @@ class Client:
                 f"   May need to reconfigure credentials"
             )
         
-    async def _ensure_payment_setup(self, service: ServiceInfo) -> Optional[str]:
+    async def get_account_info_async(self) -> Dict[str, Any]:
+        """Get account information and balance."""
+        if not self.is_accounting_configured():
+            return {"error": "Accounting not configured"}
+        
+        try:
+            return await self.accounting_client.get_account_info()
+        except Exception as e:
+            logger.error(f"Failed to get account info: {e}")
+            return {"error": str(e)}
+
+    async def show_accounting_status_async(self) -> str:
+        """Show current accounting configuration status."""
+        if not self.is_accounting_configured():
+            return (
+                "Accounting not configured\n"
+                "   Use client.setup_accounting() to configure payment services\n"
+                "   Currently limited to free services only"
+            )
+        
+        try:
+            account_info = await self.get_account_info_async()
+
+            if "error" in account_info:
+                return (
+                    f"Accounting configured but connection failed\n"
+                    f"   Error: {account_info['error']}\n"
+                    f"   May need to reconfigure credentials"
+                )
+            
+            return (
+                f"Accounting configured\n"
+                f"   Email: {account_info['email']}\n" 
+                f"   Balance: ${account_info['balance']}\n"
+                f"   Can use both free and paid services"
+            )
+        except Exception as e:
+            return (
+                f"Accounting configured but connection failed\n"
+                f"   Error: {e}\n"
+                f"   May need to reconfigure credentials"
+            )
+        
+    async def _ensure_payment_setup1(self, service: ServiceInfo) -> Optional[str]:
         """Ensure payment is set up for a paid service.
         
         Args:
@@ -1682,42 +1139,67 @@ class Client:
             return token
         except Exception as e:
             raise PaymentError(f"Failed to create payment token: {e}")
+            
+    async def _ensure_payment_setup(self, service: ServiceInfo) -> Optional[str]:
+        """Ensure payment is set up for a paid service.
+        
+        Args:
+            service: Service that requires payment
+            
+        Returns:
+            Transaction token if payment required, None if free
+        """
+        # Check if service requires payment
+        service_info = None
+        if service.supports_service(ServiceType.CHAT):
+            service_info = service.get_service_info(ServiceType.CHAT)
+        elif service.supports_service(ServiceType.SEARCH):
+            service_info = service.get_service_info(ServiceType.SEARCH)
+        
+        # Early return for free services - skip all accounting logic entirely
+        if not service_info or service_info.pricing == 0:
+            return None  # Free service
+        
+        # Service requires payment - ensure accounting is set up
+        if not self.is_accounting_configured():
+            if self.auto_setup_accounting:
+                print(f"\nPayment Required")
+                print(f"Service '{service.name}' costs ${service_info.pricing} per request")
+                print(f"Datasite: {service.datasite}")
+                print(f"\nAccounting setup required for paid services.")
+                
+                try:
+                    response = input("Would you like to set up accounting now? (y/n): ").lower().strip()
+                    if response in ['y', 'yes']:
+                        # Interactive setup would go here
+                        print("Please use below to configure:\n")
+                        print("     await client.register_accounting_async(email, password) to configure.\n")
+                        print("Or:\n")
+                        print("     client.register_accounting(email, password) to configure.")
+                        return None
+                    else:
+                        print("Payment setup skipped.")
+                        return None
+                except (EOFError, KeyboardInterrupt):
+                    print("\nPayment setup cancelled.")
+                    return None
+            else:
+                from .core.exceptions import PaymentError
+                raise PaymentError(
+                    f"Service '{service.name}' requires payment (${service_info.pricing}) "
+                    "but accounting is not configured"
+                )
+        
+        # Create transaction token
+        try:
+            token = await self.rpc_client.create_transaction_token(service.datasite)
+            logger.info(f"Payment authorized: ${service_info.pricing} to {service.datasite}")
+            return token
+        except Exception as e:
+            from .core.exceptions import PaymentError
+            raise PaymentError(f"Failed to create payment token: {e}")
 
     # Updated Service Usage Methods
-    def get_statistics(self) -> Dict[str, Any]:
-        """Get statistics about discovered services.
-        
-        Returns:
-            Dictionary with service statistics
-        """
-        services = self.list_services(health_check="never")
-        
-        # Count by service type
-        chat_services = [m for m in services if m.supports_service(ServiceType.CHAT)]
-        search_services = [m for m in services if m.supports_service(ServiceType.SEARCH)]
-        
-        # Count by pricing
-        free_services = [m for m in services if m.min_pricing == 0]
-        paid_services = [m for m in services if m.min_pricing > 0]
-        
-        # Count by datasite
-        datasites = {}
-        for service in services:
-            datasites[service.datasite] = datasites.get(service.datasite, 0) + 1
-        
-        return {
-            "total_services": len(services),
-            "enabled_services": len([m for m in services if m.has_enabled_services]),
-            "disabled_services": len([m for m in services if not m.has_enabled_services]),
-            "chat_services": len(chat_services),
-            "search_services": len(search_services),
-            "free_services": len(free_services),
-            "paid_services": len(paid_services),
-            "total_datasites": len(datasites),
-            "avg_services_per_datasite": len(services) / len(datasites) if datasites else 0,
-            "top_datasites": sorted(datasites.items(), key=lambda x: x[1], reverse=True)[:5]
-        }
-    
     def clear_cache(self):
         """Clear the service discovery cache."""
         self.scanner.clear_cache()
@@ -1742,51 +1224,6 @@ class Client:
             service.health_status = health_status.get(service.name, HealthStatus.UNKNOWN)
         
         return services
-    
-    def _select_best_service(self, services: List[ServiceInfo], 
-                          preference: QualityPreference) -> Optional[ServiceInfo]:
-        """Select the best service based on preference."""
-        if not services:
-            return None
-        
-        if preference == QualityPreference.CHEAPEST:
-            return min(services, key=lambda m: m.min_pricing)
-        elif preference == QualityPreference.PREMIUM:
-            return max(services, key=lambda m: m.min_pricing)
-        elif preference == QualityPreference.FASTEST:
-            # Prefer services with health status ONLINE, then by pricing
-            online_services = [m for m in services if m.health_status == HealthStatus.ONLINE]
-            if online_services:
-                return min(online_services, key=lambda m: m.min_pricing)
-            return services[0]  # Fallback to first service
-        elif preference == QualityPreference.BALANCED:
-            # Balance between cost and quality indicators
-            def score_service(service: ServiceInfo) -> float:
-                score = 0.0
-                
-                # Lower cost is better (inverse scoring)
-                if service.min_pricing == 0:
-                    score += 1.0  # Free is great
-                else:
-                    score += max(0, 1.0 - (service.min_pricing / 1.0))  # Diminishing returns
-                
-                # Health status bonus
-                if service.health_status == HealthStatus.ONLINE:
-                    score += 0.5
-                
-                # Quality tags bonus
-                quality_tags = {'paid', 'gpt4', 'claude', 'high-quality', 'enterprise'}
-                tag_matches = len(set(service.tags).intersection(quality_tags))
-                score += tag_matches * 0.1
-                
-                # Multiple services bonus
-                score += len(service.enabled_service_types) * 0.1
-                
-                return score
-            
-            return max(services, key=score_service)
-        else:
-            return services[0]
     
     def _service_to_dict(self, service: ServiceInfo) -> Dict[str, Any]:
         """Convert ServiceInfo to dictionary for JSON serialization."""
@@ -1846,3 +1283,264 @@ class Client:
             lines.append("")  # Empty line between datasites
         
         return "\n".join(lines)
+
+    # Service loader
+    def load(self, service_name: str) -> Service:
+        """Load a service by name and return Service object.
+        
+        Args:
+            service_name: Full service name in format 'datasite/service_name'
+            
+        Returns:
+            Service object for object-oriented interaction
+            
+        Example:
+            service = client.load("alice@example.com/gpt-assistant")
+            response = service.chat(messages=[{"role": "user", "content": "Hello"}])
+        """
+        service_info = self.get_service(service_name)
+        return Service(service_info, self)
+
+    # Private methods to support RAG coordination
+    def _normalize_service_specs(self, services: Union[str, Service, List[Union[str, Service, Dict[str, Any]]]]) -> List[ServiceSpec]:
+        """Normalize various service specification formats including Service objects.
+        
+        Handles:
+        - Strings: "alice@example.com/docs"
+        - Service objects: service_obj
+        - Dicts with strings: {"name": "alice@example.com/docs", "topK": 5}
+        - Dicts with Service objects: {"name": service_obj, "topK": 5}
+        
+        Args:
+            services: Services in various formats
+            
+        Returns:
+            List of ServiceSpec objects
+        """
+        if isinstance(services, str):
+            # Single string service name
+            return [ServiceSpec(name=services, params={})]
+        
+        elif hasattr(services, 'full_name'):  # Service object
+            # Single Service object
+            return [ServiceSpec(name=services.full_name, params={})]
+        
+        elif isinstance(services, list):
+            normalized = []
+            for service in services:
+                if isinstance(service, str):
+                    # String service name
+                    normalized.append(ServiceSpec(name=service, params={}))
+                    
+                elif hasattr(service, 'full_name'):  # Service object
+                    # Service object
+                    normalized.append(ServiceSpec(name=service.full_name, params={}))
+                    
+                elif isinstance(service, dict):
+                    # Dictionary format - could contain string or Service object
+                    if "name" not in service:
+                        raise ValidationError(f"Service spec missing 'name' key: {service}")
+                    
+                    name_value = service["name"]
+                    params = {k: v for k, v in service.items() if k != "name"}
+                    
+                    if isinstance(name_value, str):
+                        # Dict with string name
+                        normalized.append(ServiceSpec(name=name_value, params=params))
+                    elif hasattr(name_value, 'full_name'):  # Service object
+                        # Dict with Service object
+                        normalized.append(ServiceSpec(name=name_value.full_name, params=params))
+                    else:
+                        raise ValidationError(f"Service 'name' must be string or Service object, got {type(name_value)}")
+                        
+                else:
+                    raise ValidationError(f"Invalid service specification: {service} (type: {type(service)})")
+            
+            return normalized
+        
+        else:
+            raise ValidationError(f"Invalid services format: {type(services)}")
+
+    def _format_search_context(self, results: List[DocumentResult], format_type: str = "frontend") -> str:
+        """Format search results as context for chat injection.
+        
+        Args:
+            results: Search results to format
+            format_type: "frontend" (matches web app) or "simple"
+            
+        Returns:
+            Formatted context string
+        """
+        if not results:
+            return ""
+        
+        if format_type == "frontend":
+            # Match the exact frontend pattern: [filename]\nContent
+            formatted_parts = []
+            for result in results:
+                filename = result.metadata.get("filename", "unknown") if result.metadata else "unknown"
+                formatted_parts.append(f"[{filename}]\n{result.content}")
+            
+            return "\n\n".join(formatted_parts)
+        
+        elif format_type == "simple":
+            # Cleaner format for direct SDK usage
+            formatted_parts = []
+            for i, result in enumerate(results, 1):
+                source = result.metadata.get("filename", f"Source {i}") if result.metadata else f"Source {i}"
+                formatted_parts.append(f"## {source}\n{result.content}")
+            
+            return "\n\n".join(formatted_parts)
+        
+        else:
+            raise ValidationError(f"Unknown context format: {format_type}")
+
+    def _remove_duplicate_results(self, results: List[DocumentResult]) -> List[DocumentResult]:
+        """Remove duplicate results based on content similarity.
+        
+        Args:
+            results: List of search results
+            
+        Returns:
+            Deduplicated list of results
+        """
+        if not results:
+            return results
+        
+        # Simple deduplication based on content hash
+        seen_hashes = set()
+        unique_results = []
+        
+        for result in results:
+            content_hash = hash(result.content.strip().lower())
+            if content_hash not in seen_hashes:
+                seen_hashes.add(content_hash)
+                unique_results.append(result)
+        
+        return unique_results
+    
+    # RAG pipeline methods
+    def create_pipeline(self) -> Pipeline:
+        """Create a new pipeline for RAG workflows"""
+        return Pipeline(client=self)
+
+    def pipeline(self, data_sources: Optional[List[Union[str, Dict]]] = None, 
+                synthesizer: Optional[Union[str, Dict]] = None, 
+                context_format: Optional[str] = None) -> Pipeline:
+        """Create and configure a pipeline in one call (inline approach)
+        
+        Args:
+            data_sources: List of search services to use as data sources
+            synthesizer: Chat service to use for synthesis
+            context_format: Format for search context ("simple" or "frontend")
+        
+        Returns:
+            Configured Pipeline ready for execution
+        
+        Example:
+            result = client.pipeline(
+                data_sources=["alice@example.com/docs", "bob@example.com/wiki"],
+                synthesizer="ai@openai.com/gpt-4"
+            ).run(messages=[{"role": "user", "content": "What is Python?"}])
+        """
+        return Pipeline(
+            client=self, 
+            data_sources=data_sources, 
+            synthesizer=synthesizer,
+            context_format=context_format or "simple"
+        )
+    
+    def pipeline_mixed(self, data_sources=None, synthesizer=None, context_format=None):
+        """Create and configure a pipeline with mixed input types (COMPLEX VERSION).
+        
+        Handles multiple input formats:
+        - Strings: "alice@example.com/docs"
+        - Service objects: service_obj
+        - Dicts with strings: {"name": "alice@example.com/docs", "topK": 5}
+        - Dicts with Service objects: {"name": service_obj, "topK": 10}
+        
+        Args:
+            data_sources: Mixed list of strings, Service objects, or dicts
+            synthesizer: String, Service object, or dict
+            context_format: Format for search context ("simple" or "frontend")
+            
+        Returns:
+            Configured Pipeline ready for execution
+            
+        Example:
+            docs = client.load("alice@example.com/docs")
+            result = client.pipeline_mixed(
+                data_sources=[
+                    "alice@example.com/docs",              # String
+                    docs,                                  # Service object  
+                    {"name": "bob@example.com/wiki"},      # Dict with string
+                    {"name": docs, "topK": 10}             # Dict with Service object
+                ],
+                synthesizer=docs  # Service object
+            ).run(messages=[{"role": "user", "content": "What is Python?"}])
+        """
+        normalized_sources = []
+        if data_sources:
+            specs = self._normalize_service_specs(data_sources)
+            # Convert ServiceSpec objects to dict format for Pipeline
+            normalized_sources = []
+            for spec in specs:
+                source_dict = {"name": spec.name}
+                source_dict.update(spec.params)
+                normalized_sources.append(source_dict)
+        
+        normalized_synthesizer = None
+        if synthesizer:
+            specs = self._normalize_service_specs([synthesizer])
+            spec = specs[0]
+            normalized_synthesizer = {"name": spec.name, **spec.params}
+        
+        return Pipeline(
+            client=self,
+            data_sources=normalized_sources,
+            synthesizer=normalized_synthesizer,
+            context_format=context_format or "simple"
+        )
+    
+    def pipeline_from_services(self, data_sources: List[Service], synthesizer: Service, context_format: str = "simple"):
+        """Create pipeline from Service objects (object-oriented approach).
+        
+        Creates a basic pipeline using Service objects without additional parameters.
+        For complex parameter configuration, use create_pipeline() with add_source() method.
+        
+        Args:
+            data_sources: List of Service objects to use as data sources
+            synthesizer: Service object to use for synthesis
+            context_format: Format for search context ("simple" or "frontend")
+            
+        Returns:
+            Configured Pipeline ready for execution
+            
+        Example:
+            # Basic usage
+            docs = client.load("alice@example.com/docs")
+            wiki = client.load("bob@example.com/wiki")
+            gpt = client.load("ai@openai.com/gpt-4")
+            
+            pipeline = client.pipeline_from_services(
+                data_sources=[docs, wiki],
+                synthesizer=gpt
+            )
+            result = pipeline.run(messages=[{"role": "user", "content": "What is Python?"}])
+            
+            # For parameters, use the method-based approach:
+            pipeline = client.create_pipeline()
+            pipeline.add_source(docs, topK=5)
+            pipeline.add_source(wiki, topK=8)
+            pipeline.set_synthesizer(gpt, temperature=0.7)
+        """
+        # Convert Service objects to the format Pipeline expects
+        data_source_specs = [{"name": service.full_name} for service in data_sources]
+        synthesizer_spec = {"name": synthesizer.full_name}
+        
+        return Pipeline(
+            client=self, 
+            data_sources=data_source_specs, 
+            synthesizer=synthesizer_spec, 
+            context_format=context_format
+        )

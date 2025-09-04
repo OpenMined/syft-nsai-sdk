@@ -19,8 +19,12 @@ from rich import print as rprint
 from ..main import Client
 from ..core.types import ServiceType, HealthStatus
 from ..core.exceptions import (
-    SyftBoxNotFoundError, ServiceNotFoundError, PaymentError,
-    AuthenticationError, NetworkError
+    SyftBoxNotFoundError, 
+    SyftBoxNotRunningError, 
+    PaymentError,
+    AuthenticationError, 
+    NetworkError,
+    ServiceNotFoundError,
 )
 
 # Create console and app

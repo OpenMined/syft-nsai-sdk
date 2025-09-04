@@ -11,13 +11,53 @@ from ..core.exceptions import ConfigurationError
 
 logger = logging.getLogger(__name__)
 
-
 class ServiceScanner:
     """Scanner for discovering services across SyftBox datasites."""
     
     def __init__(self, syftbox_config: SyftBoxConfig):
         self.config = syftbox_config
         self.datasites_path = syftbox_config.datasites_path
+
+    def _build_metadata_path(self, datasite: str, service_name: str) -> Path:
+        """Build path to a service's metadata.json file.
+        
+        Args:
+            datasite: Datasite email
+            service_name: Service name
+            
+        Returns:
+            Path to metadata.json file
+        """
+        return (self.datasites_path / 
+                datasite / 
+                "public" / 
+                "routers" / 
+                service_name / 
+                "metadata.json")
+    
+    def _build_routers_path(self, datasite: str) -> Path:
+        """Build path to a datasite's routers directory.
+        
+        Args:
+            datasite: Datasite email
+            
+        Returns:
+            Path to routers directory
+        """
+        return self.datasites_path / datasite / "public" / "routers"
+    
+    def _build_rpc_schema_path(self, datasite: str, service_name: str) -> Path:
+        """Build path to a service's RPC schema file.
+        
+        Args:
+            datasite: Datasite email
+            service_name: Service name
+            
+        Returns:
+            Path to rpc.schema.json file
+        """
+        return (self.datasites_path / datasite / 
+                "app_data" / service_name / "rpc" / "rpc.schema.json")
     
     def scan_all_datasites(self, exclude_current_user: bool = False) -> List[Path]:
         """Scan all datasites for published services.
@@ -57,7 +97,7 @@ class ServiceScanner:
         logger.debug(f"Found {len(metadata_paths)} services across {len(list(self.datasites_path.iterdir()))} datasites")
         return metadata_paths
     
-    def scan_datasite(self, datasite_email: str) -> List[Path]:
+    def scan_datasite(self, datasite: str) -> List[Path]:
         """Scan a specific datasite for published services.
         
         Args:
@@ -66,17 +106,12 @@ class ServiceScanner:
         Returns:
             List of paths to metadata.json files for this datasite
         """
-        datasite_path = self.datasites_path / datasite_email
-        
-        if not datasite_path.exists():
-            logger.debug(f"Datasite not found: {datasite_path}")
-            return []
         
         # Look for published routers in public/routers/
-        routers_path = datasite_path / "public" / "routers"
-        
+        routers_path = self._build_routers_path(datasite)
+
         if not routers_path.exists():
-            logger.debug(f"No published routers found for {datasite_email}")
+            logger.debug(f"No published routers found for {datasite}")
             return []
         
         metadata_paths = []
@@ -85,43 +120,46 @@ class ServiceScanner:
             if not service_dir.is_dir():
                 continue
             
-            metadata_path = service_dir / "metadata.json"
+            metadata_path = self._build_metadata_path(datasite, service_dir.name)
             if metadata_path.exists() and self.is_valid_metadata_file(metadata_path):
                 metadata_paths.append(metadata_path)
             else:
                 logger.debug(f"Invalid or missing metadata: {metadata_path}")
         
-        logger.debug(f"Found {len(metadata_paths)} services for {datasite_email}")
+        logger.debug(f"Found {len(metadata_paths)} services for {datasite}")
         return metadata_paths
     
     def find_metadata_files(self, service_name: Optional[str] = None, 
-                           datasite_email: Optional[str] = None) -> List[Path]:
+                           datasite: Optional[str] = None) -> List[Path]:
         """Find specific metadata files with optional filtering.
         
         Args:
             service_name: Optional service name to filter by
-            datasite_email: Optional datasite email to filter by
+            datasite: Optional datasite email to filter by
             
         Returns:
             List of matching metadata.json paths
         """
-        if datasite_email:
+        if datasite and service_name:
+            metadata_path = self._build_metadata_path(datasite, service_name)
+            return [metadata_path] if metadata_path.exists() else []
+        elif datasite:
             # Search specific datasite
-            all_paths = self.scan_datasite(datasite_email)
+            return self.scan_datasite(datasite)
         else:
             # Search all datasites
             all_paths = self.scan_all_datasites()
         
-        if not service_name:
-            return all_paths
-        
-        # Filter by service name
-        filtered_paths = []
-        for path in all_paths:
-            if path.parent.name == service_name:
-                filtered_paths.append(path)
-        
-        return filtered_paths
+            if not service_name:
+                return all_paths
+            
+            # Filter by service name
+            filtered_paths = []
+            for path in all_paths:
+                if path.parent.name == service_name:
+                    filtered_paths.append(path)
+            
+            return filtered_paths
     
     def is_valid_metadata_file(self, metadata_path: Path) -> bool:
         """Check if a metadata.json file is valid and readable.
@@ -173,14 +211,13 @@ class ServiceScanner:
         # Expected structure: datasites/{datasite}/public/routers/{service}/metadata.json
         try:
             service_name = metadata_path.parent.name
-            datasite_email = metadata_path.parent.parent.parent.parent.name
+            datasite = metadata_path.parent.parent.parent.parent.name
             
             # Expected RPC schema location: datasites/{datasite}/app_data/{service}/rpc/rpc.schema.json
-            rpc_schema_path = (self.datasites_path / datasite_email / 
-                              "app_data" / service_name / "rpc" / "rpc.schema.json")
-            
+            rpc_schema_path = self._build_rpc_schema_path(datasite, service_name)
             if rpc_schema_path.exists():
                 return rpc_schema_path
+            
         except (IndexError, AttributeError):
             pass
         
@@ -261,6 +298,19 @@ class FastScanner:
         self.datasites_path = syftbox_config.datasites_path
         self._cache: Optional[Dict[str, List[Path]]] = None
     
+    def _build_metadata_path(self, datasite: str, service_name: str) -> Path:
+        """Build path to a service's metadata.json file."""
+        return (self.datasites_path / 
+                datasite / 
+                "public" / 
+                "routers" / 
+                service_name / 
+                "metadata.json")
+    
+    def _build_routers_path(self, datasite: str) -> Path:
+        """Build path to a datasite's routers directory."""
+        return self.datasites_path / datasite / "public" / "routers"
+    
     def scan_with_cache(self, force_refresh: bool = False) -> List[Path]:
         """Scan with caching for better performance.
         
@@ -307,6 +357,19 @@ class FastScanner:
             self.scan_with_cache()
         
         return self._cache.get(datasite_email, [])
+    
+    def get_service_path(self, datasite: str, service_name: str) -> Optional[Path]:
+        """Get direct path to a specific service's metadata file.
+        
+        Args:
+            datasite: Datasite email
+            service_name: Service name
+            
+        Returns:
+            Path to metadata.json if it exists, None otherwise
+        """
+        metadata_path = self._build_metadata_path(datasite, service_name)
+        return metadata_path if metadata_path.exists() else None
     
     def clear_cache(self):
         """Clear the service cache."""

@@ -4,7 +4,6 @@ Custom ServicesList class that provides a show() method for displaying services 
 
 from typing import List, Optional, Any
 from .services_widget import get_services_widget_html
-import tempfile
 import webbrowser
 import os
 from pathlib import Path
@@ -12,10 +11,10 @@ from pathlib import Path
 
 class ServicesList:
     """A custom list-like class that wraps ServiceInfo objects and provides a show() method."""
-    
+
     def __init__(self, services: List[Any], client=None):
         """Initialize with a list of services and optional client reference.
-        
+
         Args:
             services: List of ServiceInfo objects
             client: Optional reference to the Client for context
@@ -27,7 +26,7 @@ class ServicesList:
     def __len__(self):
         """Return the number of services."""
         return len(self._services)
-    
+
     def __getitem__(self, index):
         """Get a service by index."""
         return self._services[index]
@@ -39,15 +38,15 @@ class ServicesList:
     def __contains__(self, item):
         """Check if a service is in the list."""
         return item in self._services
-    
+
     def __repr__(self):
         """String representation."""
         return f"ServicesList({len(self._services)} services)"
-    
+
     def __str__(self):
         """Human-readable string representation."""
         return f"ServicesList with {len(self._services)} services"
-    
+
     def _is_jupyter_notebook(self) -> bool:
         """Detect if we're running in a Jupyter notebook environment."""
         try:
@@ -81,14 +80,14 @@ class ServicesList:
             # Try to import and use IPython display
             import IPython.display as display
             display.display(display.HTML(html))
-            print("✅ Services widget displayed in notebook")
+            print("Services widget displayed in notebook")
         except ImportError:
             # Fallback: save and show file path
-            print("⚠️ IPython not available, saving to file instead")
+            print("IPython not available, saving to file instead")
             self._save_and_open_file(html)
         except Exception as e:
             # Fallback: save and show file path
-            print(f"⚠️ Could not display in notebook: {e}")
+            print(f"Could not display in notebook: {e}")
             self._save_and_open_file(html)
     
     def _save_and_open_file(self, html: str, output_path: Optional[str] = None) -> str:
@@ -101,7 +100,7 @@ class ServicesList:
         with open(file_path, "w", encoding="utf-8") as f:
             f.write(html)
         
-        print(f"✅ Services widget saved to: {file_path.absolute()}")
+        print(f"Services widget saved to: {file_path.absolute()}")
         
         # Try to open in browser
         try:
@@ -117,7 +116,6 @@ class ServicesList:
              page: int = 1,
              items_per_page: int = 50,
              current_user_email: str = "",
-             auto_open: bool = True,
              save_to_file: bool = False,
              output_path: Optional[str] = None,
              open_in_browser: bool = False) -> str:
@@ -144,14 +142,14 @@ class ServicesList:
         """
         # Convert services to widget-compatible format
         widget_services = []
-        for service in self._services:
+        for _service in self._services:
             try:
                 widget_services.append({
-                    "name": service.name,
-                    "datasite": service.datasite,
-                    "summary": service.summary,
-                    "description": getattr(service, 'description', ''),
-                    "tags": service.tags,
+                    "name": _service.name,
+                    "datasite": _service.datasite,
+                    "summary": _service.summary,
+                    "description": getattr(_service, 'description', ''),
+                    "tags": _service.tags,
                     "services": [
                         {
                             "type": service.type.value,
@@ -159,15 +157,21 @@ class ServicesList:
                             "pricing": service.pricing,
                             "charge_type": service.charge_type.value
                         }
-                        for service in service.services
+                        for service in _service.services
                     ],
-                    "config_status": service.config_status.value,
-                    "health_status": service.health_status.value if service.health_status else None,
-                    "min_pricing": service.min_pricing,
-                    "max_pricing": service.max_pricing
+                    "config_status": _service.config_status.value,
+                    "health_status": _service.health_status.value if _service.health_status else None,
+                    "min_pricing": _service.min_pricing,
+                    "max_pricing": _service.max_pricing
                 })
+            # except Exception as e:
+            #     # Skip services that can't be converted
+            #     continue
             except Exception as e:
-                # Skip services that can't be converted
+                print(f"ERROR processing service {_service.name}: {e}")
+                print(f"Exception type: {type(e)}")
+                import traceback
+                traceback.print_exc()
                 continue
         
         # Generate widget HTML (no filtering parameters needed)
@@ -203,14 +207,14 @@ class ServicesList:
         """
         # Convert services to widget-compatible format
         widget_services = []
-        for service in self._services:
+        for _service in self._services:
             try:
                 widget_services.append({
-                    "name": service.name,
-                    "datasite": service.datasite,
-                    "summary": service.summary,
-                    "description": getattr(service, 'description', ''),
-                    "tags": service.tags,
+                    "name": _service.name,
+                    "datasite": _service.datasite,
+                    "summary": _service.summary,
+                    "description": getattr(_service, 'description', ''),
+                    "tags": _service.tags,
                     "services": [
                         {
                             "type": service.type.value,
@@ -218,16 +222,16 @@ class ServicesList:
                             "pricing": service.pricing,
                             "charge_type": service.charge_type.value
                         }
-                        for service in service.services
+                        for service in _service.services
                     ],
-                    "config_status": service.config_status.value,
-                    "health_status": service.health_status.value if service.health_status else None,
-                    "min_pricing": service.min_pricing,
-                    "max_pricing": service.max_pricing
+                    "config_status": _service.config_status.value,
+                    "health_status": _service.health_status.value if _service.health_status else None,
+                    "min_pricing": _service.min_pricing,
+                    "max_pricing": _service.max_pricing
                 })
             except Exception as e:
                 continue
-        
+
         return get_services_widget_html(
             services=widget_services,
             **kwargs
@@ -237,35 +241,35 @@ class ServicesList:
     def append(self, service):
         """Add a service to the list."""
         self._services.append(service)
-    
+
     def extend(self, services):
         """Extend the list with more services."""
         self._services.extend(services)
-    
+
     def insert(self, index, service):
         """Insert a service at a specific index."""
         self._services.insert(index, service)
-    
+
     def remove(self, service):
         """Remove a service from the list."""
         self._services.remove(service)
-    
+
     def pop(self, index=-1):
         """Remove and return a service at the specified index."""
         return self._services.pop(index)
-    
+
     def clear(self):
         """Clear all services from the list."""
         self._services.clear()
-    
+
     def index(self, service):
         """Return the index of a service."""
         return self._services.index(service)
-    
+
     def count(self, service):
         """Return the number of occurrences of a service."""
         return self._services.count(service)
-    
+
     def sort(self, key=None, reverse=False):
         """Sort the services list."""
         self._services.sort(key=key, reverse=reverse)
@@ -273,33 +277,33 @@ class ServicesList:
     def reverse(self):
         """Reverse the services list."""
         self._services.reverse()
-    
+
     def copy(self):
         """Create a shallow copy of the services list."""
         return ServicesList(self._services.copy(), self._client)
-    
+
     # Additional utility methods
     def filter(self, **kwargs):
         """Filter services by criteria and return a new ServicesList."""
         filtered = []
-        for service in self._services:
+        for _service in self._services:
             # Apply filters
-            if 'name' in kwargs and kwargs['name'].lower() not in service.name.lower():
+            if 'name' in kwargs and kwargs['name'].lower() not in _service.name.lower():
                 continue
-            if 'datasite' in kwargs and kwargs['datasite'].lower() not in service.datasite.lower():
+            if 'datasite' in kwargs and kwargs['datasite'].lower() not in _service.datasite.lower():
                 continue
             if 'tags' in kwargs:
-                if not any(tag.lower() in [t.lower() for t in service.tags] for tag in kwargs['tags']):
+                if not any(tag.lower() in [t.lower() for t in _service.tags] for tag in kwargs['tags']):
                     continue
             if 'service_type' in kwargs:
-                if not service.supports_service(kwargs['service_type']):
+                if not _service.supports_service(kwargs['service_type']):
                     continue
-            if 'max_cost' in kwargs and service.min_pricing > kwargs['max_cost']:
+            if 'max_cost' in kwargs and _service.min_pricing > kwargs['max_cost']:
                 continue
-            if kwargs.get('free_only', False) and service.min_pricing > 0:
+            if kwargs.get('free_only', False) and _service.min_pricing > 0:
                 continue
-            
-            filtered.append(service)
+
+            filtered.append(_service)
         
         return ServicesList(filtered, self._client)
     
@@ -307,78 +311,78 @@ class ServicesList:
         """Search services by query string."""
         query_lower = query.lower()
         results = []
-        
-        for service in self._services:
+
+        for _service in self._services:
             searchable_content = [
-                service.name,
-                service.datasite,
-                service.summary,
-                getattr(service, 'description', ''),
-                ' '.join(service.tags)
+                _service.name,
+                _service.datasite,
+                _service.summary,
+                getattr(_service, 'description', ''),
+                ' '.join(_service.tags)
             ]
             
             if any(query_lower in content.lower() for content in searchable_content):
-                results.append(service)
+                results.append(_service)
         
         return ServicesList(results, self._client)
     
     def get_by_datasite(self, datasite: str):
         """Get services by specific datasite."""
-        return ServicesList([m for m in self._services if m.datasite == datasite], self._client)
-    
+        return ServicesList([_service for _service in self._services if _service.datasite == datasite], self._client)
+
     def get_by_service(self, service_type: str):
         """Get services that support a specific service."""
-        return ServicesList([m for m in self._services if m.supports_service(service_type)], self._client)
+        return ServicesList([_service for _service in self._services if _service.supports_service(service_type)], self._client)
     
     def get_free_services(self):
         """Get only free services."""
-        return ServicesList([m for m in self._services if m.min_pricing == 0], self._client)
-    
+        return ServicesList([_service for _service in self._services if _service.min_pricing == 0], self._client)
+
     def get_paid_services(self):
         """Get only paid services."""
-        return ServicesList([m for m in self._services if m.min_pricing > 0], self._client)
-    
+        return ServicesList([_service for _service in self._services if _service.min_pricing > 0], self._client)
+
     def summary(self):
         """Print a summary of the services."""
         if not self._services:
             print("No services found.")
             return
-        
+
         print(f"Found {len(self._services)} services:")
         print("-" * 50)
         
         # Group by datasite
         by_datasite = {}
-        for service in self._services:
-            if service.datasite not in by_datasite:
-                by_datasite[service.datasite] = []
-            by_datasite[service.datasite].append(service)
-        
-        for datasite, services in sorted(by_datasite.items()):
-            print(f"\n📧 {datasite} ({len(services)} services):")
-            for service in sorted(services, key=lambda m: m.name):
-                services = ", ".join([s.type.value for s in service.services if s.enabled])
-                pricing = f"${service.min_pricing}" if service.min_pricing > 0 else "Free"
+        for _service in self._services:
+            if _service.datasite not in by_datasite:
+                by_datasite[_service.datasite] = []
+            by_datasite[_service.datasite].append(_service)
+
+        for datasite, _services in sorted(by_datasite.items()):
+            print(f"\n📧 {datasite} ({len(_services)} services):")
+            for _service in sorted(_services, key=lambda s: s.name):
+                services = ", ".join([s.type.value for s in _service.services if s.enabled])
+                pricing = f"${_service.min_pricing}" if _service.min_pricing > 0 else "Free"
                 health = ""
-                if hasattr(service, 'health_status') and service.health_status:
-                    if service.health_status.value == 'online':
+                if hasattr(_service, 'health_status') and _service.health_status:
+                    if _service.health_status.value == 'online':
                         health = " ✅"
-                    elif service.health_status.value == 'offline':
+                    elif _service.health_status.value == 'offline':
                         health = " ❌"
-                    elif service.health_status.value == 'timeout':
+                    elif _service.health_status.value == 'timeout':
                         health = " ⏱️"
-                
-                print(f"  • {service.name} ({services}) - {pricing}{health}")
+
+                print(f"  • {_service.name} ({services}) - {pricing}{health}")
     
     def to_dict(self):
         """Convert services to list of dictionaries."""
         return [
             {
-                "name": service.name,
-                "datasite": service.datasite,
-                "summary": service.summary,
-                "description": getattr(service, 'description', ''),
-                "tags": service.tags,
+                "name": _service.name,
+                "datasite": _service.datasite,
+                "summary": _service.summary,
+                "description": getattr(_service, 'description', ''),
+                "tags": _service.tags,
                 "services": [
                     {
                         "type": service.type.value,
@@ -386,14 +390,14 @@ class ServicesList:
                         "pricing": service.pricing,
                         "charge_type": service.charge_type.value
                     }
-                    for service in service.services
+                    for service in _service.services
                 ],
-                "config_status": service.config_status.value,
-                "health_status": service.health_status.value if hasattr(service, 'health_status') and service.health_status else None,
-                "min_pricing": service.min_pricing,
-                "max_pricing": service.max_pricing
+                "config_status": _service.config_status.value,
+                "health_status": _service.health_status.value if hasattr(_service, 'health_status') and _service.health_status else None,
+                "min_pricing": _service.min_pricing,
+                "max_pricing": _service.max_pricing
             }
-            for service in self._services
+            for _service in self._services
         ]
     
     def to_json(self):

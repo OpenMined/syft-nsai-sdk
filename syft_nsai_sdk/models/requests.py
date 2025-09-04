@@ -20,15 +20,15 @@ class RequestMethod(Enum):
 @dataclass
 class BaseRequest:
     """Base class for all requests."""
-    user_email: str
-    transaction_token: Optional[str] = None
-    request_id: Optional[str] = None
-    metadata: Optional[Dict[str, Any]] = None
+    user_email: str = Field(..., description="User email address")
+    transaction_token: Optional[str] = Field(None, description="Transaction token")
+    request_id: Optional[str] = Field(None, description="Request ID")
+    metadata: Optional[Dict[str, Any]] = Field(None, description="Additional metadata")
 
 
-# Pydantic services for validation and serialization
-class ChatMessageService(BaseModel):
-    """Pydantic service for chat messages."""
+# Pydantic models for validation and serialization
+class ChatMessageModel(BaseModel):
+    """Pydantic model for chat messages."""
     role: str = Field(..., description="Message role (user, assistant, system)")
     content: str = Field(..., description="Message content")
     name: Optional[str] = Field(None, description="Optional author name")
@@ -40,8 +40,8 @@ class ChatMessageService(BaseModel):
         return v
 
 
-class GenerationOptionsService(BaseModel):
-    """Pydantic service for generation options."""
+class GenerationOptionsModel(BaseModel):
+    """Pydantic model for generation options."""
     max_tokens: Optional[int] = Field(None, ge=1, le=8000, description="Maximum tokens to generate")
     temperature: Optional[float] = Field(None, ge=0.0, le=2.0, description="Sampling temperature")
     top_p: Optional[float] = Field(None, ge=0.0, le=1.0, description="Nucleus sampling parameter")
@@ -51,20 +51,20 @@ class GenerationOptionsService(BaseModel):
         extra = "allow"  # Allow additional generation parameters
 
 
-class ChatRequestService(BaseModel):
-    """Pydantic service for chat requests."""
+class ChatRequestModel(BaseModel):
+    """Pydantic model for chat requests."""
     user_email: EmailStr = Field(..., description="User email address")
-    service: str = Field(..., description="Service name or identifier")
-    messages: List[ChatMessageService] = Field(..., description="Conversation messages")
-    options: Optional[GenerationOptionsService] = Field(None, description="Generation options")
+    model: str = Field(..., description="Model name or identifier")
+    messages: List[ChatMessageModel] = Field(..., description="Conversation messages")
+    options: Optional[GenerationOptionsModel] = Field(None, description="Generation options")
     transaction_token: Optional[str] = Field(None, description="Payment token for paid services")
     request_id: Optional[str] = Field(None, description="Unique request identifier")
     
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "user_email": "user@example.com",
-                "service": "gpt-4",
+                "model": "gpt-4",
                 "messages": [
                     {"role": "user", "content": "Hello, how are you?"}
                 ],
@@ -76,8 +76,8 @@ class ChatRequestService(BaseModel):
         }
 
 
-class SearchOptionsService(BaseModel):
-    """Pydantic service for search options."""
+class SearchOptionsModel(BaseModel):
+    """Pydantic model for search options."""
     limit: Optional[int] = Field(3, ge=1, le=100, description="Maximum results to return")
     similarity_threshold: Optional[float] = Field(None, ge=0.0, le=1.0, description="Minimum similarity score")
     include_metadata: Optional[bool] = Field(None, description="Include document metadata")
@@ -87,16 +87,16 @@ class SearchOptionsService(BaseModel):
         extra = "allow"  # Allow searcher-specific extensions
 
 
-class SearchRequestService(BaseModel):
-    """Pydantic service for search requests."""
+class SearchRequestModel(BaseModel):
+    """Pydantic model for search requests."""
     user_email: EmailStr = Field(..., description="User email address")
     query: str = Field(..., min_length=1, description="Search query")
-    options: Optional[SearchOptionsService] = Field(SearchOptionsService(), description="Search options")
+    options: Optional[SearchOptionsModel] = Field(SearchOptionsModel(), description="Search options")
     transaction_token: Optional[str] = Field(None, description="Payment token for paid services")
     request_id: Optional[str] = Field(None, description="Unique request identifier")
     
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "user_email": "user@example.com",
                 "query": "machine learning tutorials",
@@ -108,8 +108,8 @@ class SearchRequestService(BaseModel):
         }
 
 
-class HealthCheckRequestService(BaseModel):
-    """Pydantic service for health check requests."""
+class HealthCheckRequestModel(BaseModel):
+    """Pydantic model for health check requests."""
     user_email: EmailStr = Field(..., description="User email address")
     include_details: Optional[bool] = Field(False, description="Include detailed health information")
     timeout: Optional[float] = Field(5.0, ge=0.1, le=30.0, description="Request timeout in seconds")
@@ -120,15 +120,15 @@ class HealthCheckRequestService(BaseModel):
 @dataclass
 class ChatRequest(BaseRequest):
     """Chat request data class."""
-    service: str
-    messages: List[ChatMessage]
-    options: Optional[GenerationOptions] = None
+    model: str = Field(..., description="Model name")
+    messages: List[ChatMessage] = Field(..., description="List of chat messages")
+    options: Optional[GenerationOptions] = Field(None, description="Generation options")
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for serialization."""
         data = {
             "userEmail": self.user_email,
-            "service": self.service,
+            "model": self.model,
             "messages": [
                 {
                     "role": msg.role,
@@ -165,9 +165,9 @@ class ChatRequest(BaseRequest):
 @dataclass
 class SearchRequest(BaseRequest):
     """Search request data class."""
-    query: str
-    options: Optional[SearchOptions] = None
-    
+    query: str = Field(..., description="Search query")
+    options: Optional[SearchOptions] = Field(None, description="Search options")
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for serialization."""
         data = {
@@ -222,11 +222,11 @@ class HealthCheckRequest(BaseRequest):
 @dataclass
 class CustomRequest(BaseRequest):
     """Custom request for arbitrary endpoints."""
-    endpoint: str
-    method: RequestMethod = RequestMethod.POST
-    payload: Optional[Dict[str, Any]] = None
-    headers: Optional[Dict[str, str]] = None
-    
+    endpoint: str = Field(..., description="API endpoint")
+    method: RequestMethod = Field(RequestMethod.POST, description="HTTP method")
+    payload: Optional[Dict[str, Any]] = Field(None, description="Request payload")
+    headers: Optional[Dict[str, str]] = Field(None, description="Request headers")
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for serialization."""
         data = self.payload.copy() if self.payload else {}
@@ -247,9 +247,9 @@ class CustomRequest(BaseRequest):
 class ChatRequestBuilder:
     """Builder for chat requests."""
     
-    def __init__(self, user_email: str, service: str):
+    def __init__(self, user_email: str, model: str):
         self.user_email = user_email
-        self.service = service
+        self.model = model
         self.messages: List[ChatMessage] = []
         self.options: Optional[GenerationOptions] = None
         self.transaction_token: Optional[str] = None
@@ -285,7 +285,7 @@ class ChatRequestBuilder:
         """Build the chat request."""
         return ChatRequest(
             user_email=self.user_email,
-            service=self.service,
+            model=self.model,
             messages=self.messages,
             options=self.options,
             transaction_token=self.transaction_token
@@ -345,25 +345,25 @@ class SearchRequestBuilder:
 
 
 # Validation functions
-def validate_chat_request(request: Dict[str, Any]) -> ChatRequestService:
+def validate_chat_request(request: Dict[str, Any]) -> ChatRequestModel:
     """Validate and parse chat request."""
-    return ChatRequestService(**request)
+    return ChatRequestModel(**request)
 
 
-def validate_search_request(request: Dict[str, Any]) -> SearchRequestService:
+def validate_search_request(request: Dict[str, Any]) -> SearchRequestModel:
     """Validate and parse search request."""
-    return SearchRequestService(**request)
+    return SearchRequestModel(**request)
 
 
-def validate_health_request(request: Dict[str, Any]) -> HealthCheckRequestService:
+def validate_health_request(request: Dict[str, Any]) -> HealthCheckRequestModel:
     """Validate and parse health check request."""
-    return HealthCheckRequestService(**request)
+    return HealthCheckRequestModel(**request)
 
 
 # Factory functions
-def create_chat_request(user_email: str, service: str, message: str, **options) -> ChatRequest:
+def create_chat_request(user_email: str, model: str, message: str, **options) -> ChatRequest:
     """Create a simple chat request."""
-    builder = ChatRequestBuilder(user_email, service)
+    builder = ChatRequestBuilder(user_email, model)
     builder.add_user_message(message)
     
     if options:
@@ -390,11 +390,11 @@ def create_search_request(user_email: str, query: str, **options) -> SearchReque
     return builder.build()
 
 
-def create_conversation_request(user_email: str, service: str, messages: List[ChatMessage], **options) -> ChatRequest:
+def create_conversation_request(user_email: str, model: str, messages: List[ChatMessage], **options) -> ChatRequest:
     """Create a chat request from existing conversation."""
     return ChatRequest(
         user_email=user_email,
-        service=service,
+        model=model,
         messages=messages,
         options=GenerationOptions(**options) if options else None
     )

@@ -10,7 +10,11 @@ from pathlib import Path
 from typing import Dict, Any, Optional
 from dataclasses import dataclass
 
-from .exceptions import SyftBoxNotFoundError, SyftBoxNotRunningError, ConfigurationError
+from .exceptions import (
+    SyftBoxNotFoundError, 
+    SyftBoxNotRunningError, 
+    ConfigurationError
+)
 
 logger = logging.getLogger(__name__)
 

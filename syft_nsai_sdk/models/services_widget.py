@@ -16,7 +16,6 @@ def get_services_widget_html(
     max_cost: Optional[float] = None,
     free_only: bool = False,
     health_check: str = "auto",
-    include_disabled: bool = False,
     page: int = 1,
     items_per_page: int = 50,
     current_user_email: str = "",
@@ -730,9 +729,8 @@ def get_services_widget_html(
             
             var statusText = serviceCount + ' services • ' + chatServices + ' chat • ' + searchServices + ' search • ' + freeServices + ' free • ' + paidServices + ' paid';
             
-            if (showFooterTip) {{
-                statusText += ' • 💡 ' + '{footer_tip}';
-            }}
+            // if (showFooterTip) {{ statusText += ' • 💡 ' + '{footer_tip}'; }}
+            if ({str(show_footer_tip).lower()}) {{ statusText += ' • 💡 ' + '{footer_tip}'; }}
             
             document.getElementById('{container_id}-status').textContent = statusText;
         }}

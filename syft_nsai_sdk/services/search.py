@@ -16,6 +16,7 @@ from ..core.types import (
 )
 from ..core.exceptions import ServiceNotSupportedError, RPCError, ValidationError, raise_service_not_supported
 from ..clients.rpc_client import SyftBoxRPCClient
+from ..utils.estimator import CostEstimator
 
 logger = logging.getLogger(__name__)
 
@@ -193,21 +194,21 @@ class SearchService:
             Search response
         """
         # Validate required parameters
-        if "query" not in params:
-            raise ValidationError("'query' parameter is required")
+        if "message" not in params:
+            raise ValidationError("'message' parameter is required")
         
         # Extract standard parameters (make copy to avoid mutating input)
         params = params.copy()
-        query = params.pop("query")
-        limit = params.pop("limit", 3)
+        message = params.pop("message")
+        topK = params.pop("topK", 3)
         similarity_threshold = params.pop("similarity_threshold", None)
         
         # Build RPC payload with consistent authentication
         account_email = self.rpc_client.accounting_client.get_email()
         payload = {
             "user_email": account_email,
-            "query": query,
-            "options": {"limit": limit}
+            "query": message,
+            "options": {"limit": topK}
         }
         
         if similarity_threshold is not None:
@@ -219,9 +220,9 @@ class SearchService:
         
         # Make RPC call
         response_data = await self.rpc_client.call_search(self.service_info, payload)
-        return self._parse_rpc_response(response_data, query)
+        return self._parse_rpc_response(response_data, message)
     
-    def estimate_cost(self, query_count: int = 1, result_limit: int = 3) -> float:
+    def estimate_cost1(self, query_count: int = 1, result_limit: int = 3) -> float:
         """Estimate cost for search requests."""
         search_service_info = self.service_info.get_service_info(ServiceType.SEARCH)
         if not search_service_info:
@@ -229,12 +230,11 @@ class SearchService:
             
         if search_service_info.charge_type == PricingChargeType.PER_REQUEST:
             return search_service_info.pricing * query_count
-        elif search_service_info.charge_type == PricingChargeType.PER_TOKEN:
-            # Use actual per-token pricing from service info
-            estimated_tokens = query_count * (20 + result_limit * 100)  # Still rough estimate
-            return search_service_info.pricing * estimated_tokens
         else:
             return search_service_info.pricing
+        
+    def estimate_cost(self, query_count: int = 1, result_limit: int = 3) -> float:
+        return CostEstimator.estimate_search_cost(self.service_info, query_count, result_limit)
         
     @property
     def pricing(self) -> float:
@@ -247,147 +247,3 @@ class SearchService:
         """Get charge type for search service."""
         search_service = self.service_info.get_service_info(ServiceType.SEARCH)
         return search_service.charge_type.value if search_service else "per_request"
-    
-class BatchSearchService:
-    """Helper class for batch search operations."""
-    
-    def __init__(self, search_service: SearchService):
-        """Initialize batch search service.
-        
-        Args:
-            search_service: Search service to use
-        """
-        self.search_service = search_service
-    
-    async def search_multiple_queries(self,
-                                     queries: List[str],
-                                     **kwargs) -> List[SearchResponse]:
-        """Search multiple queries sequentially.
-        
-        Args:
-            queries: List of search queries
-            **kwargs: Additional search arguments
-            
-        Returns:
-            List of search responses
-        """
-        responses = []
-        
-        for query in queries:
-            try:
-                response = await self.search_service.search(query, **kwargs)
-                responses.append(response)
-            except Exception as e:
-                logger.error(f"Batch search failed for query '{query}': {e}")
-                # Create empty response for failed query
-                empty_response = SearchResponse(
-                    id=str(uuid.uuid4()),
-                    query=query,
-                    results=[],
-                    cost=0.0,
-                    provider_info={"error": str(e)}
-                )
-                responses.append(empty_response)
-        
-        return responses
-    
-    async def search_with_fallback(self,
-                                  query: str,
-                                  fallback_services: List[SearchService],
-                                  **kwargs) -> SearchResponse:
-        """Search with fallback to other services if primary fails.
-        
-        Args:
-            query: Search query
-            fallback_services: List of fallback search services
-            **kwargs: Additional search arguments
-            
-        Returns:
-            Search response from first successful service
-        """
-        # Try primary service first
-        try:
-            return await self.search_service.search(query, **kwargs)
-        except Exception as primary_error:
-            logger.warning(f"Primary search failed: {primary_error}")
-        
-        # Try fallback services
-        for i, fallback_service in enumerate(fallback_services):
-            try:
-                logger.info(f"Trying fallback service {i+1}/{len(fallback_services)}")
-                response = await fallback_service.search(query, **kwargs)
-                
-                # Add fallback info to provider info
-                if response.provider_info is None:
-                    response.provider_info = {}
-                response.provider_info["fallback_used"] = True
-                response.provider_info["fallback_service"] = fallback_service.service_info.name
-                
-                return response
-                
-            except Exception as fallback_error:
-                logger.warning(f"Fallback service {i+1} failed: {fallback_error}")
-                continue
-        
-        # All services failed
-        raise RPCError(f"All search services failed for query: {query}")
-    
-    def aggregate_results(self, 
-                         responses: List[SearchResponse],
-                         max_results: int = 10,
-                         remove_duplicates: bool = True) -> SearchResponse:
-        """Aggregate results from multiple search responses.
-        
-        Args:
-            responses: List of search responses to aggregate
-            max_results: Maximum number of results to return
-            remove_duplicates: Whether to remove duplicate results
-            
-        Returns:
-            Aggregated search response
-        """
-        if not responses:
-            return SearchResponse(
-                id=str(uuid.uuid4()),
-                query="",
-                results=[]
-            )
-        
-        # Combine all results
-        all_results = []
-        total_cost = 0.0
-        queries = []
-        
-        for response in responses:
-            all_results.extend(response.results)
-            total_cost += response.cost or 0.0
-            queries.append(response.query)
-        
-        # Remove duplicates if requested
-        if remove_duplicates:
-            seen_content = set()
-            unique_results = []
-            
-            for result in all_results:
-                content_hash = hash(result.content)
-                if content_hash not in seen_content:
-                    seen_content.add(content_hash)
-                    unique_results.append(result)
-            
-            all_results = unique_results
-        
-        # Sort by score (descending) and limit results
-        all_results.sort(key=lambda r: r.score, reverse=True)
-        final_results = all_results[:max_results]
-        
-        return SearchResponse(
-            id=str(uuid.uuid4()),
-            query=" | ".join(queries),
-            results=final_results,
-            cost=total_cost,
-            provider_info={
-                "aggregated_from": len(responses),
-                "total_results_found": len(all_results),
-                "duplicates_removed": len(all_results) - len(unique_results) if remove_duplicates else 0
-            }
-        )

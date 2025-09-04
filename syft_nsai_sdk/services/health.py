@@ -2,9 +2,9 @@
 Health check utilities for SyftBox services
 """
 import asyncio
-from typing import List, Dict, Any, Optional, Tuple
 import time
 import logging
+from typing import List, Dict, Any, Optional, Tuple
 
 from ..core.types import ServiceInfo, HealthStatus
 from ..core.exceptions import HealthCheckError, NetworkError, RPCError
@@ -30,7 +30,6 @@ async def check_service_health(service_info: ServiceInfo,
         # Create a temporary client with shorter timeout for health checks
         health_client = SyftBoxRPCClient(
             cache_server_url=rpc_client.cache_server_url,
-            from_email=rpc_client.from_email,
             timeout=timeout,
             max_poll_attempts=3,  # Fewer attempts for health checks
             poll_interval=0.5  # Faster polling for health checks
@@ -41,16 +40,25 @@ async def check_service_health(service_info: ServiceInfo,
             
             # Parse health response
             if isinstance(response, dict):
-                status = response.get("status", "unknown").lower()
-                if status == "ok" or status == "healthy":
-                    return HealthStatus.ONLINE
-                elif status == "error" or status == "unhealthy":
-                    return HealthStatus.OFFLINE
+                data = response.get("data", {})
+                message = data.get("message", {})
+                body = message.get("body", {})
+                
+                # Check if body is a dict (successful response) or string (error response)
+                if isinstance(body, dict):
+                    status = body.get("status", "unknown").lower()
+                    # logger.info(f"Parsed status for {service_info.name}: {status}")
+                    
+                    if status == "ok" or status == "healthy":
+                        return HealthStatus.ONLINE
+                    elif status == "error" or status == "unhealthy":
+                        return HealthStatus.OFFLINE
+                    else:
+                        return HealthStatus.UNKNOWN
                 else:
-                    return HealthStatus.UNKNOWN
-            else:
-                # Any response is considered healthy
-                return HealthStatus.ONLINE
+                    # body is a string (error message), service is having issues
+                    # logger.warning(f"Service {service_info.name} returned error: {body}")
+                    return HealthStatus.OFFLINE
                 
         finally:
             await health_client.close()
@@ -63,8 +71,7 @@ async def check_service_health(service_info: ServiceInfo,
     except Exception as e:
         logger.warning(f"Unexpected error in health check for {service_info.name}: {e}")
         return HealthStatus.UNKNOWN
-
-
+    
 async def batch_health_check(services: List[ServiceInfo],
                             rpc_client: SyftBoxRPCClient,
                             timeout: float = 2.0,
@@ -304,7 +311,6 @@ class HealthMonitor:
             logger.info("Health monitoring cancelled")
             raise
 
-
 def format_health_status(status: HealthStatus) -> str:
     """Format health status for display.
     
@@ -324,7 +330,6 @@ def format_health_status(status: HealthStatus) -> str:
     
     icon = status_icons.get(status, "❓")
     return f"{status.value.title()} {icon}"
-
 
 async def get_service_response_time(service_info: ServiceInfo, 
                                  rpc_client: SyftBoxRPCClient) -> Optional[float]:
