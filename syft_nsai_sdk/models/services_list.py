@@ -1,13 +1,13 @@
 """
 Custom ServicesList class that provides a show() method for displaying services in a widget.
 """
-
-from typing import List, Optional, Any
-from .services_widget import get_services_widget_html
 import webbrowser
 import os
+
+from typing import List, Optional, Any
 from pathlib import Path
 
+from .services_widget import get_services_widget_html
 
 class ServicesList:
     """A custom list-like class that wraps ServiceInfo objects and provides a show() method."""

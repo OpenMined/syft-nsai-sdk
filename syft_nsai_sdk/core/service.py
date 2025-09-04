@@ -4,7 +4,8 @@ Service class for object-oriented service interaction
 import asyncio
 from typing import TYPE_CHECKING, Dict, Any, Optional, List
 
-from .types import ServiceInfo, ServiceType
+from ..core.types import ServiceType
+from ..models.service_info import ServiceInfo
 from .exceptions import ServiceNotSupportedError
 
 if TYPE_CHECKING:

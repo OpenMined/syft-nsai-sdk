@@ -6,18 +6,22 @@ import uuid
 import logging
 from typing import List, Optional, Dict, Any
 
+from ..models.service_info import ServiceInfo
 from ..core.types import (
-    ServiceInfo, 
-    ChatMessage, 
-    ChatRequest, 
-    ChatResponse, 
+    ChatMessage,
     ChatUsage, 
     GenerationOptions,
     PricingChargeType, 
     ServiceType
 )
-from ..core.exceptions import ServiceNotSupportedError, RPCError, ValidationError, raise_service_not_supported
+from ..core.exceptions import (
+    ServiceNotSupportedError, 
+    RPCError, 
+    ValidationError, 
+    raise_service_not_supported
+)
 from ..clients.rpc_client import SyftBoxRPCClient
+from ..models.responses import ChatResponse
 from ..utils.estimator import CostEstimator
 
 logger = logging.getLogger(__name__)

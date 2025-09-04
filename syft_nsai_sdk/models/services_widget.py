@@ -1,12 +1,11 @@
 """
 Services widget HTML template for the SyftBox NSAI SDK.
 """
-
-from typing import List, Optional
 import json
 import random
 import uuid
 
+from typing import List, Optional
 
 def get_services_widget_html(
     services: Optional[List] = None,

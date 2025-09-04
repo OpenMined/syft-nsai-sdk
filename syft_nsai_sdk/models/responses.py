@@ -2,10 +2,8 @@
 Response data classes for SyftBox services
 """
 import uuid
-
-from typing import List, Optional, Dict, Any, Union
+from typing import List, Optional, Dict, Any
 from dataclasses import dataclass, field
-from pydantic import BaseModel, Field, field_validator
 from datetime import datetime
 from enum import Enum
 
@@ -30,7 +28,7 @@ class FinishReason(Enum):
 @dataclass
 class BaseResponse:
     """Base class for all responses."""
-    id: str
+    id: str = field(default_factory=lambda: str(uuid.uuid4()))
     status: ResponseStatus = ResponseStatus.SUCCESS
     timestamp: datetime = field(default_factory=datetime.now)
     cost: Optional[float] = None
@@ -39,132 +37,14 @@ class BaseResponse:
     error_details: Optional[Dict[str, Any]] = None
 
 
-# Pydantic models for validation and serialization
-class LogProbsModel(BaseModel):
-    """Log probabilities for generated tokens."""
-    token_logprobs: Dict[str, float] = Field(..., description="Map of tokens to log probabilities")
-
-
-class ChatUsageModel(BaseModel):
-    """Token usage information."""
-    prompt_tokens: int = Field(..., ge=0, description="Tokens in the prompt")
-    completion_tokens: int = Field(..., ge=0, description="Tokens in the completion")
-    total_tokens: int = Field(..., ge=0, description="Total tokens used")
-    
-    @field_validator('total_tokens')
-    def validate_total(cls, v, values):
-        if 'prompt_tokens' in values and 'completion_tokens' in values:
-            expected = values['prompt_tokens'] + values['completion_tokens']
-            if v != expected:
-                raise ValueError(f'Total tokens {v} != prompt + completion {expected}')
-        return v
-
-
-class ChatMessageModel(BaseModel):
-    """Chat message in response."""
-    role: str = Field(..., description="Message role")
-    content: str = Field(..., description="Message content")
-    name: Optional[str] = Field(None, description="Optional author name")
-
-    @field_validator('role')
-    def validate_role(cls, v):
-        if v not in ['user', 'assistant', 'system']:
-            raise ValueError('Role must be user, assistant, or system')
-        return v
-
-
-class ChatResponseModel(BaseModel):
-    """Pydantic model for chat responses."""
-    id: str = Field(..., description="Unique response ID")
-    model: str = Field(..., description="Service that generated the response")
-    message: ChatMessageModel = Field(..., description="Generated message")
-    finish_reason: Optional[str] = Field(None, description="Why generation stopped")
-    usage: ChatUsageModel = Field(..., description="Token usage information")
-    cost: Optional[float] = Field(None, ge=0, description="Cost of the request")
-    provider_info: Optional[Dict[str, Any]] = Field(None, description="Provider-specific information")
-    logprobs: Optional[LogProbsModel] = Field(None, description="Log probabilities")
-
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "id": "chat-12345",
-                "model": "gpt-4",
-                "message": {
-                    "role": "assistant",
-                    "content": "Hello! How can I help you today?"
-                },
-                "finish_reason": "stop",
-                "usage": {
-                    "prompt_tokens": 10,
-                    "completion_tokens": 15,
-                    "total_tokens": 25
-                },
-                "cost": 0.05
-            }
-        }
-
-
-class DocumentResultModel(BaseModel):
-    """Document search result."""
-    id: str = Field(..., description="Document identifier")
-    score: float = Field(..., ge=0, le=1, description="Similarity score")
-    content: str = Field(..., description="Document content")
-    metadata: Optional[Dict[str, Any]] = Field(None, description="Document metadata")
-    embedding: Optional[List[float]] = Field(None, description="Document embedding vector")
-
-
-class SearchResponseModel(BaseModel):
-    """Pydantic model for search responses."""
-    id: str = Field(..., description="Unique response ID")
-    query: str = Field(..., description="Original search query")
-    results: List[DocumentResultModel] = Field(..., description="Search results")
-    cost: Optional[float] = Field(None, ge=0, description="Cost of the request")
-    provider_info: Optional[Dict[str, Any]] = Field(None, description="Provider-specific information")
-    
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "id": "search-67890",
-                "query": "machine learning",
-                "results": [
-                    {
-                        "id": "doc-1",
-                        "score": 0.95,
-                        "content": "Machine learning is a subset of artificial intelligence...",
-                        "metadata": {"filename": "ml_intro.pdf"}
-                    }
-                ],
-                "cost": 0.02
-            }
-        }
-
-
-class HealthStatusModel(BaseModel):
-    """Health check status information."""
-    status: str = Field(..., description="Health status (ok, error)")
-    uptime: Optional[float] = Field(None, description="Service uptime in seconds")
-    version: Optional[str] = Field(None, description="Service version")
-    details: Optional[Dict[str, Any]] = Field(None, description="Additional health details")
-
-
-class HealthResponseService(BaseModel):
-    """Pydantic service for health check responses."""
-    id: str = Field(..., description="Unique response ID")
-    project_name: str = Field(..., description="Name of the project/service")
-    status: str = Field(..., description="Overall health status")
-    services: Dict[str, Any] = Field(..., description="Status of individual services")
-    timestamp: Optional[datetime] = Field(None, description="Response timestamp")
-
-
-# Dataclass versions for internal use
 @dataclass
 class ChatResponse(BaseResponse):
     """Chat response data class."""
-    model: str = Field(..., description="Model name")
-    message: ChatMessage = Field(..., description="Chat message")
-    usage: ChatUsage = Field(..., description="Token usage information")
-    finish_reason: Optional[str] = Field(None, description="Reason for finishing the chat")
-    logprobs: Optional[Dict[str, float]] = Field(None, description="Log probabilities for tokens")
+    model: str = ""
+    message: Optional[ChatMessage] = None
+    usage: Optional[ChatUsage] = None
+    finish_reason: Optional[str] = None
+    logprobs: Optional[Dict[str, float]] = None
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'ChatResponse':
@@ -219,37 +99,61 @@ class ChatResponse(BaseResponse):
             "logprobs": {"token_logprobs": self.logprobs} if self.logprobs else None
         }
 
+    def __str__(self) -> str:
+        """Return just the message content for easy printing."""
+        return self.message.content
+    
+    def __repr__(self) -> str:
+        """Return full object representation for debugging."""
+        return f"ChatResponse(id='{self.id}', model='{self.model}', message={self.message!r}, usage={self.usage!r}, cost={self.cost}, provider_info={self.provider_info})"
+
 
 @dataclass
 class SearchResponse(BaseResponse):
     """Search response data class."""
-    query: str = Field(..., description="Search query")
-    results: List[DocumentResult] = Field(default_factory=list, description="List of document search results")
+    query: str = ""
+    results: List[DocumentResult] = field(default_factory=list)
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any], original_query: str) -> 'SearchResponse':
-        """Create SearchResponse from dictionary."""
+    def from_dict(cls, response_data: Dict[str, Any], original_query: str) -> 'SearchResponse':
+        """Create SearchResponse from RPC response data.
+        
+        Expects schema.py format:
+        {
+            "id": "uuid-string",
+            "query": "search query", 
+            "results": [
+                {
+                    "id": "doc-id",
+                    "score": 0.95,
+                    "content": "document content",
+                    "metadata": {...},
+                    "embedding": [...]
+                }
+            ],
+            "provider_info": {...},
+            "cost": 0.1
+        }
+        """
         results = []
         
-        results_data = data.get('results', [])
-        if isinstance(results_data, list):
-            for result_data in results_data:
-                if isinstance(result_data, dict):
-                    result = DocumentResult(
-                        id=result_data.get('id', str(uuid.uuid4())),
-                        score=float(result_data.get('score', 0.0)),
-                        content=result_data.get('content', ''),
-                        metadata=result_data.get('metadata'),
-                        embedding=result_data.get('embedding')
-                    )
-                    results.append(result)
+        results_data = response_data.get('results', [])
+        for result_data in results_data:
+            result = DocumentResult(
+                id=result_data.get('id', str(uuid.uuid4())),
+                score=float(result_data.get('score', 0.0)),
+                content=result_data.get('content', ''),
+                metadata=result_data.get('metadata'),
+                embedding=result_data.get('embedding')
+            )
+            results.append(result)
         
         return cls(
-            id=data.get('id', str(uuid.uuid4())),
-            query=data.get('query', original_query),
+            id=response_data.get('id', str(uuid.uuid4())),
+            query=response_data.get('query', original_query),
             results=results,
-            cost=data.get('cost'),
-            provider_info=data.get('providerInfo')
+            cost=response_data.get('cost'),
+            provider_info=response_data.get('provider_info')
         )
     
     def to_dict(self) -> Dict[str, Any]:
@@ -267,20 +171,30 @@ class SearchResponse(BaseResponse):
                 }
                 for result in self.results
             ],
-            "cost": self.cost,
             "provider_info": self.provider_info,
-            "status": self.status.value,
-            "timestamp": self.timestamp.isoformat()
+            "cost": self.cost
         }
+
+    def __str__(self) -> str:
+        """Return formatted search results for easy printing."""
+        if not self.results:
+            return "No results found."
+        
+        parts = [f"Search results for: '{self.query}'"]
+        for i, result in enumerate(self.results, 1):
+            parts.append(f"\n{i}. Score: {result.score:.3f}")
+            parts.append(f"   {result.content[:100]}{'...' if len(result.content) > 100 else ''}")
+        
+        return "\n".join(parts)
 
 
 @dataclass
 class HealthResponse(BaseResponse):
     """Health check response data class."""
-    project_name: str = Field(..., description="Project name")
-    services: Dict[str, Any] = Field(default_factory=dict, description="List of services")
-    uptime: Optional[float] = Field(None, description="Uptime in seconds")
-    version: Optional[str] = Field(None, description="Version of the service")
+    project_name: str = ""
+    services: Dict[str, Any] = field(default_factory=dict)
+    uptime: Optional[float] = None
+    version: Optional[str] = None
     
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'HealthResponse':
@@ -322,9 +236,9 @@ class HealthResponse(BaseResponse):
 @dataclass
 class ErrorResponse(BaseResponse):
     """Error response data class."""
-    error_code: str = Field(..., description="Error code")
-    error_message: str = Field(..., description="Error message")
-    error_details: Optional[Dict[str, Any]] = Field(None, description="Error details")
+    error_code: str = ""
+    error_message: str = ""
+    error_details: Optional[Dict[str, Any]] = None
     
     def __post_init__(self):
         self.status = ResponseStatus.ERROR
@@ -354,9 +268,9 @@ class ErrorResponse(BaseResponse):
 @dataclass
 class AsyncResponse(BaseResponse):
     """Response for asynchronous operations."""
-    request_id: str = Field(..., description="Request ID")
-    poll_url: Optional[str] = Field(None, description="Polling URL for status updates")
-    estimated_completion_time: Optional[datetime] = Field(None, description="Estimated completion time")
+    request_id: str = ""
+    poll_url: Optional[str] = None
+    estimated_completion_time: Optional[datetime] = None
 
     def __post_init__(self):
         self.status = ResponseStatus.PENDING
@@ -381,41 +295,6 @@ class AsyncResponse(BaseResponse):
             "estimated_completion_time": self.estimated_completion_time.isoformat() if self.estimated_completion_time else None,
             "timestamp": self.timestamp.isoformat()
         }
-
-
-# Response parsers for different formats
-class ResponseParser:
-    """Parser for converting raw responses to typed response objects."""
-    
-    @staticmethod
-    def parse_chat_response(data: Dict[str, Any]) -> ChatResponse:
-        """Parse chat response from raw data."""
-        return ChatResponse.from_dict(data)
-    
-    @staticmethod
-    def parse_search_response(data: Dict[str, Any], query: str) -> SearchResponse:
-        """Parse search response from raw data."""
-        return SearchResponse.from_dict(data, query)
-    
-    @staticmethod
-    def parse_health_response(data: Dict[str, Any]) -> HealthResponse:
-        """Parse health response from raw data."""
-        return HealthResponse.from_dict(data)
-    
-    @staticmethod
-    def parse_error_response(data: Dict[str, Any]) -> ErrorResponse:
-        """Parse error response from raw data."""
-        return ErrorResponse(
-            id=str(uuid.uuid4()),
-            error_code=data.get('error_code', 'UNKNOWN_ERROR'),
-            error_message=data.get('message', data.get('error', 'Unknown error')),
-            error_details=data.get('details')
-        )
-    
-    @staticmethod
-    def parse_async_response(data: Dict[str, Any]) -> AsyncResponse:
-        """Parse async response from raw data."""
-        return AsyncResponse.from_dict(data)
 
 
 # Factory functions for creating responses
@@ -459,3 +338,38 @@ def create_health_response(project_name: str, is_healthy: bool = True, **kwargs)
         services={"status": "ok" if is_healthy else "error"},
         **kwargs
     )
+
+
+# Response parsers for different formats
+class ResponseParser:
+    """Parser for converting raw responses to typed response objects."""
+    
+    @staticmethod
+    def parse_chat_response(data: Dict[str, Any]) -> ChatResponse:
+        """Parse chat response from raw data."""
+        return ChatResponse.from_dict(data)
+    
+    @staticmethod
+    def parse_search_response(data: Dict[str, Any], query: str) -> SearchResponse:
+        """Parse search response from raw data."""
+        return SearchResponse.from_dict(data, query)
+    
+    @staticmethod
+    def parse_health_response(data: Dict[str, Any]) -> HealthResponse:
+        """Parse health response from raw data."""
+        return HealthResponse.from_dict(data)
+    
+    @staticmethod
+    def parse_error_response(data: Dict[str, Any]) -> ErrorResponse:
+        """Parse error response from raw data."""
+        return ErrorResponse(
+            id=str(uuid.uuid4()),
+            error_code=data.get('error_code', 'UNKNOWN_ERROR'),
+            error_message=data.get('message', data.get('error', 'Unknown error')),
+            error_details=data.get('details')
+        )
+    
+    @staticmethod
+    def parse_async_response(data: Dict[str, Any]) -> AsyncResponse:
+        """Parse async response from raw data."""
+        return AsyncResponse.from_dict(data)

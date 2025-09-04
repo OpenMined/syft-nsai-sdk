@@ -9,18 +9,16 @@ from dataclasses import dataclass
 
 from ..utils.estimator import CostEstimator
 from .types import (
-    ServiceInfo, 
     ServiceType, 
     ServiceSpec, 
     ChatMessage, 
-    ChatResponse, 
-    SearchResponse, 
     DocumentResult
 )
 from .exceptions import ValidationError, ServiceNotFoundError, raise_service_not_supported
 from ..services.chat import ChatService
 from ..services.search import SearchService
 from ..models.pipeline import PipelineResult
+from ..models.service_info import ServiceInfo
 from ..utils.estimator import CostEstimator
 
 from typing import TYPE_CHECKING

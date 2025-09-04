@@ -38,7 +38,7 @@ class SyftBoxConfig:
         
         if not config_path.exists():
             raise SyftBoxNotFoundError(
-                f"SyftBox config not found at {config_path}. "
+                f"SyftBox config not found at {config_path}.\n"
                 "Please install and setup SyftBox first.\n\n"
                 "Install: curl -LsSf https://install.syftbox.openmined.org | sh\n"
                 "Setup: syftbox setup"

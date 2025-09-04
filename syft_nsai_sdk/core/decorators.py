@@ -1,7 +1,9 @@
 """
 Decorators for SyftBox SDK
 """
+import asyncio
 import functools
+
 from typing import Callable, Any
 from .exceptions import AuthenticationError
 
@@ -38,7 +40,3 @@ def require_account(func: Callable) -> Callable:
         return async_wrapper
     else:
         return sync_wrapper
-
-
-# Import asyncio at module level for the decorator
-import asyncio

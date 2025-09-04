@@ -17,13 +17,10 @@ from .core import Pipeline
 from .core.decorators import require_account
 from .core.config import ConfigManager
 from .core.types import (
-    ServiceInfo,
     ServiceSpec, 
     ServiceType,
     HealthStatus, 
-    ChatMessage, 
-    ChatResponse, 
-    SearchResponse, 
+    ChatMessage,
     FilterDict,
     DocumentResult,
 )
@@ -47,6 +44,9 @@ from .services.chat import ChatService
 from .services.search import SearchService
 from .services.health import check_service_health, batch_health_check, HealthMonitor
 from .models.services_list import ServicesList
+from .models.service_info import ServiceInfo
+from .models.requests import ChatRequest, SearchRequest
+from .models.responses import ChatResponse, SearchResponse, DocumentResult
 from .utils.formatting import format_services_table, format_service_details
 
 logger = logging.getLogger(__name__)
@@ -391,7 +391,8 @@ class Client:
         return asyncio.run(chat_service.chat_with_params(chat_params))
     
     @require_account
-    def chat(self,
+    def chat(
+            self,
             service_name: str,
             messages: str,
             temperature: Optional[float] = None,
@@ -435,12 +436,14 @@ class Client:
         return asyncio.run(chat_service.chat_with_params(chat_params))
 
     @require_account
-    def search(self,
-                    service_name: str, 
-                    message: str,
-                    topK: Optional[int] = None,
-                    similarity_threshold: Optional[float] = None,
-                    **kwargs) -> SearchResponse:
+    def search(
+            self,
+            service_name: str, 
+            message: str,
+            topK: Optional[int] = None,
+            similarity_threshold: Optional[float] = None,
+            **kwargs
+        ) -> SearchResponse:
         """Search with a specific service.
         
         Args:
@@ -480,12 +483,12 @@ class Client:
 
     @require_account
     async def chat_async(self,
-                   service_name: str,
-                   prompt: str,
-                   datasite: Optional[str] = None,
-                   temperature: Optional[float] = None,
-                   max_tokens: Optional[int] = None,
-                   **kwargs) -> ChatResponse:
+            service_name: str,
+            messages: str,
+            temperature: Optional[float] = None,
+            max_tokens: Optional[int] = None,
+            **kwargs
+        ) -> ChatResponse:
         """Chat with a specific service.
         
         Args:
@@ -508,30 +511,16 @@ class Client:
             )
         """
         # Find the specific service
-        service = self.get_service(service_name, datasite)
-        if not service:
-            if datasite:
-                raise ServiceNotFoundError(f"Service '{service_name}' not found for datasite '{datasite}'")
-            else:
-                # Show available services with same name
-                similar_services = [m for m in self.list_services() if m.name == service_name]
-                if len(similar_services) > 1:
-                    datasites = [m.datasite for m in similar_services]
-                    raise ValidationError(
-                        f"Multiple services named '{service_name}' found. "
-                        f"Please specify datasite. Available datasites: {', '.join(datasites)}"
-                    )
-                else:
-                    raise ServiceNotFoundError(f"Service '{service_name}' not found")
+        service = self.get_service(service_name)
+        logger.info(f"Using service: {service.name} from datasite: {service.datasite}") 
         
-        # Check if service supports chat
+        # Validate service supports chat
         if not service.supports_service(ServiceType.CHAT):
             raise_service_not_supported(service.name, "chat", service)
-            # raise ValidationError(f"Service '{service_name}' does not support chat service")
         
         # Build request parameters
         chat_params = {
-            "prompt": prompt,
+            "messages": messages,
             "temperature": temperature,
             "max_tokens": max_tokens,
             **kwargs
@@ -546,13 +535,14 @@ class Client:
         return await chat_service.chat_with_params(chat_params)
     
     @require_account
-    async def search_async(self,
-                    service_name: str, 
-                    query: str,
-                    datasite: Optional[str] = None,
-                    limit: Optional[int] = None,
-                    similarity_threshold: Optional[float] = None,
-                    **kwargs) -> SearchResponse:
+    async def search_async(
+            self,
+            service_name: str, 
+            message: str,
+            topK: Optional[int] = None,
+            similarity_threshold: Optional[float] = None,
+            **kwargs
+        ) -> SearchResponse:
         """Search with a specific service.
         
         Args:
@@ -574,21 +564,17 @@ class Client:
             )
         """
         # Find the specific service
-        service = self.get_service(service_name, datasite)
-        if not service:
-            if datasite:
-                raise ServiceNotFoundError(f"Service '{service_name}' not found for datasite '{datasite}'")
-            else:
-                raise ServiceNotFoundError(f"Service '{service_name}' not found")
+        service = self.get_service(service_name)
+        logger.info(f"Using service: {service.name} from datasite: {service.datasite}") 
         
-        # Check if service supports search
+        # Validate service supports search
         if not service.supports_service(ServiceType.SEARCH):
-            raise ValidationError(f"Service '{service_name}' does not support search service")
+            raise_service_not_supported(service.name, "search", service)
         
         # Build request parameters
         search_params = {
-            "query": query,
-            "limit": limit,
+            "message": message,
+            "topK": topK,
             "similarity_threshold": similarity_threshold,
             **kwargs
         }
@@ -903,7 +889,6 @@ class Client:
             asyncio.run(self.accounting_client.create_accounting_user(email, password, organization))
             self.accounting_client.save_credentials()
 
-            # logger.info("Accounting setup successful")
             self.connect_accounting(email, password, self.accounting_client.accounting_url)
             logger.info("Accounting setup completed and connected successful")
 
@@ -954,7 +939,6 @@ class Client:
             await self.accounting_client.create_accounting_user(email, password, organization)
             self.accounting_client.save_credentials()
 
-            # logger.info("Accounting setup successful")
             await self.connect_accounting_async(email, password, self.accounting_client.accounting_url)
             logger.info("Accounting setup completed and connected successful")
 
@@ -1087,58 +1071,58 @@ class Client:
                 f"   May need to reconfigure credentials"
             )
         
-    async def _ensure_payment_setup1(self, service: ServiceInfo) -> Optional[str]:
-        """Ensure payment is set up for a paid service.
+    # async def _ensure_payment_setup1(self, service: ServiceInfo) -> Optional[str]:
+    #     """Ensure payment is set up for a paid service.
         
-        Args:
-            service: Service that requires payment
+    #     Args:
+    #         service: Service that requires payment
             
-        Returns:
-            Transaction token if payment required, None if free
-        """
-        # Check if service requires payment
-        service_info = None
-        if service.supports_service(ServiceType.CHAT):
-            service_info = service.get_service_info(ServiceType.CHAT)
-        elif service.supports_service(ServiceType.SEARCH):
-            service_info = service.get_service_info(ServiceType.SEARCH)
+    #     Returns:
+    #         Transaction token if payment required, None if free
+    #     """
+    #     # Check if service requires payment
+    #     service_info = None
+    #     if service.supports_service(ServiceType.CHAT):
+    #         service_info = service.get_service_info(ServiceType.CHAT)
+    #     elif service.supports_service(ServiceType.SEARCH):
+    #         service_info = service.get_service_info(ServiceType.SEARCH)
         
-        if not service_info or service_info.pricing == 0:
-            return None  # Free service
+    #     if not service_info or service_info.pricing == 0:
+    #         return None  # Free service
         
-        # Service requires payment - ensure accounting is set up
-        if not self.is_accounting_configured():
-            if self.auto_setup_accounting:
-                print(f"\n💰 Payment Required")
-                print(f"Service '{service.name}' costs ${service_info.pricing} per request")
-                print(f"Datasite: {service.datasite}")
-                print(f"\nAccounting setup required for paid services.")
+    #     # Service requires payment - ensure accounting is set up
+    #     if not self.is_accounting_configured():
+    #         if self.auto_setup_accounting:
+    #             print(f"\n💰 Payment Required")
+    #             print(f"Service '{service.name}' costs ${service_info.pricing} per request")
+    #             print(f"Datasite: {service.datasite}")
+    #             print(f"\nAccounting setup required for paid services.")
                 
-                try:
-                    response = input("Would you like to set up accounting now? (y/n): ").lower().strip()
-                    if response in ['y', 'yes']:
-                        # Interactive setup would go here
-                        print("Please use client.setup_accounting(email, password) to configure.")
-                        return None
-                    else:
-                        print("Payment setup skipped.")
-                        return None
-                except (EOFError, KeyboardInterrupt):
-                    print("\nPayment setup cancelled.")
-                    return None
-            else:
-                raise PaymentError(
-                    f"Service '{service.name}' requires payment (${service_info.pricing}) "
-                    "but accounting is not configured"
-                )
+    #             try:
+    #                 response = input("Would you like to set up accounting now? (y/n): ").lower().strip()
+    #                 if response in ['y', 'yes']:
+    #                     # Interactive setup would go here
+    #                     print("Please use client.setup_accounting(email, password) to configure.")
+    #                     return None
+    #                 else:
+    #                     print("Payment setup skipped.")
+    #                     return None
+    #             except (EOFError, KeyboardInterrupt):
+    #                 print("\nPayment setup cancelled.")
+    #                 return None
+    #         else:
+    #             raise PaymentError(
+    #                 f"Service '{service.name}' requires payment (${service_info.pricing}) "
+    #                 "but accounting is not configured"
+    #             )
         
-        # Create transaction token
-        try:
-            token = await self.rpc_client.create_transaction_token(service.datasite)
-            logger.info(f"Payment authorized: ${service_info.pricing} to {service.datasite}")
-            return token
-        except Exception as e:
-            raise PaymentError(f"Failed to create payment token: {e}")
+    #     # Create transaction token ???????????
+    #     try:
+    #         token = await self.accounting_client.create_transaction_token(service.datasite)
+    #         logger.info(f"Payment authorized: ${service_info.pricing} to {service.datasite}")
+    #         return token
+    #     except Exception as e:
+    #         raise PaymentError(f"Failed to create payment token: {e}")
             
     async def _ensure_payment_setup(self, service: ServiceInfo) -> Optional[str]:
         """Ensure payment is set up for a paid service.
@@ -1190,9 +1174,9 @@ class Client:
                     "but accounting is not configured"
                 )
         
-        # Create transaction token
+        # Create transaction token????????
         try:
-            token = await self.rpc_client.create_transaction_token(service.datasite)
+            token = await self.accounting_client.create_transaction_token(service.datasite)
             logger.info(f"Payment authorized: ${service_info.pricing} to {service.datasite}")
             return token
         except Exception as e:

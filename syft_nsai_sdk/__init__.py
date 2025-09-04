@@ -18,13 +18,7 @@ from .core.types import (
     HealthStatus,
     PricingChargeType,
     ServiceItem,
-    ServiceInfo,
     ChatMessage,
-    ChatRequest,
-    ChatResponse,
-    SearchRequest, 
-    SearchResponse,
-    DocumentResult,
     TransactionToken,
 )
 
@@ -75,6 +69,11 @@ from .discovery.filters import (
     create_datasite_services_filter,
     create_tag_services_filter,
 )
+
+# model utilities
+from .models.service_info import ServiceInfo
+from .models.requests import ChatRequest, SearchRequest
+from.models.responses import ChatResponse, SearchResponse, DocumentResult
 
 # Convenience functions
 # from .main import (
@@ -157,7 +156,6 @@ __all__ = [
     "HealthStatus", 
     "PricingChargeType",
     "ServiceItem",
-    "ServiceInfo",
     "ChatMessage",
     "ChatRequest",
     "ChatResponse",
@@ -165,7 +163,10 @@ __all__ = [
     "SearchResponse", 
     "DocumentResult",
     "TransactionToken",
-    
+
+    # Model utilities
+    "ServiceInfo",
+
     # Exceptions
     "SyftBoxSDKError",
     "SyftBoxNotFoundError",

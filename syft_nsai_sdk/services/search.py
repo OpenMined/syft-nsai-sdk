@@ -5,17 +5,21 @@ import uuid
 import logging
 from typing import List, Optional, Dict, Any
 
+from ..models.service_info import ServiceInfo
 from ..core.types import (
-    ServiceInfo,
-    PricingChargeType, 
-    SearchRequest, 
-    SearchResponse, 
+    PricingChargeType,
     SearchOptions, 
     DocumentResult, 
     ServiceType
 )
-from ..core.exceptions import ServiceNotSupportedError, RPCError, ValidationError, raise_service_not_supported
+from ..core.exceptions import (
+    ServiceNotSupportedError, 
+    RPCError, 
+    ValidationError, 
+    raise_service_not_supported
+)
 from ..clients.rpc_client import SyftBoxRPCClient
+from ..models.responses import SearchResponse
 from ..utils.estimator import CostEstimator
 
 logger = logging.getLogger(__name__)
@@ -45,22 +49,69 @@ class SearchService:
         
         Handles the actual SyftBox response format for search:
         {
-        "request_id": "...",
-        "data": {
-            "message": {
-            "body": {
-                "results": [
-                {"id": "...", "content": "...", "score": 0.95, "metadata": {...}},
-                ...
-                ],
-                "cost": 0.1
-            }
-            }
-        }
+            "id": "uuid-string",
+            "query": "search query", 
+            "results": [
+                {
+                    "id": "doc-id",
+                    "score": 0.95,
+                    "content": "document content",
+                    "metadata": {...},
+                    "embedding": [...]
+                }
+            ],
+            "provider_info": {...},
+            "cost": 0.1
         }
         
         Args:
-            response_data: Raw response data from RPC call
+            response_data: Raw response data from RPC call matching schema.py format
+            original_query: The original search query
+            
+        Returns:
+            Parsed SearchResponse object
+        """
+        
+        try:
+            # Extract the actual response body from SyftBox nested structure
+            if "data" in response_data and "message" in response_data["data"]:
+                message_data = response_data["data"]["message"]
+                
+                if "body" in message_data and isinstance(message_data["body"], dict):
+                    # Extract the body and convert to schema.py format
+                    body = message_data["body"]
+                    return SearchResponse.from_dict(body, original_query)
+            
+            # If not nested format, try direct parsing
+            return SearchResponse.from_dict(response_data, original_query)
+                
+        except Exception as e:
+            logger.error(f"Failed to parse search response: {e}")
+            logger.error(f"Response data: {response_data}")
+            raise RPCError(f"Failed to parse search response: {e}")
+
+    def _parse_rpc_response1(self, response_data: Dict[str, Any], original_query: str) -> SearchResponse:
+        """Parse RPC response into SearchResponse object.
+        
+        Handles the actual SyftBox response format for search:
+        {
+            "id": "uuid-string",
+            "query": "search query", 
+            "results": [
+                {
+                    "id": "doc-id",
+                    "score": 0.95,
+                    "content": "document content",
+                    "metadata": {...},
+                    "embedding": [...]
+                }
+            ],
+            "provider_info": {...},
+            "cost": 0.1
+        }
+        
+        Args:
+            response_data: Raw response data from RPC call matching schema.py format
             original_query: The original search query
             
         Returns:
@@ -220,6 +271,7 @@ class SearchService:
         
         # Make RPC call
         response_data = await self.rpc_client.call_search(self.service_info, payload)
+        logger.info(f"Search response data: {response_data}")
         return self._parse_rpc_response(response_data, message)
     
     def estimate_cost1(self, query_count: int = 1, result_limit: int = 3) -> float:

@@ -3,21 +3,22 @@ SyftBox RPC client for communicating with services via cache server
 """
 import asyncio
 import json
-from typing import Dict, Any, Optional, Union
-from urllib.parse import quote, urljoin
 import httpx
 import logging
+from typing import Dict, Any, Optional, Union
+from urllib.parse import quote, urljoin
 
 from ..core.exceptions import NetworkError, RPCError, PollingTimeoutError, PollingError
-from ..core.types import ServiceInfo
+from ..models.service_info import ServiceInfo
 from ..core.exceptions import PaymentError, AuthenticationError
 from ..utils.spinner import AsyncSpinner
 from .accounting_client import AccountingClient
+from .endpoint_client import SyftURLBuilder, ServiceEndpoints
+from .request_client import SyftBoxAPIClient, HTTPClient, RequestArgs
 
 logger = logging.getLogger(__name__)
 
-
-class SyftBoxRPCClient:
+class SyftBoxRPCClient(SyftBoxAPIClient):
     """Client for making RPC calls to SyftBox services via cache server."""
     
     def __init__(self, 
@@ -26,6 +27,7 @@ class SyftBoxRPCClient:
             max_poll_attempts: int = 30,
             poll_interval: float = 3.0,
             accounting_client: Optional[AccountingClient] = None,
+            http_client: Optional[HTTPClient] = None,
         ):
         """Initialize RPC client.
         
@@ -35,65 +37,39 @@ class SyftBoxRPCClient:
             max_poll_attempts: Maximum polling attempts for async responses
             poll_interval: Seconds between polling attempts
             accounting_client: Optional accounting client for payments
+            http_client: Optional HTTP client instance
         """
-
-        self.cache_server_url = cache_server_url.rstrip('/')
-        self.from_email = "guest@syft.org" or accounting_client.get_email()
-        self.timeout = timeout
+        # Initialize parent SyftBoxAPIClient
+        super().__init__(cache_server_url, http_client)
+        
+        # RPC-specific configuration
+        self.from_email = "guest@syft.org" or (accounting_client.get_email() if accounting_client else None)
         self.max_poll_attempts = max_poll_attempts
         self.poll_interval = poll_interval
-        
-        # HTTP client with reasonable defaults
-        self.client = httpx.AsyncClient(
-            timeout=httpx.Timeout(timeout),
-            follow_redirects=True,
-            limits=httpx.Limits(max_connections=10, max_keepalive_connections=5)
-        )
+        self.timeout = timeout
         
         # Accounting client
         self.accounting_client = accounting_client or AccountingClient()
     
-    async def close(self):
-        """Close the HTTP client."""
-        await self.client.aclose()
-    
-    async def __aenter__(self):
-        return self
-    
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
-        await self.close()
-    
-    def build_syft_url(self, datasite: str, service_name: str, endpoint: str) -> str:
-        """Build a syft:// URL for RPC calls.
-        
-        Args:
-            datasite: Email of the service datasite
-            service_name: Name of the service
-            endpoint: RPC endpoint (e.g., 'chat', 'search', 'health')
-            
-        Returns:
-            Complete syft:// URL
-        """
-        # Clean endpoint - remove leading slash if present
-        endpoint = endpoint.lstrip('/')
-        
-        # Build syft URL: syft://datasite/app_data/service_name/rpc/endpoint
-        return f"syft://{datasite}/app_data/{service_name}/rpc/{endpoint}"
-        
     async def call_rpc(self, 
                     syft_url: str, 
                     payload: Optional[Dict[str, Any]] = None,  
+                    query_params: Optional[Dict[str, Any]] = None,
                     headers: Optional[Dict[str, str]] = None,
                     method: str = "POST",
                     show_spinner: bool = True,
+                    args: Optional[RequestArgs] = None,
                     ) -> Dict[str, Any]:
         """Make an RPC call to a SyftBox service.
         
         Args:
             syft_url: The syft:// URL to call
-            payload: JSON payload to send (optional)
+            payload: JSON payload to send (for POST/PUT requests)
+            query_params: Query parameters (for GET requests or additional params)
             headers: Additional headers (optional)
             method: HTTP method to use (GET or POST)
+            show_spinner: Whether to show spinner during polling
+            args: Additional request arguments
             
         Returns:
             Response data from the service
@@ -103,73 +79,64 @@ class SyftBoxRPCClient:
             RPCError: For RPC-specific errors
             PollingTimeoutError: When polling times out
         """
+        if args is None:
+            args = RequestArgs()
+            
         try:
-            # Build request URL
-            request_url = f"{self.cache_server_url}/api/v1/send/msg"
-
-            # Build query parameters
-            params = {
+            # Build base query parameters for SyftBox
+            syftbox_params = {
                 "x-syft-url": syft_url,
                 "x-syft-from": self.from_email
             }
 
             # Add raw parameter if specified in headers
             if headers and headers.get("x-syft-raw"):
-                params["x-syft-raw"] = headers["x-syft-raw"]
+                syftbox_params["x-syft-raw"] = headers["x-syft-raw"]
             
-            logger.debug(f"Making RPC call to {syft_url}")
+            # Merge with user-provided query params
+            if query_params:
+                syftbox_params.update(query_params)
 
-            # Make the request based on method
-            if method.upper() == "GET":
-                # For GET requests, use minimal headers and no payload
-                get_headers = {
-                    "Accept": "application/json",
-                    "x-syft-from": self.from_email,
-                    **(headers or {})
-                }
-                
-                response = await self.client.get(
-                    request_url,
-                    params=params,
-                    headers=get_headers
-                )
-            else:
-                # For POST requests, handle payload and accounting
-                if payload is None:
-                    payload = {}
+            # Prepare request data
+            request_data = None
+            request_headers = {
+                "Accept": "application/json",
+                "x-syft-from": self.from_email,
+                **(headers or {})
+            }
 
-                # Extract recipient email for accounting token
-                recipient_email = syft_url.split('//')[1].split('/')[0]
+            # Handle payload if provided
+            if payload is not None:
+                request_data = payload.copy()
+                request_headers["Content-Type"] = "application/json"
                 
-                # Create accounting token if client is configured
-                if self.accounting_client.is_configured():
+            # Handle accounting token injection independently
+            if args.is_accounting and self.accounting_client.is_configured():
+                try:
+                    recipient_email = syft_url.split('//')[1].split('/')[0]
                     transaction_token = await self.accounting_client.create_transaction_token(
                         recipient_email=recipient_email
                     )
-                    payload["transaction_token"] = transaction_token
-                
-                # Build POST headers
-                post_headers = {
-                    "Content-Type": "application/json",
-                    "Accept": "application/json",
-                    "x-syft-from": self.from_email,
-                    **(headers or {})
-                }
+                    if request_data is None:
+                        request_data = {}
+                    request_data["transaction_token"] = transaction_token
+                    request_headers["Content-Type"] = "application/json"
+                        
+                except Exception as e:
+                    logger.warning(f"Failed to create accounting token: {e}")
 
-                # Serialize payload and set Content-Length
-                payload_json = json.dumps(payload) if payload else None
-                if payload_json:
-                    post_headers["Content-Length"] = str(len(payload_json.encode('utf-8')))
+            # Make the unified request
+            response = await self.http_client.request(
+                # self._build_url("/api/v1/send/msg"),
+                f"{self.base_url}/api/v1/send/msg",
+                method,
+                params=syftbox_params,
+                json=request_data,
+                headers=request_headers,
+                args=args
+            )
 
-                # Make POST request to the service
-                response = await self.client.post(
-                    request_url,
-                    params=params,
-                    headers=post_headers,
-                    data=payload_json,
-                )
-            
-            # Handle response (same for both GET and POST)
+            # Handle response (same for all methods)
             if response.status_code == 200:
                 # Immediate response
                 data = response.json()
@@ -182,8 +149,6 @@ class SyftBoxRPCClient:
                 
                 if not request_id:
                     raise RPCError("Received 202 but no request_id", syft_url)
-
-                logger.debug(f"Got async response, polling with request_id: {request_id}")
 
                 # Extract poll URL from response
                 poll_url_path = None
@@ -203,10 +168,10 @@ class SyftBoxRPCClient:
                 try:
                     error_data = response.json()
                     error_msg = error_data.get("message", f"HTTP {response.status_code}")
-                    logger.info(f"Got error response from {error_msg}")
+                    logger.error(f"Got error response from {error_msg}")
                 except:
                     error_msg = f"HTTP {response.status_code}: {response.text}"
-                    logger.info(f"Got error message from {error_msg}")
+                    logger.error(f"Got error message from {error_msg}")
                 raise NetworkError(
                     f"RPC call failed: {error_msg}",
                     syft_url,
@@ -232,6 +197,7 @@ class SyftBoxRPCClient:
             poll_url_path: Path to poll (e.g., '/api/v1/poll/123')
             syft_url: Original syft URL for error context
             request_id: Request ID for logging
+            show_spinner: Whether to show spinner during polling
             
         Returns:
             Final response data
@@ -241,7 +207,7 @@ class SyftBoxRPCClient:
             PollingError: For polling-specific errors
         """
         # Build full poll URL
-        poll_url = urljoin(self.cache_server_url, poll_url_path.lstrip('/'))
+        poll_url = urljoin(self.base_url, poll_url_path.lstrip('/'))
 
         # Start spinner if enabled and requested
         spinner = None
@@ -251,10 +217,9 @@ class SyftBoxRPCClient:
         try:
             for attempt in range(1, self.max_poll_attempts + 1):
                 try:
-                    logger.debug(f"Polling attempt {attempt}/{self.max_poll_attempts} for {request_id}")
-                    
-                    response = await self.client.get(
-                        poll_url,
+                    # Make polling request
+                    response = await self.http_client.get(
+                        poll_url,  # Use poll_url instead of poll_url_path
                         headers={
                             "Accept": "application/json",
                             "Content-Type": "application/json"
@@ -270,7 +235,6 @@ class SyftBoxRPCClient:
                         
                         # Check response format
                         if "response" in data:
-                            logger.debug(f"Polling complete for {request_id}")
                             return data["response"]
                         elif "status" in data:
                             if data["status"] == "pending":
@@ -352,31 +316,34 @@ class SyftBoxRPCClient:
         Returns:
             Health response data
         """
-        syft_url = self.build_syft_url(service_info.datasite, service_info.name, "health")
+        endpoints = ServiceEndpoints(service_info.datasite, service_info.name)
+        syft_url = endpoints.health_url()
         return await self.call_rpc(syft_url, payload=None, method="GET", show_spinner=False)
     
-    # async def call_health1(self, service_info: ServiceInfo) -> Dict[str, Any]:
-    #     """Call the health endpoint of a service."""
-    #     syft_url = self.build_syft_url(service_info.datasite, service_info.name, "health")
-    #     logger.info(f"Health check URL for {service_info.name}: {syft_url}")  # Add this
-        
-    #     try:
-    #         response = await self.call_rpc(syft_url, payload=None, method="GET", show_spinner=False)
-    #         logger.info(f"Health check response for {service_info.name}: {response}")  # Add this
-    #         return response
-    #     except Exception as e:
-    #         logger.error(f"Health check failed for {service_info.name}: {e}")  # Add this
-    #         raise
-    
     async def call_chat(self, service_info: ServiceInfo, request_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Call the chat endpoint of a service."""
+        """Call the chat endpoint of a service.
+        
+        Args:
+            service_info: Service information
+            request_data: Chat request payload
+            
+        Returns:
+            Chat response data
+        """
         # Hard-code service name to tinyllama:latest
         if "model" in request_data:
             request_data = request_data.copy()
             request_data["model"] = "tinyllama:latest"
 
-        syft_url = self.build_syft_url(service_info.datasite, service_info.name, "chat")
-        return await self.call_rpc(syft_url, request_data)
+        chat_args = RequestArgs(
+            is_accounting=True,  # Enable accounting for chat
+            # timeout=60.0,        # Longer timeout for chat
+            # skip_loader=False    # Show spinner
+        )
+
+        endpoints = ServiceEndpoints(service_info.datasite, service_info.name)
+        syft_url = endpoints.chat_url()
+        return await self.call_rpc(syft_url, payload=request_data, args=chat_args)
 
     async def call_search(self, service_info: ServiceInfo, request_data: Dict[str, Any]) -> Dict[str, Any]:
         """Call the search endpoint of a service.
@@ -393,8 +360,43 @@ class SyftBoxRPCClient:
             request_data = request_data.copy()
             request_data["model"] = "tinyllama:latest"
 
-        syft_url = self.build_syft_url(service_info.datasite, service_info.name, "search")
-        return await self.call_rpc(syft_url, request_data)
+        search_args = RequestArgs(
+            is_accounting=True,  # Enable accounting for search
+            # timeout=60.0,        # Longer timeout for search
+            # skip_loader=False    # Show spinner
+        )
+
+        endpoints = ServiceEndpoints(service_info.datasite, service_info.name)
+        syft_url = endpoints.search_url()
+        return await self.call_rpc(syft_url, payload=request_data, args=search_args)
+
+    async def call_custom_endpoint(self, 
+                                   service_info: ServiceInfo, 
+                                   endpoint: str,
+                                   request_data: Optional[Dict[str, Any]] = None,
+                                   method: str = "POST",
+                                   query_params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Call a custom endpoint of a service.
+        
+        Args:
+            service_info: Service information
+            endpoint: Custom endpoint name
+            request_data: Request payload (for POST/PUT)
+            method: HTTP method to use
+            query_params: Query parameters (for GET or additional params)
+            
+        Returns:
+            Response data
+        """
+        endpoints = ServiceEndpoints(service_info.datasite, service_info.name)
+        syft_url = endpoints.custom_endpoint_url(endpoint)
+        
+        return await self.call_rpc(
+            syft_url, 
+            payload=request_data, 
+            query_params=query_params,
+            method=method
+        )
     
     def configure_accounting(self, service_url: str, email: str, password: str):
         """Configure accounting client.
@@ -429,11 +431,14 @@ class SyftBoxRPCClient:
             **kwargs: Configuration options to update
         """
         if "cache_server_url" in kwargs:
-            self.cache_server_url = kwargs["cache_server_url"].rstrip('/')
+            self.base_url = kwargs["cache_server_url"].rstrip('/')
         if "from_email" in kwargs:
             self.from_email = kwargs["from_email"]
         if "timeout" in kwargs:
             self.timeout = kwargs["timeout"]
+            # Update the HTTP client timeout as well
+            if hasattr(self.http_client, 'timeout'):
+                self.http_client.timeout = kwargs["timeout"]
         if "max_poll_attempts" in kwargs:
             self.max_poll_attempts = kwargs["max_poll_attempts"]
         if "poll_interval" in kwargs:

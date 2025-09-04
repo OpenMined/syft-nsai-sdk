@@ -2,6 +2,7 @@
 URL construction utilities for SyftBox RPC endpoints
 """
 from urllib.parse import quote, urljoin, urlparse, parse_qs
+from pathlib import Path
 from typing import Dict, Any, Optional
 import logging
 
@@ -9,7 +10,7 @@ logger = logging.getLogger(__name__)
 
 
 class SyftURLBuilder:
-    """Builder for constructing SyftBox URLs."""
+    """Builder for constructing SyftBox URLs and filesystem paths."""
     
     @staticmethod
     def build_syft_url(datasite: str, app_name: str, endpoint: str, params: Optional[Dict[str, str]] = None) -> str:
@@ -100,6 +101,178 @@ class SyftURLBuilder:
             
         except Exception as e:
             raise ValueError(f"Failed to parse syft URL '{syft_url}': {e}")
+    
+    # Filesystem Path Builders
+    @staticmethod
+    def build_datasite_path(datasites_path: Path, datasite: str) -> Path:
+        """Build path to a datasite directory.
+        
+        Args:
+            datasites_path: Base datasites directory path
+            datasite: Datasite email
+            
+        Returns:
+            Path to datasite directory
+        """
+        return datasites_path / datasite
+    
+    @staticmethod
+    def build_public_path(datasites_path: Path, datasite: str) -> Path:
+        """Build path to a datasite's public directory.
+        
+        Args:
+            datasites_path: Base datasites directory path
+            datasite: Datasite email
+            
+        Returns:
+            Path to public directory
+        """
+        return datasites_path / datasite / "public"
+    
+    @staticmethod
+    def build_routers_path(datasites_path: Path, datasite: str) -> Path:
+        """Build path to a datasite's routers directory.
+        
+        Args:
+            datasites_path: Base datasites directory path
+            datasite: Datasite email
+            
+        Returns:
+            Path to routers directory
+        """
+        return datasites_path / datasite / "public" / "routers"
+    
+    @staticmethod
+    def build_service_directory_path(datasites_path: Path, datasite: str, service_name: str) -> Path:
+        """Build path to a service directory in public/routers.
+        
+        Args:
+            datasites_path: Base datasites directory path
+            datasite: Datasite email
+            service_name: Service name
+            
+        Returns:
+            Path to service directory
+        """
+        return datasites_path / datasite / "public" / "routers" / service_name
+    
+    @staticmethod
+    def build_metadata_path(datasites_path: Path, datasite: str, service_name: str) -> Path:
+        """Build path to a service's metadata.json file.
+        
+        Args:
+            datasites_path: Base datasites directory path
+            datasite: Datasite email
+            service_name: Service name
+            
+        Returns:
+            Path to metadata.json file
+        """
+        return (datasites_path / 
+                datasite / 
+                "public" / 
+                "routers" / 
+                service_name / 
+                "metadata.json")
+    
+    @staticmethod
+    def build_app_data_path(datasites_path: Path, datasite: str, service_name: str) -> Path:
+        """Build path to a service's app_data directory.
+        
+        Args:
+            datasites_path: Base datasites directory path
+            datasite: Datasite email
+            service_name: Service name
+            
+        Returns:
+            Path to app_data directory
+        """
+        return datasites_path / datasite / "app_data" / service_name
+    
+    @staticmethod
+    def build_rpc_directory_path(datasites_path: Path, datasite: str, service_name: str) -> Path:
+        """Build path to a service's RPC directory.
+        
+        Args:
+            datasites_path: Base datasites directory path
+            datasite: Datasite email
+            service_name: Service name
+            
+        Returns:
+            Path to RPC directory
+        """
+        return datasites_path / datasite / "app_data" / service_name / "rpc"
+    
+    @staticmethod
+    def build_rpc_schema_path(datasites_path: Path, datasite: str, service_name: str) -> Path:
+        """Build path to a service's RPC schema file.
+        
+        Args:
+            datasites_path: Base datasites directory path
+            datasite: Datasite email
+            service_name: Service name
+            
+        Returns:
+            Path to rpc.schema.json file
+        """
+        return (datasites_path / datasite / 
+                "app_data" / service_name / "rpc" / "rpc.schema.json")
+    
+    @staticmethod
+    def syft_url_to_filesystem_path(datasites_path: Path, syft_url: str) -> Path:
+        """Convert a syft:// URL to its corresponding filesystem path.
+        
+        Args:
+            datasites_path: Base datasites directory path
+            syft_url: The syft:// URL to convert
+            
+        Returns:
+            Corresponding filesystem path
+            
+        Raises:
+            ValueError: If URL format is invalid
+        """
+        parsed = SyftURLBuilder.parse_syft_url(syft_url)
+        
+        # Build path: datasites/{datasite}/app_data/{app_name}/rpc/{endpoint}
+        return (datasites_path / 
+                parsed['datasite'] / 
+                "app_data" / 
+                parsed['app_name'] / 
+                "rpc" / 
+                parsed['endpoint'])
+    
+    @staticmethod
+    def filesystem_path_to_syft_url(filesystem_path: Path, datasites_path: Path) -> Optional[str]:
+        """Convert a filesystem path to its corresponding syft:// URL.
+        
+        Args:
+            filesystem_path: The filesystem path to convert
+            datasites_path: Base datasites directory path
+            
+        Returns:
+            Corresponding syft:// URL or None if path doesn't match expected format
+        """
+        try:
+            # Get relative path from datasites directory
+            rel_path = filesystem_path.relative_to(datasites_path)
+            path_parts = rel_path.parts
+            
+            # Expected format: {datasite}/app_data/{service_name}/rpc/{endpoint...}
+            if len(path_parts) < 5:
+                return None
+            
+            if path_parts[1] != 'app_data' or path_parts[3] != 'rpc':
+                return None
+            
+            datasite = path_parts[0]
+            service_name = path_parts[2]
+            endpoint = '/'.join(path_parts[4:])
+            
+            return SyftURLBuilder.build_syft_url(datasite, service_name, endpoint)
+            
+        except (ValueError, IndexError):
+            return None
 
 
 class CacheServerEndpoints:

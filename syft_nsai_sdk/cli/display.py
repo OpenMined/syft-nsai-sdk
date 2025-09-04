@@ -14,7 +14,8 @@ from rich.layout import Layout
 from rich.live import Live
 import time
 
-from ..core.types import ServiceInfo, ServiceType, HealthStatus
+from ..core.types import ServiceType, HealthStatus
+from ..models.service_info import ServiceInfo
 from ..utils.formatting import _format_health_status
 
 

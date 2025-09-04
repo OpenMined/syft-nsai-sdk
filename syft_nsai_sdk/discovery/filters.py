@@ -5,8 +5,8 @@ from typing import List, Callable, Any, Optional, Set
 import re
 from dataclasses import dataclass
 
-from ..core.types import ServiceInfo, ServiceType, ServiceStatus, HealthStatus
-
+from ..core.types import ServiceType, ServiceStatus, HealthStatus
+from ..models.service_info import ServiceInfo
 
 @dataclass
 class FilterCriteria:

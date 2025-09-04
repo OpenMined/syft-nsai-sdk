@@ -51,9 +51,3 @@ def get_logger(name: str = "syft_nsai_sdk"):
         logger.addHandler(handler)
         
     return logger
-
-# Example usage in other modules:
-# from syft_nsai_sdk.logger import get_logger
-# logger = get_logger()
-# logger.info("This is an info message.")
-# logger.error("This is an error message.")

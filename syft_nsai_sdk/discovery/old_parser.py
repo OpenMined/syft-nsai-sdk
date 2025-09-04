@@ -2,7 +2,6 @@
 Parser for SyftBox service metadata and RPC schema files
 """
 import json
-import logging
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 from datetime import datetime
@@ -10,9 +9,7 @@ from datetime import datetime
 from ..core.types import ServiceItem, ServiceType, PricingChargeType, ServiceStatus
 from ..core.exceptions import MetadataParsingError
 from ..models.service_info import ServiceInfo
-from ..clients.endpoint_client import SyftURLBuilder
 
-logger = logging.getLogger(__name__)
 
 class MetadataParser:
     """Parser for service metadata.json and rpc.schema.json files."""
@@ -69,49 +66,6 @@ class MetadataParser:
                 return False
         
         return True
-    
-    @staticmethod
-    def extract_service_info_from_metadata_path(metadata_path: Path) -> Dict[str, str]:
-        """Extract service information from metadata file path.
-        
-        Args:
-            metadata_path: Path to metadata.json file
-            
-        Returns:
-            Dictionary with datasite and service_name, or empty dict if extraction fails
-        """
-        try:
-            # Expected structure: datasites/{datasite}/public/routers/{service}/metadata.json
-            path_parts = metadata_path.parts
-            
-            # Find datasites directory index
-            if "datasites" not in path_parts:
-                return {}
-            
-            datasites_idx = path_parts.index("datasites")
-            
-            # Validate path structure
-            if (len(path_parts) < datasites_idx + 6 or 
-                path_parts[datasites_idx + 2] != "public" or 
-                path_parts[datasites_idx + 3] != "routers" or 
-                path_parts[datasites_idx + 5] != "metadata.json"):
-                return {}
-            
-            datasite = path_parts[datasites_idx + 1]
-            service_name = path_parts[datasites_idx + 4]
-            
-            # Basic validation
-            if '@' not in datasite or not service_name:
-                return {}
-            
-            return {
-                "datasite": datasite,
-                "service_name": service_name,
-                "datasites_path": Path(*path_parts[:datasites_idx + 1])
-            }
-            
-        except (ValueError, IndexError):
-            return {}
     
     @classmethod
     def parse_services(cls, services_data: List[Dict[str, Any]]) -> List[ServiceItem]:
@@ -179,19 +133,15 @@ class MetadataParser:
         delegate_email = metadata.get("delegate_email")
         endpoints = metadata.get("documented_endpoints", {})
         
-        # Find RPC schema path using centralized path builder
+        # RPC schema path
         rpc_schema_path = None
-        service_info = cls.extract_service_info_from_metadata_path(metadata_path)
-        
-        if service_info:
-            datasites_path = service_info["datasites_path"]
-            datasite_email = service_info["datasite"]
-            service_name = service_info["service_name"]
-            
-            potential_rpc_path = SyftURLBuilder.build_rpc_schema_path(
-                datasites_path, datasite_email, service_name
-            )
-            
+        if metadata_path.parent.name != "metadata.json":
+            # Try to find rpc.schema.json in the expected location
+            datasite_email = datasite
+            service_name = name
+            # Expected path: datasites/{datasite}/app_data/{service}/rpc/rpc.schema.json
+            potential_rpc_path = (metadata_path.parent.parent.parent.parent / 
+                                 datasite_email / "app_data" / service_name / "rpc" / "rpc.schema.json")
             if potential_rpc_path.exists():
                 rpc_schema_path = potential_rpc_path
         
@@ -212,14 +162,8 @@ class MetadataParser:
         )
     
     @classmethod
-    def parse_service_from_files(cls, metadata_path: Path, strict_path_validation: bool = True) -> ServiceInfo:
-        """Parse a complete ServiceInfo from metadata file and optional RPC schema.
-        
-        Args:
-            metadata_path: Path to metadata.json file
-            strict_path_validation: If True, raises error if path extraction fails.
-                                  If False, falls back to old method.
-        """
+    def parse_service_from_files(cls, metadata_path: Path) -> ServiceInfo:
+        """Parse a complete ServiceInfo from metadata file and optional RPC schema."""
         
         # Parse metadata
         metadata = cls.parse_metadata(metadata_path)
@@ -231,33 +175,20 @@ class MetadataParser:
                 "Metadata validation failed - missing required fields"
             )
         
-        # Extract service info from path
-        service_info = cls.extract_service_info_from_metadata_path(metadata_path)
-        
-        if not service_info:
-            error_msg = f"Failed to extract service info from path: {metadata_path}"
-            if strict_path_validation:
-                raise MetadataParsingError(str(metadata_path), error_msg)
-            # else:
-            #     # Log warning and use fallback
-            #     logger.warning(f"{error_msg} - falling back to metadata fields")
-        
-        # Try to parse RPC schema using centralized path building
+        # Try to parse RPC schema
         rpc_schema = {}
         
-        if service_info:
-            datasites_path = service_info["datasites_path"]
-            datasite = service_info["datasite"]
-            service_name = service_info["service_name"]
-
-            # Try multiple locations for RPC schema
+        # Look for RPC schema in expected locations
+        datasite = metadata.get("author", "")
+        service_name = metadata.get("project_name", "")
+        
+        if datasite and service_name:
+            # Try: datasites/{datasite}/app_data/{service}/rpc/rpc.schema.json
+            datasites_root = metadata_path.parent.parent.parent.parent
             potential_rpc_paths = [
-                # Primary location: datasites/{datasite}/app_data/{service}/rpc/rpc.schema.json
-                SyftURLBuilder.build_rpc_schema_path(datasites_path, datasite, service_name),
-                # Fallback: same directory as metadata
-                metadata_path.parent / "rpc.schema.json",
-                # Fallback: subdirectory of metadata location
-                metadata_path.parent / "rpc" / "rpc.schema.json",
+                datasites_root / datasite / "app_data" / service_name / "rpc" / "rpc.schema.json",
+                metadata_path.parent / "rpc.schema.json",  # Same directory as metadata
+                metadata_path.parent / "rpc" / "rpc.schema.json",  # Subdirectory
             ]
             
             for rpc_path in potential_rpc_paths:
@@ -268,35 +199,6 @@ class MetadataParser:
                     except MetadataParsingError:
                         # Continue trying other paths
                         continue
-        
-        # elif not strict_path_validation:
-        #     # TODO: Remove this fallback code once centralized path building is proven stable in production
-        #     # Only use fallback if strict validation is disabled
-        #     datasite = metadata.get("author", "")
-        #     service_name = metadata.get("project_name", "")
-            
-        #     logger.warning(f"Using fallback extraction - datasite: {datasite}, service: {service_name}")
-            
-        #     if datasite and service_name:
-        #         try:
-        #             # Legacy path traversal - will be removed in future version
-        #             datasites_root = metadata_path.parent.parent.parent.parent
-        #             potential_rpc_paths = [
-        #                 datasites_root / datasite / "app_data" / service_name / "rpc" / "rpc.schema.json",
-        #                 metadata_path.parent / "rpc.schema.json",
-        #                 metadata_path.parent / "rpc" / "rpc.schema.json",
-        #             ]
-                    
-        #             for rpc_path in potential_rpc_paths:
-        #                 if rpc_path.exists():
-        #                     try:
-        #                         rpc_schema = cls.parse_rpc_schema(rpc_path)
-        #                         logger.info(f"Found RPC schema at: {rpc_path} (fallback method)")
-        #                         break
-        #                     except MetadataParsingError:
-        #                         continue
-        #         except (IndexError, AttributeError) as e:
-        #             logger.warning(f"Fallback path extraction failed: {e}")
         
         # Create service info
         return cls.create_service_info(metadata_path, metadata, rpc_schema)

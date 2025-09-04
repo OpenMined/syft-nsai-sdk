@@ -2,7 +2,7 @@
 Input validation utilities for SyftBox NSAI SDK
 """
 import re
-from typing import Any, List, Optional, Union
+from typing import Any, List, Optional, Union, Dict
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -569,3 +569,161 @@ def sanitize_tags(tags: List[str]) -> List[str]:
             unique_tags.append(tag)
     
     return unique_tags[:20]  # Limit number of tags
+
+
+# ============================================================================
+# PYDANTIC INTEGRATION HELPERS - NEW ADDITIONS
+# ============================================================================
+
+def validate_pydantic_model(data: Dict[str, Any], model_class) -> Any:
+    """
+    Validate data using a Pydantic model with enhanced error handling.
+    
+    Args:
+        data: Dictionary data to validate
+        model_class: Pydantic model class to validate against
+        
+    Returns:
+        Validated model instance
+        
+    Raises:
+        ValidationError: If validation fails
+    """
+    try:
+        return model_class(**data)
+    except Exception as e:
+        # Convert Pydantic validation errors to our custom ValidationError
+        if hasattr(e, 'errors'):
+            # Pydantic validation error
+            error_details = []
+            for error in e.errors():
+                field_path = '.'.join(str(loc) for loc in error['loc'])
+                error_details.append(f"{field_path}: {error['msg']}")
+            
+            raise ValidationError(
+                f"Validation failed: {'; '.join(error_details)}",
+                field="multiple", 
+                value=str(data)
+            )
+        else:
+            # Other validation error
+            raise ValidationError(
+                f"Validation failed: {str(e)}",
+                field="unknown",
+                value=str(data)
+            )
+
+
+def convert_pydantic_errors_to_validation_errors(pydantic_error) -> List[str]:
+    """
+    Convert Pydantic validation errors to readable error messages.
+    
+    Args:
+        pydantic_error: Pydantic ValidationError
+        
+    Returns:
+        List of formatted error messages
+    """
+    error_messages = []
+    
+    if hasattr(pydantic_error, 'errors'):
+        for error in pydantic_error.errors():
+            field_path = '.'.join(str(loc) for loc in error['loc'])
+            error_messages.append(f"{field_path}: {error['msg']}")
+    else:
+        error_messages.append(str(pydantic_error))
+    
+    return error_messages
+
+
+def validate_request_with_fallback(data: Dict[str, Any], request_type: str) -> Dict[str, Any]:
+    """
+    Validate request with fallback to basic validation if Pydantic fails.
+    
+    This ensures backwards compatibility while adding enhanced validation.
+    
+    Args:
+        data: Request data to validate
+        request_type: Type of request ('chat', 'search', 'health')
+        
+    Returns:
+        Validated data dictionary
+        
+    Raises:
+        ValidationError: If validation fails
+    """
+    try:
+        # Try Pydantic validation first
+        if request_type == 'chat':
+            from ..models.validation import validate_and_sanitize_chat_request
+            validated = validate_and_sanitize_chat_request(data)
+            return validated.model_dump()
+            
+        elif request_type == 'search':
+            from ..models.validation import validate_and_sanitize_search_request
+            validated = validate_and_sanitize_search_request(data)
+            return validated.model_dump()
+            
+        elif request_type == 'health':
+            from ..models.validation import validate_health_request
+            validated = validate_health_request(data)
+            return validated.model_dump()
+            
+        else:
+            raise ValidationError(f"Unknown request type: {request_type}", "request_type", request_type)
+            
+    except Exception as pydantic_error:
+        # Fall back to basic validation using your existing functions
+        try:
+            if request_type == 'chat':
+                validate_chat_request(
+                    data.get('message', ''), 
+                    data.get('model'),
+                    data.get('options', {}).get('max_tokens'),
+                    data.get('options', {}).get('temperature')
+                )
+            elif request_type == 'search':
+                validate_search_request(
+                    data.get('query', ''),
+                    data.get('options', {}).get('limit'),
+                    data.get('options', {}).get('similarity_threshold')
+                )
+            
+            # If basic validation passes, return sanitized data
+            return sanitize_request_data(data, request_type)
+            
+        except ValidationError:
+            # Both validations failed, raise the original error
+            raise ValidationError(
+                f"Request validation failed: {str(pydantic_error)}",
+                "request",
+                str(data)
+            )
+
+
+def sanitize_request_data(data: Dict[str, Any], request_type: str) -> Dict[str, Any]:
+    """
+    Sanitize request data using existing sanitization functions.
+    
+    Args:
+        data: Request data to sanitize
+        request_type: Type of request
+        
+    Returns:
+        Sanitized data dictionary
+    """
+    sanitized = data.copy()
+    
+    if request_type == 'chat' and 'messages' in sanitized:
+        for message in sanitized['messages']:
+            if 'content' in message:
+                message['content'] = sanitize_string(message['content'], 50000)
+                
+    elif request_type == 'search' and 'query' in sanitized:
+        sanitized['query'] = sanitize_string(sanitized['query'], 1000)
+    
+    # Sanitize tags if present
+    if 'tags' in sanitized and sanitized['tags']:
+        sanitized['tags'] = sanitize_tags(sanitized['tags'])
+    
+    return sanitized

@@ -8,6 +8,7 @@ import logging
 
 from ..core.config import SyftBoxConfig
 from ..core.exceptions import ConfigurationError
+from ..clients.endpoint_client import SyftURLBuilder
 
 logger = logging.getLogger(__name__)
 
@@ -18,47 +19,6 @@ class ServiceScanner:
         self.config = syftbox_config
         self.datasites_path = syftbox_config.datasites_path
 
-    def _build_metadata_path(self, datasite: str, service_name: str) -> Path:
-        """Build path to a service's metadata.json file.
-        
-        Args:
-            datasite: Datasite email
-            service_name: Service name
-            
-        Returns:
-            Path to metadata.json file
-        """
-        return (self.datasites_path / 
-                datasite / 
-                "public" / 
-                "routers" / 
-                service_name / 
-                "metadata.json")
-    
-    def _build_routers_path(self, datasite: str) -> Path:
-        """Build path to a datasite's routers directory.
-        
-        Args:
-            datasite: Datasite email
-            
-        Returns:
-            Path to routers directory
-        """
-        return self.datasites_path / datasite / "public" / "routers"
-    
-    def _build_rpc_schema_path(self, datasite: str, service_name: str) -> Path:
-        """Build path to a service's RPC schema file.
-        
-        Args:
-            datasite: Datasite email
-            service_name: Service name
-            
-        Returns:
-            Path to rpc.schema.json file
-        """
-        return (self.datasites_path / datasite / 
-                "app_data" / service_name / "rpc" / "rpc.schema.json")
-    
     def scan_all_datasites(self, exclude_current_user: bool = False) -> List[Path]:
         """Scan all datasites for published services.
         
@@ -101,14 +61,14 @@ class ServiceScanner:
         """Scan a specific datasite for published services.
         
         Args:
-            datasite_email: Email of the datasite datasite
+            datasite: Email of the datasite
             
         Returns:
             List of paths to metadata.json files for this datasite
         """
         
         # Look for published routers in public/routers/
-        routers_path = self._build_routers_path(datasite)
+        routers_path = SyftURLBuilder.build_routers_path(self.datasites_path, datasite)
 
         if not routers_path.exists():
             logger.debug(f"No published routers found for {datasite}")
@@ -120,7 +80,7 @@ class ServiceScanner:
             if not service_dir.is_dir():
                 continue
             
-            metadata_path = self._build_metadata_path(datasite, service_dir.name)
+            metadata_path = SyftURLBuilder.build_metadata_path(self.datasites_path, datasite, service_dir.name)
             if metadata_path.exists() and self.is_valid_metadata_file(metadata_path):
                 metadata_paths.append(metadata_path)
             else:
@@ -141,7 +101,7 @@ class ServiceScanner:
             List of matching metadata.json paths
         """
         if datasite and service_name:
-            metadata_path = self._build_metadata_path(datasite, service_name)
+            metadata_path = SyftURLBuilder.build_metadata_path(self.datasites_path, datasite, service_name)
             return [metadata_path] if metadata_path.exists() else []
         elif datasite:
             # Search specific datasite
@@ -213,8 +173,8 @@ class ServiceScanner:
             service_name = metadata_path.parent.name
             datasite = metadata_path.parent.parent.parent.parent.name
             
-            # Expected RPC schema location: datasites/{datasite}/app_data/{service}/rpc/rpc.schema.json
-            rpc_schema_path = self._build_rpc_schema_path(datasite, service_name)
+            # Use centralized path builder for RPC schema
+            rpc_schema_path = SyftURLBuilder.build_rpc_schema_path(self.datasites_path, datasite, service_name)
             if rpc_schema_path.exists():
                 return rpc_schema_path
             
@@ -298,19 +258,6 @@ class FastScanner:
         self.datasites_path = syftbox_config.datasites_path
         self._cache: Optional[Dict[str, List[Path]]] = None
     
-    def _build_metadata_path(self, datasite: str, service_name: str) -> Path:
-        """Build path to a service's metadata.json file."""
-        return (self.datasites_path / 
-                datasite / 
-                "public" / 
-                "routers" / 
-                service_name / 
-                "metadata.json")
-    
-    def _build_routers_path(self, datasite: str) -> Path:
-        """Build path to a datasite's routers directory."""
-        return self.datasites_path / datasite / "public" / "routers"
-    
     def scan_with_cache(self, force_refresh: bool = False) -> List[Path]:
         """Scan with caching for better performance.
         
@@ -368,7 +315,7 @@ class FastScanner:
         Returns:
             Path to metadata.json if it exists, None otherwise
         """
-        metadata_path = self._build_metadata_path(datasite, service_name)
+        metadata_path = SyftURLBuilder.build_metadata_path(self.datasites_path, datasite, service_name)
         return metadata_path if metadata_path.exists() else None
     
     def clear_cache(self):

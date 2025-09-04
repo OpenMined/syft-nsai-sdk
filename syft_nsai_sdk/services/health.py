@@ -6,7 +6,8 @@ import time
 import logging
 from typing import List, Dict, Any, Optional, Tuple
 
-from ..core.types import ServiceInfo, HealthStatus
+from ..models.service_info import ServiceInfo
+from ..core.types import HealthStatus
 from ..core.exceptions import HealthCheckError, NetworkError, RPCError
 from ..clients.rpc_client import SyftBoxRPCClient
 
@@ -29,7 +30,7 @@ async def check_service_health(service_info: ServiceInfo,
     try:
         # Create a temporary client with shorter timeout for health checks
         health_client = SyftBoxRPCClient(
-            cache_server_url=rpc_client.cache_server_url,
+            cache_server_url=rpc_client.base_url,
             timeout=timeout,
             max_poll_attempts=3,  # Fewer attempts for health checks
             poll_interval=0.5  # Faster polling for health checks

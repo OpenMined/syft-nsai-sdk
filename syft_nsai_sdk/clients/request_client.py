@@ -3,13 +3,27 @@ HTTP client wrapper and utilities for SyftBox networking
 """
 import httpx
 import asyncio
-from typing import Dict, Any, Optional, Union
 import logging
+
+from typing import Dict, Any, Optional, Union
 
 from ..core.exceptions import NetworkError
 
 logger = logging.getLogger(__name__)
 
+class RequestArgs:
+    """Arguments for HTTP requests."""
+    def __init__(
+            self,
+            is_accounting: bool = False,
+            skip_loader: bool = False,
+            timeout: Optional[float] = None,
+            **kwargs
+        ):
+        self.is_accounting = is_accounting
+        self.skip_loader = skip_loader
+        self.timeout = timeout
+        self.extra_args = kwargs
 
 class HTTPClient:
     """Wrapper around httpx with SyftBox-specific configurations."""
@@ -49,18 +63,24 @@ class HTTPClient:
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         await self.close()
     
-    async def get(self, 
-                  url: str,
-                  params: Optional[Dict[str, Any]] = None,
-                  headers: Optional[Dict[str, str]] = None,
-                  **kwargs) -> httpx.Response:
-        """Make a GET request with retries.
+    async def request(self,
+                      url: str,
+                      method: str,
+                      params: Optional[Dict[str, Any]] = None,
+                      data: Optional[Union[str, bytes, Dict[str, Any]]] = None,
+                      json: Optional[Dict[str, Any]] = None,
+                      headers: Optional[Dict[str, str]] = None,
+                      args: Optional[RequestArgs] = None) -> httpx.Response:
+        """Make an HTTP request with configurable parameters.
         
         Args:
             url: URL to request
+            method: HTTP method (GET, POST, PUT, DELETE, etc.)
             params: Query parameters
+            data: Raw data to send
+            json: JSON data to send
             headers: Additional headers
-            **kwargs: Additional httpx arguments
+            args: Additional request arguments
             
         Returns:
             HTTP response
@@ -68,7 +88,42 @@ class HTTPClient:
         Raises:
             NetworkError: For network-related failures
         """
-        return await self._request("GET", url, params=params, headers=headers, **kwargs)
+        if args is None:
+            args = RequestArgs()
+        
+        # Build request kwargs - be explicit about what we pass
+        request_kwargs = {}
+        
+        if params is not None:
+            request_kwargs["params"] = params
+        if headers is not None:
+            request_kwargs["headers"] = headers
+        if json is not None:
+            request_kwargs["json"] = json
+        elif data is not None:
+            request_kwargs["data"] = data
+        
+        # Apply timeout if specified
+        if args.timeout:
+            request_kwargs["timeout"] = httpx.Timeout(args.timeout)
+        
+        # Only add extra args that are safe for httpx
+        if args.extra_args:
+            # Filter out any problematic keys
+            safe_extra_args = {k: v for k, v in args.extra_args.items() 
+                             if k not in ['url', 'method', 'args']}
+            request_kwargs.update(safe_extra_args)
+        
+        return await self._request(method, url, **request_kwargs)
+
+    # Convenience methods that use the unified request method
+    async def get(self, 
+                  url: str,
+                  params: Optional[Dict[str, Any]] = None,
+                  headers: Optional[Dict[str, str]] = None,
+                  args: Optional[RequestArgs] = None) -> httpx.Response:
+        """Make a GET request."""
+        return await self.request(url, "GET", params=params, headers=headers, args=args)
     
     async def post(self,
                    url: str,
@@ -76,28 +131,9 @@ class HTTPClient:
                    data: Optional[Union[str, bytes, Dict[str, Any]]] = None,
                    params: Optional[Dict[str, Any]] = None,
                    headers: Optional[Dict[str, str]] = None,
-                   **kwargs) -> httpx.Response:
-        """Make a POST request with retries.
-        
-        Args:
-            url: URL to request
-            json: JSON data to send
-            data: Raw data to send
-            params: Query parameters
-            headers: Additional headers
-            **kwargs: Additional httpx arguments
-            
-        Returns:
-            HTTP response
-            
-        Raises:
-            NetworkError: For network-related failures
-        """
-        return await self._request(
-            "POST", url, 
-            json=json, data=data, params=params, headers=headers, 
-            **kwargs
-        )
+                   args: Optional[RequestArgs] = None) -> httpx.Response:
+        """Make a POST request."""
+        return await self.request(url, "POST", params=params, data=data, json=json, headers=headers, args=args)
     
     async def put(self,
                   url: str,
@@ -105,21 +141,17 @@ class HTTPClient:
                   data: Optional[Union[str, bytes, Dict[str, Any]]] = None,
                   params: Optional[Dict[str, Any]] = None,
                   headers: Optional[Dict[str, str]] = None,
-                  **kwargs) -> httpx.Response:
-        """Make a PUT request with retries."""
-        return await self._request(
-            "PUT", url,
-            json=json, data=data, params=params, headers=headers,
-            **kwargs
-        )
+                  args: Optional[RequestArgs] = None) -> httpx.Response:
+        """Make a PUT request."""
+        return await self.request(url, "PUT", params=params, data=data, json=json, headers=headers, args=args)
     
     async def delete(self,
                      url: str,
                      params: Optional[Dict[str, Any]] = None,
                      headers: Optional[Dict[str, str]] = None,
-                     **kwargs) -> httpx.Response:
-        """Make a DELETE request with retries."""
-        return await self._request("DELETE", url, params=params, headers=headers, **kwargs)
+                     args: Optional[RequestArgs] = None) -> httpx.Response:
+        """Make a DELETE request."""
+        return await self.request(url, "DELETE", params=params, headers=headers, args=args)
     
     async def _request(self,
                        method: str,
@@ -138,10 +170,17 @@ class HTTPClient:
         Raises:
             NetworkError: For network-related failures
         """
+        # DEBUG: Log what's actually being passed to httpx
+        logger.debug(f"HTTPClient._request called with:")
+        logger.debug(f"  method: {method}")
+        logger.debug(f"  url: {url}")
+        logger.debug(f"  kwargs: {kwargs}")
+        
         last_exception = None
         
         for attempt in range(self.max_retries + 1):
             try:
+                logger.debug(f"Making httpx request: {method} {url}")
                 response = await self.client.request(method, url, **kwargs)
                 
                 # Log successful request
@@ -168,6 +207,7 @@ class HTTPClient:
             except httpx.RequestError as e:
                 last_exception = e
                 logger.warning(f"Request error (attempt {attempt + 1}/{self.max_retries + 1}): {e}")
+                logger.debug(f"httpx.RequestError details: {type(e).__name__}: {e}")
                 
                 # Don't retry for client errors (4xx)
                 break
@@ -219,12 +259,24 @@ class SyftBoxAPIClient:
         endpoint = endpoint.lstrip('/')
         return f"{self.base_url}/{endpoint}"
     
-    async def get(self, endpoint: str, **kwargs) -> Dict[str, Any]:
-        """Make a GET request to an API endpoint.
+    async def request(self,
+                      endpoint: str,
+                      method: str,
+                      params: Optional[Dict[str, Any]] = None,
+                      data: Optional[Union[str, bytes, Dict[str, Any]]] = None,
+                      json: Optional[Dict[str, Any]] = None,
+                      headers: Optional[Dict[str, str]] = None,
+                      args: Optional[RequestArgs] = None) -> Dict[str, Any]:
+        """Make an HTTP request to an API endpoint.
         
         Args:
             endpoint: API endpoint
-            **kwargs: Additional arguments for the request
+            method: HTTP method (GET, POST, PUT, DELETE, etc.)
+            params: Query parameters
+            data: Raw data to send
+            json: JSON data to send
+            headers: Additional headers
+            args: Additional request arguments
             
         Returns:
             JSON response data
@@ -233,37 +285,27 @@ class SyftBoxAPIClient:
             NetworkError: For API errors
         """
         url = self._build_url(endpoint)
-        response = await self.http_client.get(url, **kwargs)
+        response = await self.http_client.request(
+            url, method, params=params, data=data, json=json, headers=headers, args=args
+        )
         return await self._handle_response(response)
     
-    async def post(self, endpoint: str, **kwargs) -> Dict[str, Any]:
-        """Make a POST request to an API endpoint.
-        
-        Args:
-            endpoint: API endpoint
-            **kwargs: Additional arguments for the request
-            
-        Returns:
-            JSON response data
-            
-        Raises:
-            NetworkError: For API errors
-        """
-        url = self._build_url(endpoint)
-        response = await self.http_client.post(url, **kwargs)
-        return await self._handle_response(response)
+    # Convenience methods for backward compatibility
+    async def get(self, endpoint: str, params: Optional[Dict[str, Any]] = None, headers: Optional[Dict[str, str]] = None, args: Optional[RequestArgs] = None) -> Dict[str, Any]:
+        """Make a GET request to an API endpoint."""
+        return await self.request(endpoint, "GET", params=params, headers=headers, args=args)
     
-    async def put(self, endpoint: str, **kwargs) -> Dict[str, Any]:
+    async def post(self, endpoint: str, json: Optional[Dict[str, Any]] = None, data: Optional[Union[str, bytes, Dict[str, Any]]] = None, params: Optional[Dict[str, Any]] = None, headers: Optional[Dict[str, str]] = None, args: Optional[RequestArgs] = None) -> Dict[str, Any]:
+        """Make a POST request to an API endpoint."""
+        return await self.request(endpoint, "POST", params=params, data=data, json=json, headers=headers, args=args)
+    
+    async def put(self, endpoint: str, json: Optional[Dict[str, Any]] = None, data: Optional[Union[str, bytes, Dict[str, Any]]] = None, params: Optional[Dict[str, Any]] = None, headers: Optional[Dict[str, str]] = None, args: Optional[RequestArgs] = None) -> Dict[str, Any]:
         """Make a PUT request to an API endpoint."""
-        url = self._build_url(endpoint)
-        response = await self.http_client.put(url, **kwargs)
-        return await self._handle_response(response)
+        return await self.request(endpoint, "PUT", params=params, data=data, json=json, headers=headers, args=args)
     
-    async def delete(self, endpoint: str, **kwargs) -> Dict[str, Any]:
+    async def delete(self, endpoint: str, params: Optional[Dict[str, Any]] = None, headers: Optional[Dict[str, str]] = None, args: Optional[RequestArgs] = None) -> Dict[str, Any]:
         """Make a DELETE request to an API endpoint."""
-        url = self._build_url(endpoint)
-        response = await self.http_client.delete(url, **kwargs)
-        return await self._handle_response(response)
+        return await self.request(endpoint, "DELETE", params=params, headers=headers, args=args)
     
     async def _handle_response(self, response: httpx.Response) -> Dict[str, Any]:
         """Handle API response.

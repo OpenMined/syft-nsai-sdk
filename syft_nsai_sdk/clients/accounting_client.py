@@ -11,7 +11,8 @@ from typing import Any, Dict, Optional
 
 from syft_accounting_sdk import UserClient, ServiceException
 
-from ..core.types import UserAccount, APIException
+from ..models.validation import UserAccountModel
+from ..core.types import APIException
 from ..core.exceptions import PaymentError, AuthenticationError
 
 logger = logging.getLogger(__name__)
@@ -22,7 +23,8 @@ class AccountingClient:
     
     def __init__(self, 
                  accounting_url: Optional[str] = None,
-                 credentials: Optional[Dict[str, str]] = None):
+                 credentials: Optional[Dict[str, str]] = None
+        ):
         """Initialize accounting client.
         
         Args:
@@ -38,7 +40,7 @@ class AccountingClient:
         email: str,
         password: Optional[str] = None,
         organization: Optional[str] = None,
-    ) -> UserAccount:
+    ) -> UserAccountModel:
         """Create a user account on the service."""
         try:
             user, user_pwd = UserClient.create_user(
@@ -56,7 +58,7 @@ class AccountingClient:
             self._credentials['password'] = user_pwd
             self._credentials['organization'] = organization
 
-            return UserAccount(
+            return UserAccountModel(
                 email=email,
                 password=user_pwd,
                 organization=organization,
@@ -77,8 +79,8 @@ class AccountingClient:
                     status_code=e.status_code,
                 )
         # return user, user_pwd
-        # Create UserAccount object with required fields
-        # return UserAccount(
+        # Create UserAccountModel object with required fields
+        # return UserAccountModel(
         #     email=email,
         #     password=user_pwd,
         #     organization=organization,
@@ -90,7 +92,7 @@ class AccountingClient:
     #     email: str,
     #     organization: Optional[str] = None,
     #     password: Optional[str] = None,
-    # ) -> UserAccount:
+    # ) -> UserAccountModel:
     #     """Add or update user account credentials to the repository."""
 
     #     try:
@@ -115,7 +117,7 @@ class AccountingClient:
     #             status_code=e.status_code,
     #         )
 
-    #     return UserAccount(
+    #     return UserAccountModel(
     #         email=credentials.email,
     #         organization=credentials.organization,
     #         balance=user_info.balance,

@@ -4,7 +4,8 @@ Formatting utilities for displaying service information
 from typing import List, Optional
 from datetime import datetime
 
-from ..core.types import ServiceInfo, ServiceType, HealthStatus
+from ..models.service_info import ServiceInfo
+from ..core.types import ServiceType, HealthStatus
 
 
 def format_services_table(services: List[ServiceInfo]) -> str:

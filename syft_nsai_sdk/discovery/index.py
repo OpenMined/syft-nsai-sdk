@@ -9,8 +9,9 @@ from collections import defaultdict
 import threading
 import logging
 
+from ..models.service_info import ServiceInfo
 from ..core.config import SyftBoxConfig
-from ..core.types import ServiceInfo, ServiceType
+from ..core.types import ServiceType
 from .scanner import ServiceScanner
 from .parser import MetadataParser
 
