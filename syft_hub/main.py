@@ -13,17 +13,16 @@ from dotenv import load_dotenv
 
 from .core import Service
 from .core import Pipeline
-from .core.decorators import require_account
+# from .core.decorators import require_account
 from .core.config import ConfigManager
 from .core.types import ServiceSpec, ServiceType, HealthStatus, DocumentResult
 from .core.exceptions import (
-    AuthenticationError, 
+    AuthenticationError,
+    ServiceNotSupportedError, 
     SyftBoxNotFoundError, 
     SyftBoxNotRunningError,
     ServiceNotFoundError,
     ValidationError,
-    raise_service_not_found, 
-    raise_service_not_supported
 )
 from .discovery.scanner import FastScanner
 from .discovery.parser import MetadataParser
@@ -234,79 +233,8 @@ class Client:
         
         return self.parser.parse_service_from_files(metadata_path)
 
-    async def get_service_async(self, service_name: str) -> ServiceInfo:
-        datasite, name = service_name.split("/", 1)
-        metadata_path = self.scanner.get_service_path(datasite, name)
-        
-        if not metadata_path:
-            raise ServiceNotFoundError(f"'{service_name}'")
-        
-        return self.parser.parse_service_from_files(metadata_path)
-
-    # Service Usage Methods
-    @require_account
-    def chat1(self,
-            service_name: str,
-            messages: str,
-            temperature: Optional[float] = None,
-            max_tokens: Optional[int] = None,
-            **kwargs
-        ) -> ChatResponse:
-        """Chat with a specific service.
-        
-        Args:
-            service_name: Name of the service to use
-            prompt: Message to send
-            datasite: Datasite email (required if service name is ambiguous)
-            temperature: Sampling temperature (0.0-1.0)
-            max_tokens: Maximum tokens to generate
-            **kwargs: Additional service-specific parameters
-            
-        Returns:
-            Chat response from the specified service
-        """
-        # Find the specific service
-        [datasite, name] = service_name.split("/")
-        service = self.get_service(service_name)
-        if not service:
-            if datasite:
-                # raise ServiceNotFoundError(f"Service '{service_name}' not found!")
-                raise ServiceNotFoundError(f"Service '{service_name}' not found for datasite '{datasite}'")
-
-            else:
-                # Show available services with same name
-                similar_services = [m for m in self.list_services() if m.name == name]
-                if len(similar_services) > 1:
-                    datasites = [m.datasite for m in similar_services]
-                    raise ValidationError(
-                        f"Multiple services named '{service_name}' found. "
-                        f"Please specify datasite. Available datasites: {', '.join(datasites)}"
-                    )
-                else:
-                    raise ServiceNotFoundError(f"Service '{service_name}' not found!")
-        
-        # Check if service supports chat
-        if not service.supports_service(ServiceType.CHAT):
-            raise_service_not_supported(service.name, "chat", service)
-            # raise ValidationError(f"Service '{service_name}' does not support chat service")
-        
-        # Build request parameters
-        chat_params = {
-            "messages": messages,
-            "temperature": temperature,
-            "max_tokens": max_tokens,
-            **kwargs
-        }
-        
-        # Remove None values
-        chat_params = {k: v for k, v in chat_params.items() if v is not None}
-        
-        # Create service and make request
-        chat_service = ChatService(service, self.rpc_client)
-
-        return asyncio.run(chat_service.chat_with_params(chat_params))
-    
-    @require_account
+    # Service Usage Methods 
+    # @require_account
     def chat(
             self,
             service_name: str,
@@ -334,8 +262,8 @@ class Client:
         
         # Validate service supports chat
         if not service.supports_service(ServiceType.CHAT):
-            raise_service_not_supported(service.name, "chat", service)
-        
+            raise ServiceNotSupportedError(service.name, "chat", service)
+
         # Build request parameters
         chat_params = {
             "messages": messages,
@@ -351,7 +279,7 @@ class Client:
         chat_service = ChatService(service, self.rpc_client)
         return asyncio.run(chat_service.chat_with_params(chat_params))
 
-    @require_account
+    # @require_account
     def search(
             self,
             service_name: str, 
@@ -379,7 +307,7 @@ class Client:
         
         # Validate service supports search
         if not service.supports_service(ServiceType.SEARCH):
-            raise_service_not_supported(service.name, "search", service)
+            raise ServiceNotSupportedError(service.name, "search", service)
         
         # Build request parameters
         search_params = {
@@ -397,7 +325,7 @@ class Client:
 
         return asyncio.run(search_service.search_with_params(search_params))
 
-    @require_account
+    # @require_account
     async def chat_async(self,
             service_name: str,
             messages: str,
@@ -432,8 +360,8 @@ class Client:
         
         # Validate service supports chat
         if not service.supports_service(ServiceType.CHAT):
-            raise_service_not_supported(service.name, "chat", service)
-        
+            raise ServiceNotSupportedError(service.name, "chat", service)
+
         # Build request parameters
         chat_params = {
             "messages": messages,
@@ -450,7 +378,7 @@ class Client:
         
         return await chat_service.chat_with_params(chat_params)
     
-    @require_account
+    # @require_account
     async def search_async(
             self,
             service_name: str, 
@@ -485,8 +413,8 @@ class Client:
         
         # Validate service supports search
         if not service.supports_service(ServiceType.SEARCH):
-            raise_service_not_supported(service.name, "search", service)
-        
+            raise ServiceNotSupportedError(service.name, "search", service)
+
         # Build request parameters
         search_params = {
             "message": message,
@@ -735,8 +663,8 @@ class Client:
         """
         service = self.get_service(service_name)
         if not service:
-            raise_service_not_found(service_name)
-        
+            raise ServiceNotFoundError(f"Service '{service_name}' not found")
+
         return await check_service_health(service, self.rpc_client, timeout)
     
     async def check_all_services_health(self, 

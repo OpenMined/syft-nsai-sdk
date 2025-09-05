@@ -1,19 +1,29 @@
 """
 SyftBox configuration management
 """
-import json
 import logging
-import os
-import socket
-import psutil
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from dataclasses import dataclass
 
-from .exceptions import (
-    SyftBoxNotFoundError, 
-    SyftBoxNotRunningError, 
-    ConfigurationError
+from .exceptions import SyftBoxNotFoundError, ConfigurationError
+from ..core.settings import settings
+from ..utils.filesystem import SyftBoxFilesystem
+from ..utils.constants import (
+    SYFTBOX_DIR, 
+    CONFIG_FILENAME, 
+    DESKTOP_RELEASES_URL, 
+    QUICK_INSTALL_URL, 
+    CLI_DOCS_URL, 
+    DESKTOP_DOCS_URL
+)
+from ..utils.validator import (
+    EmailValidator, 
+    URLValidator, 
+    ConfigValidator, 
+    ProcessValidator,
+    validate_config_file, 
+    is_syftbox_running,
 )
 
 logger = logging.getLogger(__name__)
@@ -27,64 +37,67 @@ class SyftBoxConfig:
     server_url: str
     refresh_token: Optional[str] = None
     config_path: Optional[Path] = None
+    _filesystem: Optional[SyftBoxFilesystem] = None
     
     @classmethod
     def load(cls, config_path: Optional[Path] = None) -> 'SyftBoxConfig':
-        """Load SyftBox configuration from file."""
+        """Load SyftBox configuration from file.
         
+        Args:
+            config_path: Optional custom path to config file
+            
+        Returns:
+            SyftBoxConfig instance
+            
+        Raises:
+            SyftBoxNotFoundError: If config file not found
+            ConfigurationError: If config is invalid
+        """
         # Determine config path
         if config_path is None:
-            config_path = Path.home() / ".syftbox" / "config.json"
+            config_path = Path.home() / SYFTBOX_DIR / CONFIG_FILENAME
         
         if not config_path.exists():
             raise SyftBoxNotFoundError(
                 f"SyftBox config not found at {config_path}.\n"
                 "Please install and setup SyftBox first.\n\n"
-                "Install: curl -LsSf https://install.syftbox.openmined.org | sh\n"
+                f"Install: curl -fsSL {QUICK_INSTALL_URL} | sh\n"
                 "Setup: syftbox setup"
             )
         
+        # Validate and load config
         try:
-            with open(config_path, 'r') as f:
-                config_data = json.load(f)
-        except json.JSONDecodeError as e:
-            raise ConfigurationError(
-                f"Invalid JSON in SyftBox config: {e}",
-                str(config_path)
-            )
+            config_data = validate_config_file(config_path)
         except Exception as e:
-            raise ConfigurationError(
-                f"Failed to read SyftBox config: {e}",
-                str(config_path)
-            )
+            if isinstance(e, ConfigurationError):
+                raise
+            raise ConfigurationError(f"Failed to load config: {e}", str(config_path))
         
-        # Validate required fields
-        required_fields = ["data_dir", "email", "server_url"]
-        missing_fields = [field for field in required_fields if field not in config_data]
-        if missing_fields:
-            raise ConfigurationError(
-                f"Missing required fields in SyftBox config: {', '.join(missing_fields)}",
-                str(config_path)
-            )
-        
-        # Create config object
+        # Create config object with validated data
         return cls(
             data_dir=Path(config_data["data_dir"]),
-            email=config_data["email"],
-            server_url=config_data["server_url"].rstrip('/'),
+            email=config_data["email"],  # Already validated by validate_config_file
+            server_url=URLValidator.normalize_server_url(config_data["server_url"]),
             refresh_token=config_data.get("refresh_token"),
             config_path=config_path
         )
     
     @property
+    def filesystem(self) -> SyftBoxFilesystem:
+        """Get filesystem utility instance."""
+        if self._filesystem is None:
+            self._filesystem = SyftBoxFilesystem(self.data_dir)
+        return self._filesystem
+    
+    @property
     def datasites_path(self) -> Path:
         """Path to the datasites directory."""
-        return self.data_dir / "datasites"
+        return self.filesystem.datasites_path
     
     @property
     def my_datasite_path(self) -> Path:
         """Path to the current user's datasite."""
-        return self.datasites_path / self.email
+        return self.filesystem.datasite_path(self.email)
     
     @property
     def cache_server_url(self) -> str:
@@ -92,35 +105,119 @@ class SyftBoxConfig:
         return self.server_url
     
     def validate_paths(self) -> None:
-        """Validate that required paths exist."""
-        if not self.data_dir.exists():
-            raise ConfigurationError(
-                f"SyftBox data directory not found: {self.data_dir}",
-                str(self.config_path)
-            )
+        """Validate that required paths exist.
         
-        if not self.datasites_path.exists():
-            raise ConfigurationError(
-                f"Datasites directory not found: {self.datasites_path}",
-                str(self.config_path)
-            )
+        Raises:
+            ConfigurationError: If required paths don't exist
+        """
+        try:
+            self.filesystem.validate_structure(self.email)
+        except Exception as e:
+            raise ConfigurationError(str(e), str(self.config_path))
     
     def get_datasite_path(self, email: str) -> Path:
-        """Get path to a specific datasite."""
-        return self.datasites_path / email
-    
-    def list_datasites(self) -> list[str]:
-        """List all available datasites."""
-        if not self.datasites_path.exists():
-            return []
+        """Get path to a specific datasite.
         
-        return [
-            item.name for item in self.datasites_path.iterdir()
-            if item.is_dir() and '@' in item.name
-        ]
+        Args:
+            email: Email of the datasite
+            
+        Returns:
+            Path to datasite directory
+        """
+        return self.filesystem.datasite_path(email)
+    
+    def list_datasites(self) -> List[str]:
+        """List all available datasites.
+        
+        Returns:
+            List of datasite email addresses
+        """
+        return self.filesystem.list_datasites()
+    
+    def list_services(self, datasite_email: Optional[str] = None) -> List[str]:
+        """List services for a datasite.
+        
+        Args:
+            datasite_email: Email of datasite (defaults to current user)
+            
+        Returns:
+            List of service names
+        """
+        email = datasite_email or self.email
+        return self.filesystem.list_services(email)
+    
+    def get_service_metadata_path(self, service_name: str, datasite_email: Optional[str] = None) -> Path:
+        """Get path to service metadata file.
+        
+        Args:
+            service_name: Name of the service
+            datasite_email: Email of datasite (defaults to current user)
+            
+        Returns:
+            Path to metadata.json file
+        """
+        email = datasite_email or self.email
+        return self.filesystem.metadata_path(email, service_name)
+    
+    def get_app_data_path(self, app_name: str, datasite_email: Optional[str] = None) -> Path:
+        """Get path to app data directory.
+        
+        Args:
+            app_name: Name of the application
+            datasite_email: Email of datasite (defaults to current user)
+            
+        Returns:
+            Path to app_data directory
+        """
+        email = datasite_email or self.email
+        return self.filesystem.app_data_path(email, app_name)
+    
+    def get_rpc_directory_path(self, app_name: str, datasite_email: Optional[str] = None) -> Path:
+        """Get path to RPC directory.
+        
+        Args:
+            app_name: Name of the application
+            datasite_email: Email of datasite (defaults to current user)
+            
+        Returns:
+            Path to RPC directory
+        """
+        email = datasite_email or self.email
+        return self.filesystem.rpc_directory_path(email, app_name)
+    
+    def service_exists(self, service_name: str, datasite_email: Optional[str] = None) -> bool:
+        """Check if a service exists.
+        
+        Args:
+            service_name: Name of the service
+            datasite_email: Email of datasite (defaults to current user)
+            
+        Returns:
+            True if service exists, False otherwise
+        """
+        email = datasite_email or self.email
+        return self.filesystem.check_service_exists(email, service_name)
+    
+    def rpc_endpoint_exists(self, app_name: str, endpoint: str, datasite_email: Optional[str] = None) -> bool:
+        """Check if an RPC endpoint exists.
+        
+        Args:
+            app_name: Name of the application
+            endpoint: RPC endpoint path
+            datasite_email: Email of datasite (defaults to current user)
+            
+        Returns:
+            True if endpoint exists, False otherwise
+        """
+        email = datasite_email or self.email
+        return self.filesystem.check_rpc_endpoint_exists(email, app_name, endpoint)
     
     def to_dict(self) -> Dict[str, Any]:
-        """Convert config to dictionary."""
+        """Convert config to dictionary.
+        
+        Returns:
+            Dictionary representation of config
+        """
         return {
             "data_dir": str(self.data_dir),
             "email": self.email,
@@ -134,85 +231,88 @@ class ConfigManager:
     """Manages SyftBox configuration with caching and validation."""
     
     def __init__(self, config_path: Optional[Path] = None):
+        """Initialize config manager.
+        
+        Args:
+            config_path: Optional custom path to config file
+        """
         self.config_path = config_path
         self._config: Optional[SyftBoxConfig] = None
     
     @property
     def config(self) -> SyftBoxConfig:
-        """Get cached config, loading if necessary."""
+        """Get cached config, loading if necessary.
+        
+        Returns:
+            SyftBoxConfig instance
+        """
         if self._config is None:
             self._config = self.load_config()
         return self._config
     
     def load_config(self) -> SyftBoxConfig:
-        """Load and validate SyftBox configuration."""
+        """Load and validate SyftBox configuration.
+        
+        Returns:
+            SyftBoxConfig instance
+            
+        Raises:
+            SyftBoxNotFoundError: If config not found
+            ConfigurationError: If config is invalid
+        """
         config = SyftBoxConfig.load(self.config_path)
         config.validate_paths()
         return config
     
     def reload_config(self) -> SyftBoxConfig:
-        """Force reload configuration from disk."""
+        """Force reload configuration from disk.
+        
+        Returns:
+            SyftBoxConfig instance
+        """
         self._config = None
         return self.config
-
-    # def is_syftbox_installed1(self) -> bool:
-    #     """Check if SyftBox is installed and configured."""
-    #     try:
-    #         self.config
-    #         return True
-    #     except (SyftBoxNotFoundError, ConfigurationError):
-    #         return False
     
     def is_syftbox_installed(self) -> bool:
-        """Check if SyftBox is installed and configured."""
+        """Check if SyftBox is installed and configured.
+        
+        Returns:
+            True if installed and configured, False otherwise
+        """
         try:
             # Use custom path if provided, otherwise default
-            if self.config_path:
-                config_path = self.config_path
-            else:
-                config_path = Path.home() / ".syftbox" / "config.json"
-
-            # Check if config file exists and is readable
+            config_path = self.config_path or (Path.home() / SYFTBOX_DIR / CONFIG_FILENAME)
+            
             if config_path.exists():
-                # You might want to validate the config file here
-                logger.info(f"Using config credentials at path: {config_path}")
-                return True
+                # Validate the config file
+                try:
+                    validate_config_file(config_path)
+                    logger.info(f"Using config credentials at path: {config_path}")
+                    return True
+                except ConfigurationError:
+                    logger.warning(f"Config file exists but is invalid: {config_path}")
+                    return False
+            
             return False
             
-        except Exception:
+        except Exception as e:
+            logger.debug(f"Error checking SyftBox installation: {e}")
             return False
-
+    
     def is_syftbox_running(self) -> bool:
-        """Check if SyftBox process is actually running."""
+        """Check if SyftBox process is actually running.
         
-        # Check for HTTP server (app version)
-        try:
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.settimeout(1)
-            is_app_running = sock.connect_ex(('127.0.0.1', 7938)) == 0
-            sock.close()
-            if is_app_running:
-                return True
-        except Exception:
-            pass
-        
-        # Check for any process with "syftbox" in name/path
-        try:
-            for proc in psutil.process_iter(['name', 'exe']):
-                try:
-                    name = proc.info.get('name', '').lower()
-                    exe = proc.info.get('exe', '').lower()
-                    if 'syftbox' in name or 'syftbox' in exe:
-                        return True
-                except (psutil.NoSuchProcess, psutil.AccessDenied):
-                    continue
-        except Exception:
-            pass
-        
-        return False
-
+        Returns:
+            True if SyftBox is running, False otherwise
+        """
+        return ProcessValidator.is_syftbox_running()
+    
     def get_installation_instructions(self) -> str:
-        """Instructions for installing SyftBox."""
+        """Instructions for installing SyftBox.
+        
+        Returns:
+            Installation instructions string
+        """
         if self.config_path:
             # Custom path was provided but config not found
             return (
@@ -220,8 +320,8 @@ class ConfigManager:
                 "Options:\n"
                 "1. Verify the config path is correct\n"
                 "2. Install SyftBox if not installed:\n"
-                "   • Desktop App: https://github.com/OpenMined/SyftUI/releases\n"
-                "   • Quick install (terminal): curl -fsSL https://syftbox.net/install.sh | sh\n"
+                f"   • Desktop App: {DESKTOP_RELEASES_URL}\n"
+                f"   • Quick install (terminal): curl -fsSL {QUICK_INSTALL_URL} | sh\n"
                 "   • Google Colab: Run the following in a cell:\n"
                 "     !pip install syft-installer\n"
                 "     import syft_installer as si\n"
@@ -231,11 +331,11 @@ class ConfigManager:
         else:
             # Default path check failed
             return (
-                "SyftBox config not found at default location (~/.syftbox/config.json)\n\n"
+                f"SyftBox config not found at default location (~/{SYFTBOX_DIR}/{CONFIG_FILENAME})\n\n"
                 "Options:\n"
                 "1. Install SyftBox:\n"
-                "   • Desktop App: https://github.com/OpenMined/SyftUI/releases\n"
-                "   • Quick install (terminal): curl -fsSL https://syftbox.net/install.sh | sh\n"
+                f"   • Desktop App: {DESKTOP_RELEASES_URL}\n"
+                f"   • Quick install (terminal): curl -fsSL {QUICK_INSTALL_URL} | sh\n"
                 "   • Google Colab: Run the following in a cell:\n"
                 "     !pip install syft-installer\n"
                 "     import syft_installer as si\n"
@@ -243,63 +343,95 @@ class ConfigManager:
                 "2. If installed in custom location, provide syftbox_config_path parameter\n\n"
                 "For detailed instructions, visit the official repositories above."
             )
-
+    
     def get_startup_instructions(self) -> str:
-        """Instructions for starting an already installed SyftBox."""
+        """Instructions for starting an already installed SyftBox.
+        
+        Returns:
+            Startup instructions string
+        """
         return (
             "SyftBox is installed but not running.\n\n"
             "To start SyftBox:\n"
-            "• CLI: Run 'syftbox' in terminal with curl -fsSL https://syftbox.net/install.sh | sh\n"
+            f"• CLI: Run 'syftbox' in terminal with curl -fsSL {QUICK_INSTALL_URL} | sh\n"
             "• Desktop App: Launch from Applications\n\n"
             "Documentation:\n"
-            "• CLI: https://github.com/OpenMined/syftbox\n"
-            "• Desktop App: https://github.com/OpenMined/SyftUI"
+            f"• CLI: {CLI_DOCS_URL}\n"
+            f"• Desktop App: {DESKTOP_DOCS_URL}"
         )
-    
-    # def is_syftbox_available(self) -> bool:
-    #     """Check if SyftBox is installed and configured."""
-    #     try:
-    #         self.config
-    #         return True
-    #     except (SyftBoxNotFoundError, ConfigurationError):
-    #         return False
-    
-    # def get_installation_instructions(self) -> str:
-    #     """Get instructions for installing SyftBox."""
-    #     return (
-    #         "SyftBox is required but not found.\n\n"
-    #         "Installation options:\n"
-    #         "1. Quick install: curl -LsSf https://install.syftbox.openmined.org | sh\n"
-    #         "2. Manual install: Visit https://syftbox.openmined.org/install\n\n"
-    #         "After installation, run: syftbox setup\n"
-    #         "Then restart this SDK."
-    #     )
 
 
-# Global config manager instance
+# Global config manager instance (environment-aware)
 _config_manager = ConfigManager()
 
+
 def get_config(config_path: Optional[Path] = None) -> SyftBoxConfig:
-    """Get SyftBox configuration (convenience function)."""
+    """Get SyftBox configuration (convenience function).
+    
+    Args:
+        config_path: Optional custom path to config file
+                    If None, uses environment-aware path from settings
+        
+    Returns:
+        SyftBoxConfig instance
+    """
     if config_path:
         # Use custom path
         return SyftBoxConfig.load(config_path)
     else:
-        # Use global cached config
+        # Use global cached config (environment-aware)
         return _config_manager.config
-    
+
+
 def is_syftbox_running() -> bool:
-    """Check if SyftBox is running (convenience function)."""
+    """Check if SyftBox is running (convenience function).
+    
+    Returns:
+        True if SyftBox is running, False otherwise
+    """
     return _config_manager.is_syftbox_running()
 
+
 def is_syftbox_installed() -> bool:
-    """Check if SyftBox is installed (convenience function)."""
+    """Check if SyftBox is installed (convenience function).
+    
+    Returns:
+        True if SyftBox is installed and configured, False otherwise
+    """
     return _config_manager.is_syftbox_installed()
 
+
 def get_startup_instructions() -> str:
-    """Get SyftBox startup instructions (convenience function)."""
+    """Get SyftBox startup instructions (convenience function).
+    
+    Returns:
+        Startup instructions string
+    """
     return _config_manager.get_startup_instructions()
 
+
 def get_installation_instructions() -> str:
-    """Get SyftBox installation instructions (convenience function)."""
+    """Get SyftBox installation instructions (convenience function).
+    
+    Returns:
+        Installation instructions string
+    """
     return _config_manager.get_installation_instructions()
+
+
+def get_app_info() -> Dict[str, Any]:
+    """Get application information from settings (convenience function).
+    
+    Returns:
+        Dictionary with app metadata and configuration
+    """
+    return {
+        "app_name": settings.app_name,
+        "debug": settings.debug,
+        "log_level": settings.log_level,
+        "project_name": settings.project_name,
+        "project_version": settings.project_version,
+        "project_description": settings.project_description,
+        "config_path": str(settings.syftbox_config_path),
+        "accounting_path": str(settings.accounting_config_path)
+    }

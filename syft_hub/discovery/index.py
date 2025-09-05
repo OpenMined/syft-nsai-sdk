@@ -3,11 +3,12 @@ Service indexing and caching system for fast lookups
 """
 import json
 import time
+import threading
+import logging
+
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Any
 from collections import defaultdict
-import threading
-import logging
 
 from ..models.service_info import ServiceInfo
 from ..core.config import SyftBoxConfig
@@ -16,7 +17,6 @@ from .scanner import ServiceScanner
 from .parser import MetadataParser
 
 logger = logging.getLogger(__name__)
-
 
 class ServiceIndex:
     """In-memory index of discovered services for fast searching and filtering."""

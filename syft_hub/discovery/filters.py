@@ -1,8 +1,8 @@
 """
 Filtering system for discovered services
 """
-from typing import List, Callable, Any, Optional, Set
 import re
+from typing import List, Callable, Any, Optional, Set
 from dataclasses import dataclass
 
 from ..core.types import ServiceType, ServiceStatus, HealthStatus

@@ -6,17 +6,19 @@ import time
 import logging
 from typing import List, Dict, Any, Optional, Tuple
 
-from ..models.service_info import ServiceInfo
 from ..core.types import HealthStatus
 from ..core.exceptions import HealthCheckError, NetworkError, RPCError
 from ..clients.rpc_client import SyftBoxRPCClient
+from ..models.service_info import ServiceInfo
 
 logger = logging.getLogger(__name__)
 
 
-async def check_service_health(service_info: ServiceInfo, 
-                            rpc_client: SyftBoxRPCClient,
-                            timeout: float = 2.0) -> HealthStatus:
+async def check_service_health(
+        service_info: ServiceInfo,
+        rpc_client: SyftBoxRPCClient,
+        timeout: float = 2.0
+    ) -> HealthStatus:
     """Check health of a single service.
     
     Args:
@@ -73,10 +75,12 @@ async def check_service_health(service_info: ServiceInfo,
         logger.warning(f"Unexpected error in health check for {service_info.name}: {e}")
         return HealthStatus.UNKNOWN
     
-async def batch_health_check(services: List[ServiceInfo],
-                            rpc_client: SyftBoxRPCClient,
-                            timeout: float = 2.0,
-                            max_concurrent: int = 10) -> Dict[str, HealthStatus]:
+async def batch_health_check(
+        services: List[ServiceInfo],
+        rpc_client: SyftBoxRPCClient,
+        timeout: float = 2.0,
+        max_concurrent: int = 10
+    ) -> Dict[str, HealthStatus]:
     """Check health of multiple services concurrently.
     
     Args:

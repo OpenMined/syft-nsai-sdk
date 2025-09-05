@@ -2,13 +2,14 @@
 File system scanner for discovering SyftBox services across datasites
 """
 import os
-from pathlib import Path
-from typing import List, Dict, Iterator, Optional, Set
 import logging
 
+from pathlib import Path
+from typing import List, Dict, Optional
+
 from ..core.config import SyftBoxConfig
-from ..core.exceptions import ConfigurationError
-from ..clients.endpoint_client import SyftURLBuilder
+# from ..core.exceptions import ConfigurationError
+from ..utils.filesystem import SyftURLBuilder
 
 logger = logging.getLogger(__name__)
 

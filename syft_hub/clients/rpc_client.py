@@ -120,6 +120,7 @@ class SyftBoxRPCClient(SyftBoxAPIClient):
                     if request_data is None:
                         request_data = {}
                     request_data["transaction_token"] = transaction_token
+                    # request_data["email"] = user_email
                     request_headers["Content-Type"] = "application/json"
                         
                 except Exception as e:
@@ -339,6 +340,7 @@ class SyftBoxRPCClient(SyftBoxAPIClient):
             is_accounting=True,  # Enable accounting for chat
             # timeout=60.0,        # Longer timeout for chat
             # skip_loader=False    # Show spinner
+            # email=self.accounting_client.get_email() if self.accounting_client.is_configured() else None
         )
 
         endpoints = ServiceEndpoints(service_info.datasite, service_info.name)

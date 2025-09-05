@@ -5,7 +5,7 @@ from typing import List, Optional
 from datetime import datetime
 
 from ..models.service_info import ServiceInfo
-from ..core.types import ServiceType, HealthStatus
+from ..core.types import HealthStatus
 
 
 def format_services_table(services: List[ServiceInfo]) -> str:

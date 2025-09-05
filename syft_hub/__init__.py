@@ -3,10 +3,8 @@ SyftBox NSAI SDK
 
 A Python SDK for discovering and using AI services across the SyftBox network.
 """
-
-__version__ = "0.1.0"
-__author__ = "SyftBox Team"
-__email__ = "info@openmined.org"
+# Import settings early to initialize environment
+import logging
 
 # Main client class
 from .main import Client
@@ -23,6 +21,7 @@ from .core.types import (
 )
 
 # Exceptions
+from .core.settings import settings, Settings
 from .core.exceptions import (
     SyftBoxSDKError,
     SyftBoxNotFoundError,
@@ -73,7 +72,7 @@ from .discovery.filters import (
 # model utilities
 from .models.service_info import ServiceInfo
 from .models.requests import ChatRequest, SearchRequest
-from.models.responses import ChatResponse, SearchResponse, DocumentResult
+from .models.responses import ChatResponse, SearchResponse, DocumentResult
 
 # Convenience functions
 # from .main import (
@@ -90,6 +89,11 @@ from .utils.formatting import (
     format_statistics,
 )
 
+# Use settings for package metadata
+__version__ = settings.project_version or "0.1.0"
+__author__ = settings.project_author or "SyftBox Team"
+__email__ = settings.project_email or "info@openmined.org"
+__description__ = settings.project_description or "A Python SDK for discovering and using AI services across the SyftBox network."
 
 # Package-level convenience functions
 def create_client(**kwargs) -> Client:
@@ -138,6 +142,38 @@ def get_startup_instructions() -> str:
     """
     return get_startup_instructions()
 
+# Package info for introspection
+def get_package_info():
+    """Get package information including settings."""
+    return {
+        "name": settings.app_name,
+        "version": __version__,
+        "author": __author__,
+        "description": __description__,
+        "environment": settings.environment,
+        "debug": settings.debug,
+        "config_path": str(settings.syftbox_config_path)
+    }
+
+# Runtime diagnostics
+def get_runtime_diagnostics():
+    """Get runtime diagnostics for troubleshooting."""
+    return settings.get_runtime_info()
+
+# Feature flags accessible at package level
+def is_feature_enabled(feature_name: str) -> bool:
+    """Check if a feature is enabled via settings."""
+    feature_flags = settings.get_feature_flags()
+    return feature_flags.get(feature_name, False)
+
+# Environment helpers
+def is_development() -> bool:
+    """Check if running in development mode."""
+    return settings.is_development
+
+def is_production() -> bool:
+    """Check if running in production mode."""  
+    return settings.is_production
 
 # Package metadata
 __all__ = [
@@ -149,6 +185,15 @@ __all__ = [
     # Main client
     "Client",
     "create_client",
+
+    # Setting utilities
+    'Settings',
+    'settings',
+    'get_package_info',
+    'get_runtime_diagnostics',
+    'is_feature_enabled',
+    'is_development',
+    'is_production'
     
     # Core types
     "ServiceType",
@@ -220,3 +265,14 @@ __all__ = [
     "format_health_summary",
     "format_statistics",
 ]
+
+# Log package initialization in debug mode
+if settings.debug:
+    logger = logging.getLogger(__name__.split('.')[0])
+    logger.debug(f"Initialized {settings.app_name} v{__version__} in {settings.environment} mode")
+    logger.debug(f"Config path: {settings.syftbox_config_path}")
+    
+    # Log any missing required paths
+    missing_paths = settings.validate_required_paths()
+    if missing_paths:
+        logger.warning(f"Missing required paths: {', '.join(missing_paths)}")

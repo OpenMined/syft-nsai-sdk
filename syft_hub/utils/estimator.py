@@ -1,9 +1,9 @@
 """
 Cost estimation utility for SyftBox NSAI SDK services
 """
-from ..models.service_info import ServiceInfo
 from ..core.types import ServiceType, PricingChargeType
 from ..core.exceptions import ValidationError
+from ..models.service_info import ServiceInfo
 
 class CostEstimator:
     """Utility class for estimating service costs across different service types"""

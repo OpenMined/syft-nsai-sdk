@@ -1,8 +1,7 @@
 """
 Service class for object-oriented service interaction
 """
-import asyncio
-from typing import TYPE_CHECKING, Dict, Any, Optional, List
+from typing import List, TYPE_CHECKING
 
 from ..core.types import ServiceType
 from ..models.service_info import ServiceInfo

@@ -5,23 +5,34 @@ from pydantic import BaseModel, Field, EmailStr, field_validator
 from typing import List, Optional, Dict, Any
 from enum import Enum
 
+from ..core.types import ServiceType, HealthStatus
+from ..utils.validator import (
+    sanitize_string,
+    sanitize_tags,
+    validate_chat_message,
+    validate_max_tokens,
+    validate_temperature,
+    validate_email,
+    validate_service_name,
+    validate_similarity_threshold,
+    validate_search_query,
+    validate_tags,
+    validate_cost
+)
 
-class ServiceTypeEnum(str, Enum):
-    """Service types for validation."""
-    CHAT = "chat"
-    SEARCH = "search"
+# class ServiceTypeEnum(str, Enum):
+#     """Service types for validation."""
+#     CHAT = "chat"
+#     SEARCH = "search"
 
 
-class HealthStatusEnum(str, Enum):
-    """Health status values for validation."""
-    ONLINE = "online"
-    OFFLINE = "offline"
-    TIMEOUT = "timeout"
-    UNKNOWN = "unknown"
-    NOT_APPLICABLE = "n/a"
-
-
-# Request Models
+# class HealthStatusEnum(str, Enum):
+#     """Health status values for validation."""
+#     ONLINE = "online"
+#     OFFLINE = "offline"
+#     TIMEOUT = "timeout"
+#     UNKNOWN = "unknown"
+#     NOT_APPLICABLE = "n/a"
 
 class ChatMessageModel(BaseModel):
     """Pydantic model for chat messages."""
@@ -40,7 +51,6 @@ class ChatMessageModel(BaseModel):
     @classmethod
     def validate_content(cls, v):
         # Use the existing validation from utils
-        from ..utils.validation import validate_chat_message
         if not validate_chat_message(v):
             raise ValueError('Message content is invalid or too long')
         return v
@@ -57,7 +67,6 @@ class GenerationOptionsModel(BaseModel):
     @classmethod
     def validate_max_tokens(cls, v):
         if v is not None:
-            from ..utils.validation import validate_max_tokens
             if not validate_max_tokens(v):
                 raise ValueError('Invalid max_tokens value')
         return v
@@ -66,7 +75,6 @@ class GenerationOptionsModel(BaseModel):
     @classmethod
     def validate_temperature(cls, v):
         if v is not None:
-            from ..utils.validation import validate_temperature
             if not validate_temperature(v):
                 raise ValueError('Temperature must be between 0.0 and 2.0')
         return v
@@ -87,7 +95,6 @@ class ChatRequestModel(BaseModel):
     @field_validator('user_email', mode='before')
     @classmethod
     def validate_user_email(cls, v):
-        from ..utils.validation import validate_email
         email_str = str(v)
         if not validate_email(email_str):
             raise ValueError('Invalid email format')
@@ -96,7 +103,6 @@ class ChatRequestModel(BaseModel):
     @field_validator('model')
     @classmethod
     def validate_model(cls, v):
-        from ..utils.validation import validate_service_name
         if not validate_service_name(v):
             raise ValueError('Invalid model name format')
         return v
@@ -120,7 +126,6 @@ class SearchOptionsModel(BaseModel):
     @classmethod
     def validate_threshold(cls, v):
         if v is not None:
-            from ..utils.validation import validate_similarity_threshold
             if not validate_similarity_threshold(v):
                 raise ValueError('Similarity threshold must be between 0.0 and 1.0')
         return v
@@ -137,7 +142,6 @@ class SearchRequestModel(BaseModel):
     @field_validator('user_email', mode='before')
     @classmethod
     def validate_user_email(cls, v):
-        from ..utils.validation import validate_email
         email_str = str(v)
         if not validate_email(email_str):
             raise ValueError('Invalid email format')
@@ -146,7 +150,6 @@ class SearchRequestModel(BaseModel):
     @field_validator('query')
     @classmethod
     def validate_query(cls, v):
-        from ..utils.validation import validate_search_query
         if not validate_search_query(v):
             raise ValueError('Invalid search query')
         return v
@@ -162,7 +165,6 @@ class HealthCheckRequestModel(BaseModel):
     @field_validator('user_email', mode='before')
     @classmethod
     def validate_user_email(cls, v):
-        from ..utils.validation import validate_email
         email_str = str(v)
         if not validate_email(email_str):
             raise ValueError('Invalid email format')
@@ -234,14 +236,13 @@ class ServiceFilterModel(BaseModel):
     tags: Optional[List[str]] = Field(None, description="Filter by tags")
     max_cost: Optional[float] = Field(None, description="Maximum cost filter")
     min_cost: Optional[float] = Field(None, description="Minimum cost filter")
-    service_types: Optional[List[ServiceTypeEnum]] = Field(None, description="Filter by service types")
-    health_status: Optional[HealthStatusEnum] = Field(None, description="Filter by health status")
-    
+    service_types: Optional[List[ServiceType]] = Field(None, description="Filter by service types")
+    health_status: Optional[HealthStatus] = Field(None, description="Filter by health status")
+
     @field_validator('datasite')
     @classmethod
     def validate_datasite(cls, v):
         if v is not None:
-            from ..utils.validation import validate_email
             if not validate_email(v):
                 raise ValueError('Datasite must be a valid email address')
         return v
@@ -250,7 +251,6 @@ class ServiceFilterModel(BaseModel):
     @classmethod
     def validate_tags_field(cls, v):
         if v is not None:
-            from ..utils.validation import validate_tags
             if not validate_tags(v):
                 raise ValueError('Invalid tags format')
         return v
@@ -259,7 +259,6 @@ class ServiceFilterModel(BaseModel):
     @classmethod
     def validate_max_cost(cls, v):
         if v is not None:
-            from ..utils.validation import validate_cost
             if not validate_cost(v):
                 raise ValueError('Invalid max_cost value')
         return v
@@ -268,7 +267,6 @@ class ServiceFilterModel(BaseModel):
     @classmethod
     def validate_min_cost(cls, v):
         if v is not None:
-            from ..utils.validation import validate_cost
             if not validate_cost(v):
                 raise ValueError('Invalid min_cost value')
         return v
@@ -284,7 +282,6 @@ class UserAccountModel(BaseModel):
     @field_validator('email', mode='before')
     @classmethod
     def validate_email_field(cls, v):
-        from ..utils.validation import validate_email
         email_str = str(v)
         if not validate_email(email_str):
             raise ValueError('Invalid email format')
@@ -293,7 +290,6 @@ class UserAccountModel(BaseModel):
     @field_validator('balance')
     @classmethod
     def validate_balance(cls, v):
-        from ..utils.validation import validate_cost
         if not validate_cost(v):
             raise ValueError('Invalid balance value')
         return v
@@ -329,7 +325,6 @@ def validate_and_sanitize_chat_request(data: Dict[str, Any]) -> ChatRequestModel
     if 'messages' in data:
         for message in data['messages']:
             if 'content' in message:
-                from ..utils.validation import sanitize_string
                 message['content'] = sanitize_string(message['content'], 50000)
     
     # Then validate with Pydantic
@@ -340,7 +335,6 @@ def validate_and_sanitize_search_request(data: Dict[str, Any]) -> SearchRequestM
     """Validate and sanitize search request."""
     # Sanitize query
     if 'query' in data:
-        from ..utils.validation import sanitize_string
         data['query'] = sanitize_string(data['query'], 1000)
     
     # Validate with Pydantic
@@ -351,7 +345,6 @@ def validate_and_sanitize_service_filters(data: Dict[str, Any]) -> ServiceFilter
     """Validate and sanitize service filter criteria."""
     # Sanitize tags if present
     if 'tags' in data and data['tags']:
-        from ..utils.validation import sanitize_tags
         data['tags'] = sanitize_tags(data['tags'])
     
     # Validate with Pydantic

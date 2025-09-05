@@ -4,11 +4,11 @@ Caching utilities for SyftBox NSAI SDK
 import json
 import hashlib
 import time
+import logging
+
 from typing import Any, Dict, Optional, List, Callable
 from pathlib import Path
-from dataclasses import dataclass, asdict
-from datetime import datetime, timedelta
-import logging
+from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
 

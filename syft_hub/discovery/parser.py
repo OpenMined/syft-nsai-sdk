@@ -5,7 +5,6 @@ import json
 import logging
 from pathlib import Path
 from typing import Dict, Any, List, Optional
-from datetime import datetime
 
 from ..core.types import ServiceItem, ServiceType, PricingChargeType, ServiceStatus
 from ..core.exceptions import MetadataParsingError

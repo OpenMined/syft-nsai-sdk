@@ -7,7 +7,6 @@ from enum import Enum
 
 from ..core.types import ChatMessage, GenerationOptions, SearchOptions
 
-
 class RequestMethod(Enum):
     """HTTP methods for requests."""
     GET = "GET"

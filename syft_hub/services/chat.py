@@ -4,7 +4,7 @@ Chat service client for SyftBox services
 import logging
 from typing import Dict, Any
 
-from ..core.exceptions import RPCError, ValidationError, raise_service_not_supported
+from ..core.exceptions import RPCError, ValidationError, ServiceNotSupportedError
 from ..core.types import ServiceType
 from ..clients.rpc_client import SyftBoxRPCClient
 from ..models.responses import ChatResponse
@@ -31,7 +31,7 @@ class ChatService:
 
         # Validate that service supports chat
         if not service_info.supports_service(ServiceType.CHAT):
-            raise_service_not_supported(service_info.name, "chat", service_info)
+            raise ServiceNotSupportedError(service_info.name, "chat", service_info)
 
     def _parse_rpc_chat_response(self, response_data: Dict[str, Any]) -> ChatResponse:
         """Parse RPC response into ChatResponse object.

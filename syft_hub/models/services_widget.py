@@ -13,7 +13,6 @@ def get_services_widget_html(
     datasite: Optional[str] = None,
     tags: Optional[List[str]] = None,
     max_cost: Optional[float] = None,
-    free_only: bool = False,
     health_check: str = "auto",
     page: int = 1,
     items_per_page: int = 50,

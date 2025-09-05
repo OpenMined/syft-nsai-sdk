@@ -4,24 +4,16 @@ Supports both inline and object-oriented RAG/FedRAG workflows
 """
 import asyncio
 import logging
-from typing import List, Dict, Any, Optional, Union
+from typing import List, Dict, Any, Optional, Union, TYPE_CHECKING
 from dataclasses import dataclass
 
 from ..utils.estimator import CostEstimator
-from .types import (
-    ServiceType, 
-    ServiceSpec, 
-    ChatMessage, 
-    DocumentResult
-)
-from .exceptions import ValidationError, ServiceNotFoundError, raise_service_not_supported
+from .types import ServiceType, ServiceSpec, ChatMessage, DocumentResult
+from .exceptions import ValidationError, ServiceNotFoundError, ServiceNotSupportedError
 from ..services.chat import ChatService
 from ..services.search import SearchService
 from ..models.pipeline import PipelineResult
-from ..models.service_info import ServiceInfo
 from ..utils.estimator import CostEstimator
-
-from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from ..main import Client
@@ -86,7 +78,7 @@ class Pipeline:
             try:
                 service = self.client.get_service(source_spec.name)
                 if not service.supports_service(ServiceType.SEARCH):
-                    raise_service_not_supported(service.name, "search", service)
+                    raise ServiceNotSupportedError(service.name, "search", service)
             except ServiceNotFoundError:
                 raise ValidationError(f"Data source service '{source_spec.name}' not found")
         
@@ -94,7 +86,7 @@ class Pipeline:
         try:
             service = self.client.get_service(self.synthesizer.name)
             if not service.supports_service(ServiceType.CHAT):
-                raise_service_not_supported(service.name, "chat", service)
+                raise ServiceNotSupportedError(service.name, "chat", service)
         except ServiceNotFoundError:
             raise ValidationError(f"Synthesizer service '{self.synthesizer.name}' not found")
         

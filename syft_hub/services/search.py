@@ -5,7 +5,7 @@ import logging
 from typing import Dict, Any
 
 from ..core.types import ServiceType
-from ..core.exceptions import RPCError, ValidationError, raise_service_not_supported
+from ..core.exceptions import RPCError, ValidationError, ServiceNotSupportedError
 from ..clients.rpc_client import SyftBoxRPCClient
 from ..models.responses import SearchResponse
 from ..models.service_info import ServiceInfo
@@ -31,7 +31,7 @@ class SearchService:
         
         # Validate that service supports search
         if not service_info.supports_service(ServiceType.SEARCH):
-            raise_service_not_supported(service_info.name, "search", service_info)
+            raise ServiceNotSupportedError(service_info.name, "search", service_info)
 
     def _parse_rpc_search_response(self, response_data: Dict[str, Any], original_query: str) -> SearchResponse:
         """Parse RPC response into SearchResponse object.

@@ -101,7 +101,6 @@ class ServiceInfo:
         return any(service.type == service_type for service in self.services)
     
     # Pricing-related properties
-    
     @property
     def min_pricing(self) -> float:
         """Get minimum pricing across all enabled services."""
@@ -142,7 +141,6 @@ class ServiceInfo:
         return service.pricing if service else None
     
     # Status-related properties
-    
     @property
     def is_healthy(self) -> bool:
         """Check if service is healthy (online)."""
@@ -162,7 +160,6 @@ class ServiceInfo:
                 self.config_status == ServiceStatus.ACTIVE)
     
     # Delegate-related properties
-    
     @property
     def has_delegate(self) -> bool:
         """Check if service has a delegate."""
@@ -180,7 +177,6 @@ class ServiceInfo:
         return control_type in self.delegate_control_types
     
     # Metadata-related properties
-    
     @property
     def has_metadata_file(self) -> bool:
         """Check if service has an accessible metadata file."""
@@ -199,7 +195,6 @@ class ServiceInfo:
         return bool(self.endpoints)
     
     # Tag-related methods
-    
     def has_tag(self, tag: str) -> bool:
         """Check if service has a specific tag (case-insensitive)."""
         return tag.lower() in [t.lower() for t in self.tags]
@@ -221,7 +216,6 @@ class ServiceInfo:
                 if tag.lower() in service_tags_lower]
     
     # Utility methods
-    
     def get_service_summary(self) -> Dict[str, Any]:
         """Get summary of services."""
         enabled = [s for s in self.services if s.enabled]
@@ -354,7 +348,6 @@ class ServiceInfo:
 
 
 # Utility functions for working with ServiceInfo objects
-
 def group_services_by_datasite(services: List[ServiceInfo]) -> Dict[str, List[ServiceInfo]]:
     """Group services by datasite email."""
     groups = {}
@@ -395,8 +388,10 @@ def group_services_by_status(services: List[ServiceInfo]) -> Dict[str, List[Serv
     return groups
 
 
-def sort_services_by_preference(services: List[ServiceInfo], 
-                            preference: str = "balanced") -> List[ServiceInfo]:
+def sort_services_by_preference(
+        services: List[ServiceInfo], 
+        preference: str = "balanced"
+    ) -> List[ServiceInfo]:
     """Sort services by preference (cheapest, paid, balanced)."""
     if preference == "cheapest":
         return sorted(services, key=lambda m: m.min_pricing)
