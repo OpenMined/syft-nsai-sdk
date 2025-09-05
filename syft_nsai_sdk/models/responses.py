@@ -9,7 +9,6 @@ from enum import Enum
 
 from ..core.types import ChatMessage, ChatUsage, DocumentResult
 
-
 class ResponseStatus(Enum):
     """Response status values."""
     SUCCESS = "success"
@@ -24,7 +23,6 @@ class FinishReason(Enum):
     LENGTH = "length"
     CONTENT_FILTER = "content_filter"
 
-
 @dataclass
 class BaseResponse:
     """Base class for all responses."""
@@ -36,7 +34,6 @@ class BaseResponse:
     error_message: Optional[str] = None
     error_details: Optional[Dict[str, Any]] = None
 
-
 @dataclass
 class ChatResponse(BaseResponse):
     """Chat response data class."""
@@ -44,7 +41,7 @@ class ChatResponse(BaseResponse):
     message: Optional[ChatMessage] = None
     usage: Optional[ChatUsage] = None
     finish_reason: Optional[str] = None
-    logprobs: Optional[Dict[str, float]] = None
+    logprobs: Optional[Dict[str, Any]] = None  # Changed from Dict[str, float] to Any
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'ChatResponse':
@@ -70,43 +67,47 @@ class ChatResponse(BaseResponse):
             model=data.get('model', 'unknown'),
             message=message,
             usage=usage,
-            finish_reason=data.get('finishReason'),
+            finish_reason=data.get('finishReason'),  # camelCase from endpoint
             cost=data.get('cost'),
-            provider_info=data.get('providerInfo'),
-            logprobs=data.get('logprobs', {}).get('tokenLogprobs') if data.get('logprobs') else None
+            provider_info=data.get('providerInfo'),  # camelCase from endpoint
+            logprobs=data.get('logprobs')  # Direct assignment, no nested extraction
         )
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for serialization."""
-        return {
+        result = {
             "id": self.id,
             "model": self.model,
             "message": {
-                "role": self.message.role,
-                "content": self.message.content,
-                **({"name": self.message.name} if self.message.name else {})
+                "role": self.message.role if self.message else "assistant",
+                "content": self.message.content if self.message else "",
             },
             "finish_reason": self.finish_reason,
             "usage": {
-                "prompt_tokens": self.usage.prompt_tokens,
-                "completion_tokens": self.usage.completion_tokens,
-                "total_tokens": self.usage.total_tokens
+                "prompt_tokens": self.usage.prompt_tokens if self.usage else 0,
+                "completion_tokens": self.usage.completion_tokens if self.usage else 0,
+                "total_tokens": self.usage.total_tokens if self.usage else 0
             },
             "cost": self.cost,
             "provider_info": self.provider_info,
             "status": self.status.value,
             "timestamp": self.timestamp.isoformat(),
-            "logprobs": {"token_logprobs": self.logprobs} if self.logprobs else None
+            "logprobs": self.logprobs
         }
+        
+        # Add message name if present
+        if self.message and self.message.name:
+            result["message"]["name"] = self.message.name
+            
+        return result
 
     def __str__(self) -> str:
         """Return just the message content for easy printing."""
-        return self.message.content
+        return self.message.content if self.message else ""
     
     def __repr__(self) -> str:
         """Return full object representation for debugging."""
         return f"ChatResponse(id='{self.id}', model='{self.model}', message={self.message!r}, usage={self.usage!r}, cost={self.cost}, provider_info={self.provider_info})"
-
 
 @dataclass
 class SearchResponse(BaseResponse):
@@ -118,7 +119,7 @@ class SearchResponse(BaseResponse):
     def from_dict(cls, response_data: Dict[str, Any], original_query: str) -> 'SearchResponse':
         """Create SearchResponse from RPC response data.
         
-        Expects schema.py format:
+        Expects schema.py format with camelCase fields:
         {
             "id": "uuid-string",
             "query": "search query", 
@@ -131,7 +132,7 @@ class SearchResponse(BaseResponse):
                     "embedding": [...]
                 }
             ],
-            "provider_info": {...},
+            "providerInfo": {...},  # camelCase from endpoint
             "cost": 0.1
         }
         """
@@ -153,7 +154,7 @@ class SearchResponse(BaseResponse):
             query=response_data.get('query', original_query),
             results=results,
             cost=response_data.get('cost'),
-            provider_info=response_data.get('provider_info')
+            provider_info=response_data.get('providerInfo')  # camelCase from endpoint
         )
     
     def to_dict(self) -> Dict[str, Any]:
@@ -172,7 +173,9 @@ class SearchResponse(BaseResponse):
                 for result in self.results
             ],
             "provider_info": self.provider_info,
-            "cost": self.cost
+            "cost": self.cost,
+            "status": self.status.value,
+            "timestamp": self.timestamp.isoformat()
         }
 
     def __str__(self) -> str:
@@ -187,33 +190,35 @@ class SearchResponse(BaseResponse):
         
         return "\n".join(parts)
 
-
 @dataclass
 class HealthResponse(BaseResponse):
     """Health check response data class."""
     project_name: str = ""
     services: Dict[str, Any] = field(default_factory=dict)
-    uptime: Optional[float] = None
-    version: Optional[str] = None
+    health_status: str = ""  # Separate from BaseResponse.status to avoid confusion
     
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'HealthResponse':
-        """Create HealthResponse from dictionary."""
-        # Determine status
-        status_str = data.get('status', 'unknown').lower()
-        if status_str in ['ok', 'healthy', 'up']:
-            status = ResponseStatus.SUCCESS
-        else:
-            status = ResponseStatus.ERROR
+        """Create HealthResponse from dictionary.
+        
+        Expects endpoint format with camelCase:
+        {
+            "status": "ok",
+            "projectName": "my-project",  # camelCase from endpoint
+            "services": {...}
+        }
+        """
+        # Determine ResponseStatus from health status
+        health_status = data.get('status', 'unknown')
+        response_status = ResponseStatus.SUCCESS if health_status.lower() in ['ok', 'healthy', 'up'] else ResponseStatus.ERROR
         
         return cls(
             id=str(uuid.uuid4()),
-            status=status,
-            project_name=data.get('project_name', 'unknown'),
+            status=response_status,
+            health_status=health_status,
+            project_name=data.get('projectName', 'unknown'),  # camelCase from endpoint
             services=data.get('services', {}),
-            uptime=data.get('uptime'),
-            version=data.get('version'),
-            provider_info=data
+            provider_info=data  # Store full response as provider info
         )
     
     def is_healthy(self) -> bool:
@@ -224,14 +229,12 @@ class HealthResponse(BaseResponse):
         """Convert to dictionary for serialization."""
         return {
             "id": self.id,
-            "status": "ok" if self.status == ResponseStatus.SUCCESS else "error",
+            "status": self.health_status,  # Use the actual health status from endpoint
             "project_name": self.project_name,
             "services": self.services,
-            "uptime": self.uptime,
-            "version": self.version,
+            "response_status": self.status.value,  # Include BaseResponse status separately
             "timestamp": self.timestamp.isoformat()
         }
-
 
 @dataclass
 class ErrorResponse(BaseResponse):
@@ -296,7 +299,6 @@ class AsyncResponse(BaseResponse):
             "timestamp": self.timestamp.isoformat()
         }
 
-
 # Factory functions for creating responses
 def create_successful_chat_response(model: str, content: str, **kwargs) -> ChatResponse:
     """Create a successful chat response."""
@@ -308,7 +310,6 @@ def create_successful_chat_response(model: str, content: str, **kwargs) -> ChatR
         **kwargs
     )
 
-
 def create_successful_search_response(query: str, results: List[DocumentResult], **kwargs) -> SearchResponse:
     """Create a successful search response."""
     return SearchResponse(
@@ -317,7 +318,6 @@ def create_successful_search_response(query: str, results: List[DocumentResult],
         results=results,
         **kwargs
     )
-
 
 def create_error_response(error_message: str, error_code: str = "ERROR", **kwargs) -> ErrorResponse:
     """Create an error response."""
@@ -328,17 +328,16 @@ def create_error_response(error_message: str, error_code: str = "ERROR", **kwarg
         **kwargs
     )
 
-
 def create_health_response(project_name: str, is_healthy: bool = True, **kwargs) -> HealthResponse:
     """Create a health check response."""
     return HealthResponse(
         id=str(uuid.uuid4()),
         status=ResponseStatus.SUCCESS if is_healthy else ResponseStatus.ERROR,
+        health_status="ok" if is_healthy else "error",
         project_name=project_name,
         services={"status": "ok" if is_healthy else "error"},
         **kwargs
     )
-
 
 # Response parsers for different formats
 class ResponseParser:

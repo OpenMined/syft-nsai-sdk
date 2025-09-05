@@ -10,34 +10,24 @@ import logging
 from typing import List, Optional, Dict, Any, Union
 from pathlib import Path
 from dotenv import load_dotenv
-from dataclasses import dataclass
 
 from .core import Service
 from .core import Pipeline
 from .core.decorators import require_account
 from .core.config import ConfigManager
-from .core.types import (
-    ServiceSpec, 
-    ServiceType,
-    HealthStatus, 
-    ChatMessage,
-    FilterDict,
-    DocumentResult,
-)
+from .core.types import ServiceSpec, ServiceType, HealthStatus, DocumentResult
 from .core.exceptions import (
     AuthenticationError, 
-    PaymentError, 
     SyftBoxNotFoundError, 
-    SyftBoxNotRunningError, 
-    ServiceNotSupportedError,
+    SyftBoxNotRunningError,
     ServiceNotFoundError,
     ValidationError,
     raise_service_not_found, 
     raise_service_not_supported
 )
-from .discovery.scanner import ServiceScanner, FastScanner
+from .discovery.scanner import FastScanner
 from .discovery.parser import MetadataParser
-from .discovery.filters import ServiceFilter, FilterCriteria, FilterBuilder
+from .discovery.filters import ServiceFilter, FilterCriteria
 from .clients.rpc_client import SyftBoxRPCClient
 from .clients.accounting_client import AccountingClient
 from .services.chat import ChatService
@@ -45,7 +35,6 @@ from .services.search import SearchService
 from .services.health import check_service_health, batch_health_check, HealthMonitor
 from .models.services_list import ServicesList
 from .models.service_info import ServiceInfo
-from .models.requests import ChatRequest, SearchRequest
 from .models.responses import ChatResponse, SearchResponse, DocumentResult
 from .utils.formatting import format_services_table, format_service_details
 
@@ -57,29 +46,28 @@ load_dotenv()
 class Client:
     """Main client for discovering and using SyftBox AI services."""
     
-    def __init__(self, 
-                syftbox_config_path: Optional[Path] = None,
-                cache_server_url: Optional[str] = None,
-                accounting_client: Optional[AccountingClient] = None,
-                auto_setup_accounting: bool = True,
-                auto_health_check_threshold: int = 10
-            ):
+    def __init__(
+            self, 
+            syftbox_config_path: Optional[Path] = None,
+            cache_server_url: Optional[str] = None,
+            accounting_client: Optional[AccountingClient] = None,
+            auto_setup_accounting: bool = True,
+            auto_health_check_threshold: int = 10
+        ):
         """Initialize SyftBox client.
         
         Args:
             syftbox_config_path: Custom path to SyftBox config file
-            user_email: Override user email for requests
             cache_server_url: Override cache server URL
             auto_setup_accounting: Whether to prompt for accounting setup when needed
             auto_health_check_threshold: Max services for auto health checking
         """
-        # Check SyftBox availability
-        # Create config manager with custom path if provided
+        # Check SyftBox availability and config manager with custom path if provided
         self.config_manager = ConfigManager(syftbox_config_path)
         
         # Check if installed first
-        # if not self.config_manager.is_syftbox_installed():
-        #     raise SyftBoxNotFoundError(self.config_manager.get_installation_instructions())
+        if not self.config_manager.is_syftbox_installed():
+            raise SyftBoxNotFoundError(self.config_manager.get_installation_instructions())
 
         # Then check if running  
         if not self.config_manager.is_syftbox_running():
@@ -90,9 +78,6 @@ class Client:
         
         # Initialize account state
         self._account_configured = False
-        
-        # Load configuration
-        # self.config = get_config(syftbox_config_path)
 
         # Set up accounting client - check for existing credentials
         if accounting_client:
@@ -128,7 +113,6 @@ class Client:
             self.accounting_client = client
         
         # Set up RPC client
-        # from_email = user_email
         server_url = cache_server_url or self.config.cache_server_url
         
         self.rpc_client = SyftBoxRPCClient(
@@ -231,15 +215,6 @@ class Client:
             # Check if we're in Jupyter to avoid asyncio.run() issues
             try:
                 filtered_services = asyncio.run(self._add_health_status(filtered_services))
-                # filtered_services = asyncio.run(self._add_health_status(filtered_services))
-                # import IPython
-                # ipython = IPython.get_ipython()
-                # if ipython is not None and hasattr(ipython, 'kernel'):
-                #     # We're in Jupyter, skip health check to avoid asyncio issues
-                #     logger.info("Skipping health check in Jupyter environment to avoid asyncio issues")
-                # else:
-                #     # Not in Jupyter, safe to use asyncio.run()
-                #     filtered_services = asyncio.run(self._add_health_status(filtered_services))
             except ImportError:
                 # IPython not available, safe to use asyncio.run()
                 filtered_services = asyncio.run(self._add_health_status(filtered_services))
@@ -247,67 +222,8 @@ class Client:
                 # Any other error, log and continue without health check
                 logger.warning(f"Health check failed: {e}. Continuing without health status.")
         
-        logger.info(f"Discovered {len(filtered_services)} services (health_check={should_health_check})")
+        logger.debug(f"Discovered {len(filtered_services)} services (health_check={should_health_check})")
         return ServicesList(filtered_services, self)
-    
-    def get_service1(self, service_name: str, datasite: Optional[str] = None) -> Optional[ServiceInfo]:
-        """Find a specific service by name.
-        
-        Args:
-            service_name: Name of the service to find
-            datasite: Optional datasite email to narrow search
-            
-        Returns:
-            ServiceInfo if found, None otherwise
-        """
-        services = self.list_services(name=service_name, datasite=datasite, health_check="never")
-        
-        # Find exact match
-        for service in services:
-            if service.name == service_name:
-                if datasite is None or service.datasite == datasite:
-                    return service
-        
-        return None
-    
-    def get_service2(self, service_name: str) -> Optional[ServiceInfo]:
-        """Find a specific service by name.
-        
-        Args:
-            service_name: Name of the service to find
-            
-        Returns:
-            ServiceInfo if found, None otherwise
-        """
-        if "/" in service_name:
-            datasite, name = service_name.split("/", 1)
-            # services = self.list_services(name=service_name, datasite=datasite, health_check="never")
-        
-        # Find exact match
-        # for service in services:
-        #     if service.name == service_name:
-        #         if datasite is None or service.datasite == datasite:
-        #             return service
-        
-        # Try direct lookup
-        service = self._lookup_service_direct(name, datasite)
-        if service:
-            return service
-        
-        # Handle not found with helpful errors
-        if datasite:
-            raise ServiceNotFoundError(f"Service '{service_name}' not found for datasite '{datasite}'")
-        else:
-            # Check for ambiguous names
-            similar_services = self._find_services_by_name(service_name)  # Minimal scan
-            if len(similar_services) > 1:
-                datasites = [s.datasite for s in similar_services]
-                raise ValidationError(
-                    f"Multiple services named '{service_name}' found. "
-                    f"Please specify datasite. Available datasites: {', '.join(datasites)}"
-                )
-            else:
-                raise ServiceNotFoundError(f"Service '{service_name}' not found!")
     
     def get_service(self, service_name: str) -> ServiceInfo:
         datasite, name = service_name.split("/", 1)
@@ -1070,59 +986,6 @@ class Client:
                 f"   Error: {e}\n"
                 f"   May need to reconfigure credentials"
             )
-        
-    # async def _ensure_payment_setup1(self, service: ServiceInfo) -> Optional[str]:
-    #     """Ensure payment is set up for a paid service.
-        
-    #     Args:
-    #         service: Service that requires payment
-            
-    #     Returns:
-    #         Transaction token if payment required, None if free
-    #     """
-    #     # Check if service requires payment
-    #     service_info = None
-    #     if service.supports_service(ServiceType.CHAT):
-    #         service_info = service.get_service_info(ServiceType.CHAT)
-    #     elif service.supports_service(ServiceType.SEARCH):
-    #         service_info = service.get_service_info(ServiceType.SEARCH)
-        
-    #     if not service_info or service_info.pricing == 0:
-    #         return None  # Free service
-        
-    #     # Service requires payment - ensure accounting is set up
-    #     if not self.is_accounting_configured():
-    #         if self.auto_setup_accounting:
-    #             print(f"\n💰 Payment Required")
-    #             print(f"Service '{service.name}' costs ${service_info.pricing} per request")
-    #             print(f"Datasite: {service.datasite}")
-    #             print(f"\nAccounting setup required for paid services.")
-                
-    #             try:
-    #                 response = input("Would you like to set up accounting now? (y/n): ").lower().strip()
-    #                 if response in ['y', 'yes']:
-    #                     # Interactive setup would go here
-    #                     print("Please use client.setup_accounting(email, password) to configure.")
-    #                     return None
-    #                 else:
-    #                     print("Payment setup skipped.")
-    #                     return None
-    #             except (EOFError, KeyboardInterrupt):
-    #                 print("\nPayment setup cancelled.")
-    #                 return None
-    #         else:
-    #             raise PaymentError(
-    #                 f"Service '{service.name}' requires payment (${service_info.pricing}) "
-    #                 "but accounting is not configured"
-    #             )
-        
-    #     # Create transaction token ???????????
-    #     try:
-    #         token = await self.accounting_client.create_transaction_token(service.datasite)
-    #         logger.info(f"Payment authorized: ${service_info.pricing} to {service.datasite}")
-    #         return token
-    #     except Exception as e:
-    #         raise PaymentError(f"Failed to create payment token: {e}")
             
     async def _ensure_payment_setup(self, service: ServiceInfo) -> Optional[str]:
         """Ensure payment is set up for a paid service.

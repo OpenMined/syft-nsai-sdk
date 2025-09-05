@@ -1,33 +1,20 @@
 """
 Chat service client for SyftBox services
 """
-import json
-import uuid
 import logging
-from typing import List, Optional, Dict, Any
+from typing import Dict, Any
 
-from ..models.service_info import ServiceInfo
-from ..core.types import (
-    ChatMessage,
-    ChatUsage, 
-    GenerationOptions,
-    PricingChargeType, 
-    ServiceType
-)
-from ..core.exceptions import (
-    ServiceNotSupportedError, 
-    RPCError, 
-    ValidationError, 
-    raise_service_not_supported
-)
+from ..core.exceptions import RPCError, ValidationError, raise_service_not_supported
+from ..core.types import ServiceType
 from ..clients.rpc_client import SyftBoxRPCClient
 from ..models.responses import ChatResponse
+from ..models.service_info import ServiceInfo
 from ..utils.estimator import CostEstimator
 
 logger = logging.getLogger(__name__)
 
 class ChatService:
-    """Service client for chat/conversation services."""
+    """Service client for chat services."""
     
     def __init__(self, service_info: ServiceInfo, rpc_client: SyftBoxRPCClient):
         """Initialize chat service.
@@ -46,26 +33,29 @@ class ChatService:
         if not service_info.supports_service(ServiceType.CHAT):
             raise_service_not_supported(service_info.name, "chat", service_info)
 
-    def _parse_rpc_response(self, response_data: Dict[str, Any]) -> ChatResponse:
+    def _parse_rpc_chat_response(self, response_data: Dict[str, Any]) -> ChatResponse:
         """Parse RPC response into ChatResponse object.
         
-        Handles the actual SyftBox response format:
+        Handles the actual SyftBox response format for chat:
         {
-        "request_id": "...",
-        "data": {
-            "message": {
-            "body": {
-                "cost": 0.3,
-                "message": {"content": "...", "role": "assistant"},
-                "usage": {"completionTokens": 113, ...},
-                "service": "claude-sonnet-3.5"
+            "data": {
+                "message": {
+                    "body": {
+                        "id": "uuid-string",
+                        "model": "claude-sonnet-3.5",
+                        "message": {"content": "...", "role": "assistant"},
+                        "finishReason": "stop",  # camelCase
+                        "usage": {"promptTokens": 113, "completionTokens": 45, "totalTokens": 158},
+                        "cost": 0.3,
+                        "providerInfo": {...},  # camelCase
+                        "logprobs": {...}
+                    }
+                }
             }
-            }
-        }
         }
         
         Args:
-            response_data: Raw response data from RPC call
+            response_data: Raw response data from RPC call matching schema.py format
             
         Returns:
             Parsed ChatResponse object
@@ -77,103 +67,12 @@ class ChatService:
                 message_data = response_data["data"]["message"]
                 
                 if "body" in message_data and isinstance(message_data["body"], dict):
-                    # This is the actual response content
+                    # Extract the body and convert to schema.py format
                     body = message_data["body"]
-                    
-                    # Extract message content
-                    if "message" in body and isinstance(body["message"], dict):
-                        msg_content = body["message"]
-                        message = ChatMessage(
-                            role=msg_content.get("role", "assistant"),
-                            content=msg_content.get("content", ""),
-                            name=msg_content.get("name")
-                        )
-                    else:
-                        # Fallback if message structure is different
-                        message = ChatMessage(
-                            role="assistant",
-                            content=str(body.get("content", body))
-                        )
-                    
-                    # Extract usage information
-                    usage_data = body.get("usage", {})
-                    usage = ChatUsage(
-                        prompt_tokens=usage_data.get("promptTokens", 0),
-                        completion_tokens=usage_data.get("completionTokens", 0),
-                        total_tokens=usage_data.get("totalTokens", 0)
-                    )
-                    
-                    return ChatResponse(
-                        id=body.get("id", str(uuid.uuid4())),
-                        model=body.get("model", self.service_info.name),
-                        message=message,
-                        usage=usage,
-                        cost=body.get("cost"),
-                        provider_info=body.get("providerInfo")
-                    )
+                    return ChatResponse.from_dict(body)
             
-            # Handle legacy/direct response formats (backwards compatibility)
-            if "message" in response_data:
-                # Direct format
-                message_data = response_data["message"]
-                message = ChatMessage(
-                    role=message_data.get("role", "assistant"),
-                    content=message_data.get("content", ""),
-                    name=message_data.get("name")
-                )
-                
-                usage_data = response_data.get("usage", {})
-                usage = ChatUsage(
-                    prompt_tokens=usage_data.get("promptTokens", 0),
-                    completion_tokens=usage_data.get("completionTokens", 0),
-                    total_tokens=usage_data.get("totalTokens", 0)
-                )
-                
-                return ChatResponse(
-                    id=response_data.get("id", str(uuid.uuid4())),
-                    model=response_data.get("model", self.service_info.name),
-                    message=message,
-                    usage=usage,
-                    cost=response_data.get("cost"),
-                    provider_info=response_data.get("providerInfo")
-                )
-            
-            elif "content" in response_data:
-                # Simple content format
-                message = ChatMessage(
-                    role="assistant",
-                    content=response_data["content"]
-                )
-                
-                usage = ChatUsage(prompt_tokens=0, completion_tokens=0, total_tokens=0)
-                
-                return ChatResponse(
-                    id=str(uuid.uuid4()),
-                    model=self.service_info.name,
-                    message=message,
-                    usage=usage,
-                    cost=response_data.get("cost"),
-                    provider_info=response_data.get("providerInfo")
-                )
-            
-            else:
-                # Last resort - treat whole response as string content
-                # But log this so we can debug new formats
-                logger.warning(f"Unexpected response format, using fallback parsing: {response_data}")
-                
-                message = ChatMessage(
-                    role="assistant",
-                    content=str(response_data)
-                )
-                
-                usage = ChatUsage(prompt_tokens=0, completion_tokens=0, total_tokens=0)
-                
-                return ChatResponse(
-                    id=str(uuid.uuid4()),
-                    model=self.service_info.name,
-                    message=message,
-                    usage=usage
-                )
+            # If not nested format, try direct parsing
+            return ChatResponse.from_dict(response_data)
                 
         except Exception as e:
             logger.error(f"Failed to parse chat response: {e}")
@@ -199,9 +98,6 @@ class ChatService:
         temperature = params.pop("temperature", None)
         max_tokens = params.pop("max_tokens", None)
         
-        # Build messages
-        # messages = [{"role": "user", "content": messages}]
-        
         # Build RPC payload with all parameters
         account_email = self.rpc_client.accounting_client.get_email()
         payload = {
@@ -226,18 +122,7 @@ class ChatService:
 
         # Make RPC call
         response_data = await self.rpc_client.call_chat(self.service_info, payload)
-        return self._parse_rpc_response(response_data)
-    
-    def estimate_cost1(self, message_count: int = 1) -> float:
-        """Estimate cost for a chat request."""
-        chat_service_info = self.service_info.get_service_info(ServiceType.CHAT)
-        if not chat_service_info:
-            return 0.0
-        
-        if chat_service_info.charge_type == PricingChargeType.PER_REQUEST:
-            return chat_service_info.pricing * message_count
-        else:
-            return chat_service_info.pricing
+        return self._parse_rpc_chat_response(response_data)
         
     def estimate_cost(self, message_count: int = 1) -> float:
         return CostEstimator.estimate_chat_cost(self.service_info, message_count)

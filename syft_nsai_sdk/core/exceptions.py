@@ -139,7 +139,12 @@ class PaymentError(SyftBoxSDKError):
             details["balance"] = balance
         super().__init__(message, "PAYMENT_ERROR", details)
 
-
+class TransactionTokenCreationError(SyftBoxSDKError):
+    """Exception raised when transaction token creation fails."""
+    def __init__(self, message: str, recipient_email: Optional[str] = None):
+        details = {"recipient_email": recipient_email} if recipient_email else {}
+        super().__init__(message, "TRANSACTION_TOKEN_CREATION_ERROR", details)
+        
 class ValidationError(SyftBoxSDKError):
     """Input validation errors."""
     

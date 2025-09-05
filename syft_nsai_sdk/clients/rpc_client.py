@@ -5,15 +5,15 @@ import asyncio
 import json
 import httpx
 import logging
+
 from typing import Dict, Any, Optional, Union
 from urllib.parse import quote, urljoin
 
-from ..core.exceptions import NetworkError, RPCError, PollingTimeoutError, PollingError
+from ..core.exceptions import NetworkError, RPCError, PollingTimeoutError, PollingError, TransactionTokenCreationError
 from ..models.service_info import ServiceInfo
-from ..core.exceptions import PaymentError, AuthenticationError
 from ..utils.spinner import AsyncSpinner
 from .accounting_client import AccountingClient
-from .endpoint_client import SyftURLBuilder, ServiceEndpoints
+from .endpoint_client import ServiceEndpoints
 from .request_client import SyftBoxAPIClient, HTTPClient, RequestArgs
 
 logger = logging.getLogger(__name__)
@@ -123,7 +123,7 @@ class SyftBoxRPCClient(SyftBoxAPIClient):
                     request_headers["Content-Type"] = "application/json"
                         
                 except Exception as e:
-                    logger.warning(f"Failed to create accounting token: {e}")
+                    raise TransactionTokenCreationError(f"Failed to create accounting token: {e}", recipient_email=recipient_email)
 
             # Make the unified request
             response = await self.http_client.request(
@@ -398,48 +398,48 @@ class SyftBoxRPCClient(SyftBoxAPIClient):
             method=method
         )
     
-    def configure_accounting(self, service_url: str, email: str, password: str):
-        """Configure accounting client.
+    # def configure_accounting(self, service_url: str, email: str, password: str):
+    #     """Configure accounting client.
         
-        Args:
-            service_url: Accounting service URL
-            email: User email
-            password: User password
-        """
-        self.accounting_client.configure(service_url, email, password)
+    #     Args:
+    #         service_url: Accounting service URL
+    #         email: User email
+    #         password: User password
+    #     """
+    #     self.accounting_client.configure(service_url, email, password)
     
-    def has_accounting_client(self) -> bool:
-        """Check if accounting client is configured."""
-        return self.accounting_client.is_configured()
+    # def has_accounting_client(self) -> bool:
+    #     """Check if accounting client is configured."""
+    #     return self.accounting_client.is_configured()
     
-    def get_accounting_email(self) -> Optional[str]:
-        """Get accounting email."""
-        return self.accounting_client.get_email()
+    # def get_accounting_email(self) -> Optional[str]:
+    #     """Get accounting email."""
+    #     return self.accounting_client.get_email()
     
-    async def get_account_balance(self) -> float:
-        """Get current account balance.
+    # async def get_account_balance(self) -> float:
+    #     """Get current account balance.
         
-        Returns:
-            Account balance
-        """
-        return await self.accounting_client.get_account_balance()
+    #     Returns:
+    #         Account balance
+    #     """
+    #     return await self.accounting_client.get_account_balance()
     
-    def configure(self, **kwargs):
-        """Update client configuration.
+    # def configure(self, **kwargs):
+    #     """Update client configuration.
         
-        Args:
-            **kwargs: Configuration options to update
-        """
-        if "cache_server_url" in kwargs:
-            self.base_url = kwargs["cache_server_url"].rstrip('/')
-        if "from_email" in kwargs:
-            self.from_email = kwargs["from_email"]
-        if "timeout" in kwargs:
-            self.timeout = kwargs["timeout"]
-            # Update the HTTP client timeout as well
-            if hasattr(self.http_client, 'timeout'):
-                self.http_client.timeout = kwargs["timeout"]
-        if "max_poll_attempts" in kwargs:
-            self.max_poll_attempts = kwargs["max_poll_attempts"]
-        if "poll_interval" in kwargs:
-            self.poll_interval = kwargs["poll_interval"]
+    #     Args:
+    #         **kwargs: Configuration options to update
+    #     """
+    #     if "cache_server_url" in kwargs:
+    #         self.base_url = kwargs["cache_server_url"].rstrip('/')
+    #     if "from_email" in kwargs:
+    #         self.from_email = kwargs["from_email"]
+    #     if "timeout" in kwargs:
+    #         self.timeout = kwargs["timeout"]
+    #         # Update the HTTP client timeout as well
+    #         if hasattr(self.http_client, 'timeout'):
+    #             self.http_client.timeout = kwargs["timeout"]
+    #     if "max_poll_attempts" in kwargs:
+    #         self.max_poll_attempts = kwargs["max_poll_attempts"]
+    #     if "poll_interval" in kwargs:
+    #         self.poll_interval = kwargs["poll_interval"]
