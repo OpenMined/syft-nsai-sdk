@@ -9,7 +9,7 @@ from typing import List, Dict, Optional
 
 from ..core.config import SyftBoxConfig
 # from ..core.exceptions import ConfigurationError
-from ..utils.filesystem import SyftURLBuilder
+from .filesystem import SyftURLBuilder
 
 logger = logging.getLogger(__name__)
 

@@ -6,7 +6,7 @@ from typing import Dict, Any, Optional
 import logging
 
 from ..utils.validator import EmailValidator, URLValidator, ValidationError
-from ..utils.filesystem import SyftURLBuilder
+from ..discovery.filesystem import SyftURLBuilder
 from ..utils.constants import (
     SEND_MESSAGE_ENDPOINT, 
     HEALTH_ENDPOINT, 

@@ -225,6 +225,8 @@ class Client:
         return ServicesList(filtered_services, self)
     
     def get_service(self, service_name: str) -> ServiceInfo:
+        if not service_name:
+            raise ValidationError("Valid service name (datasite/service_name) must be provided")
         datasite, name = service_name.split("/", 1)
         metadata_path = self.scanner.get_service_path(datasite, name)
         
@@ -232,6 +234,22 @@ class Client:
             raise ServiceNotFoundError(f"'{service_name}'")
         
         return self.parser.parse_service_from_files(metadata_path)
+    
+    def load_service(self, service_name: str) -> Service:
+        """Load a service by name and return Service object for interaction.
+        
+        Args:
+            service_name: Full service name in format 'datasite/service_name'
+            
+        Returns:
+            Service object for object-oriented interaction
+            
+        Example:
+            service = client.load_service("alice@example.com/gpt-assistant")
+            response = service.chat(messages=[{"role": "user", "content": "Hello"}])
+        """
+        service_info = self.get_service(service_name)
+        return Service(service_info, self)
 
     # Service Usage Methods 
     # @require_account
@@ -724,256 +742,6 @@ class Client:
             await self._health_monitor.stop_monitoring()
             self._health_monitor = None
     
-    # Accounting Integration Methods
-    def register_accounting(self, email: str, password: str, organization: Optional[str] = None):
-        """
-        Register a new accounting user.
-        """
-        try:
-            asyncio.run(self.accounting_client.create_accounting_user(email, password, organization))
-            self.accounting_client.save_credentials()
-
-            self.connect_accounting(email, password, self.accounting_client.accounting_url)
-            logger.info("Accounting setup completed and connected successful")
-
-        except Exception as e:
-            raise AuthenticationError(f"Accounting setup failed: {e}")
-
-    def connect_accounting(self, email: str, password: str, accounting_url: Optional[str] = None, save_config: bool = False):
-        """Setup accounting credentials.
-        
-        Args:
-            email: Accounting service email
-            password: Accounting service password  
-            accounting_url: Accounting service URL (uses env var if not provided)
-            save_config: Whether to save config to file (requires explicit user consent)
-        """
-        # Get service URL from environment if not provided
-        if accounting_url is None:
-            accounting_url = os.getenv('SYFTBOX_ACCOUNTING_URL')
-        
-        if not accounting_url:
-            raise ValueError(
-                "Accounting service URL is required. Please either:\n"
-                "1. Set SYFTBOX_ACCOUNTING_URL in your .env file, or\n"
-                "2. Pass accounting_url parameter to this method"
-            )
-        
-        try:
-            # Configure the accounting client
-            self.accounting_client.configure(accounting_url, email, password)
-            
-            # Test the connection
-            # await self.accounting_client.get_account_info()
-            
-            # Save config if explicitly requested
-            if save_config:
-                self.accounting_client.save_credentials()
-
-            logger.info(f"Accounting setup successful for {self.accounting_client.get_email()}")
-
-        except Exception as e:
-            raise AuthenticationError(f"Accounting setup failed: {e}")
-        
-    async def register_accounting_async(self, email: str, password: str, organization: Optional[str] = None):
-        """
-        Register a new accounting user.
-        """
-        try:
-            await self.accounting_client.create_accounting_user(email, password, organization)
-            self.accounting_client.save_credentials()
-
-            await self.connect_accounting_async(email, password, self.accounting_client.accounting_url)
-            logger.info("Accounting setup completed and connected successful")
-
-        except Exception as e:
-            raise AuthenticationError(f"Accounting setup failed: {e}")
-
-    async def connect_accounting_async(self, email: str, password: str, accounting_url: Optional[str] = None, save_config: bool = False):
-        """Setup accounting credentials.
-        
-        Args:
-            email: Accounting service email
-            password: Accounting service password  
-            accounting_url: Accounting service URL (uses env var if not provided)
-            save_config: Whether to save config to file (requires explicit user consent)
-        """
-        # Get service URL from environment if not provided
-        if accounting_url is None:
-            accounting_url = os.getenv('SYFTBOX_ACCOUNTING_URL')
-        
-        if not accounting_url:
-            raise ValueError(
-                "Accounting service URL is required. Please either:\n"
-                "1. Set SYFTBOX_ACCOUNTING_URL in your .env file, or\n"
-                "2. Pass accounting_url parameter to this method"
-            )
-        
-        try:
-            # Configure the accounting client
-            self.accounting_client.configure(accounting_url, email, password)
-            
-            # Test the connection
-            # await self.accounting_client.get_account_info()
-            
-            # Save config if explicitly requested
-            if save_config:
-                self.accounting_client.save_credentials()
-
-            logger.info(f"Accounting setup successful for {self.accounting_client.get_email()}")
-
-        except Exception as e:
-            raise AuthenticationError(f"Accounting setup failed: {e}")
-        
-    def is_accounting_configured(self) -> bool:
-        """Check if accounting is properly configured."""
-        return self.accounting_client.is_configured()
-    
-    def get_account_info(self) -> Dict[str, Any]:
-        """Get account information and balance."""
-        if not self.is_accounting_configured():
-            return {"error": "Accounting not configured"}
-        
-        try:
-            return asyncio.run(self.accounting_client.get_account_info())
-        except Exception as e:
-            logger.error(f"Failed to get account info: {e}")
-            return {"error": str(e)}
-    
-    def show_accounting_status(self) -> str:
-        """Show current accounting configuration status."""
-        if not self.is_accounting_configured():
-            return (
-                "Accounting not configured\n"
-                "   Use client.setup_accounting() to configure payment services\n"
-                "   Currently limited to free services only"
-            )
-        
-        try:
-            account_info = asyncio.run(self.get_account_info())
-            
-            if "error" in account_info:
-                return (
-                    f"Accounting configured but connection failed\n"
-                    f"   Error: {account_info['error']}\n"
-                    f"   May need to reconfigure credentials"
-                )
-            
-            return (
-                f"Accounting configured\n"
-                f"   Email: {account_info['email']}\n" 
-                f"   Balance: ${account_info['balance']}\n"
-                f"   Can use both free and paid services"
-            )
-        except Exception as e:
-            return (
-                f"Accounting configured but connection failed\n"
-                f"   Error: {e}\n"
-                f"   May need to reconfigure credentials"
-            )
-        
-    async def get_account_info_async(self) -> Dict[str, Any]:
-        """Get account information and balance."""
-        if not self.is_accounting_configured():
-            return {"error": "Accounting not configured"}
-        
-        try:
-            return await self.accounting_client.get_account_info()
-        except Exception as e:
-            logger.error(f"Failed to get account info: {e}")
-            return {"error": str(e)}
-
-    async def show_accounting_status_async(self) -> str:
-        """Show current accounting configuration status."""
-        if not self.is_accounting_configured():
-            return (
-                "Accounting not configured\n"
-                "   Use client.setup_accounting() to configure payment services\n"
-                "   Currently limited to free services only"
-            )
-        
-        try:
-            account_info = await self.get_account_info_async()
-
-            if "error" in account_info:
-                return (
-                    f"Accounting configured but connection failed\n"
-                    f"   Error: {account_info['error']}\n"
-                    f"   May need to reconfigure credentials"
-                )
-            
-            return (
-                f"Accounting configured\n"
-                f"   Email: {account_info['email']}\n" 
-                f"   Balance: ${account_info['balance']}\n"
-                f"   Can use both free and paid services"
-            )
-        except Exception as e:
-            return (
-                f"Accounting configured but connection failed\n"
-                f"   Error: {e}\n"
-                f"   May need to reconfigure credentials"
-            )
-            
-    async def _ensure_payment_setup(self, service: ServiceInfo) -> Optional[str]:
-        """Ensure payment is set up for a paid service.
-        
-        Args:
-            service: Service that requires payment
-            
-        Returns:
-            Transaction token if payment required, None if free
-        """
-        # Check if service requires payment
-        service_info = None
-        if service.supports_service(ServiceType.CHAT):
-            service_info = service.get_service_info(ServiceType.CHAT)
-        elif service.supports_service(ServiceType.SEARCH):
-            service_info = service.get_service_info(ServiceType.SEARCH)
-        
-        # Early return for free services - skip all accounting logic entirely
-        if not service_info or service_info.pricing == 0:
-            return None  # Free service
-        
-        # Service requires payment - ensure accounting is set up
-        if not self.is_accounting_configured():
-            if self.auto_setup_accounting:
-                print(f"\nPayment Required")
-                print(f"Service '{service.name}' costs ${service_info.pricing} per request")
-                print(f"Datasite: {service.datasite}")
-                print(f"\nAccounting setup required for paid services.")
-                
-                try:
-                    response = input("Would you like to set up accounting now? (y/n): ").lower().strip()
-                    if response in ['y', 'yes']:
-                        # Interactive setup would go here
-                        print("Please use below to configure:\n")
-                        print("     await client.register_accounting_async(email, password) to configure.\n")
-                        print("Or:\n")
-                        print("     client.register_accounting(email, password) to configure.")
-                        return None
-                    else:
-                        print("Payment setup skipped.")
-                        return None
-                except (EOFError, KeyboardInterrupt):
-                    print("\nPayment setup cancelled.")
-                    return None
-            else:
-                from .core.exceptions import PaymentError
-                raise PaymentError(
-                    f"Service '{service.name}' requires payment (${service_info.pricing}) "
-                    "but accounting is not configured"
-                )
-        
-        # Create transaction token????????
-        try:
-            token = await self.accounting_client.create_transaction_token(service.datasite)
-            logger.info(f"Payment authorized: ${service_info.pricing} to {service.datasite}")
-            return token
-        except Exception as e:
-            from .core.exceptions import PaymentError
-            raise PaymentError(f"Failed to create payment token: {e}")
-
     # Updated Service Usage Methods
     def clear_cache(self):
         """Clear the service discovery cache."""
@@ -1059,83 +827,7 @@ class Client:
         
         return "\n".join(lines)
 
-    # Service loader
-    def load(self, service_name: str) -> Service:
-        """Load a service by name and return Service object.
-        
-        Args:
-            service_name: Full service name in format 'datasite/service_name'
-            
-        Returns:
-            Service object for object-oriented interaction
-            
-        Example:
-            service = client.load("alice@example.com/gpt-assistant")
-            response = service.chat(messages=[{"role": "user", "content": "Hello"}])
-        """
-        service_info = self.get_service(service_name)
-        return Service(service_info, self)
-
     # Private methods to support RAG coordination
-    def _normalize_service_specs(self, services: Union[str, Service, List[Union[str, Service, Dict[str, Any]]]]) -> List[ServiceSpec]:
-        """Normalize various service specification formats including Service objects.
-        
-        Handles:
-        - Strings: "alice@example.com/docs"
-        - Service objects: service_obj
-        - Dicts with strings: {"name": "alice@example.com/docs", "topK": 5}
-        - Dicts with Service objects: {"name": service_obj, "topK": 5}
-        
-        Args:
-            services: Services in various formats
-            
-        Returns:
-            List of ServiceSpec objects
-        """
-        if isinstance(services, str):
-            # Single string service name
-            return [ServiceSpec(name=services, params={})]
-        
-        elif hasattr(services, 'full_name'):  # Service object
-            # Single Service object
-            return [ServiceSpec(name=services.full_name, params={})]
-        
-        elif isinstance(services, list):
-            normalized = []
-            for service in services:
-                if isinstance(service, str):
-                    # String service name
-                    normalized.append(ServiceSpec(name=service, params={}))
-                    
-                elif hasattr(service, 'full_name'):  # Service object
-                    # Service object
-                    normalized.append(ServiceSpec(name=service.full_name, params={}))
-                    
-                elif isinstance(service, dict):
-                    # Dictionary format - could contain string or Service object
-                    if "name" not in service:
-                        raise ValidationError(f"Service spec missing 'name' key: {service}")
-                    
-                    name_value = service["name"]
-                    params = {k: v for k, v in service.items() if k != "name"}
-                    
-                    if isinstance(name_value, str):
-                        # Dict with string name
-                        normalized.append(ServiceSpec(name=name_value, params=params))
-                    elif hasattr(name_value, 'full_name'):  # Service object
-                        # Dict with Service object
-                        normalized.append(ServiceSpec(name=name_value.full_name, params=params))
-                    else:
-                        raise ValidationError(f"Service 'name' must be string or Service object, got {type(name_value)}")
-                        
-                else:
-                    raise ValidationError(f"Invalid service specification: {service} (type: {type(service)})")
-            
-            return normalized
-        
-        else:
-            raise ValidationError(f"Invalid services format: {type(services)}")
-
     def _format_search_context(self, results: List[DocumentResult], format_type: str = "frontend") -> str:
         """Format search results as context for chat injection.
         
@@ -1225,97 +917,161 @@ class Client:
             context_format=context_format or "simple"
         )
     
-    def pipeline_mixed(self, data_sources=None, synthesizer=None, context_format=None):
-        """Create and configure a pipeline with mixed input types (COMPLEX VERSION).
-        
-        Handles multiple input formats:
-        - Strings: "alice@example.com/docs"
-        - Service objects: service_obj
-        - Dicts with strings: {"name": "alice@example.com/docs", "topK": 5}
-        - Dicts with Service objects: {"name": service_obj, "topK": 10}
-        
-        Args:
-            data_sources: Mixed list of strings, Service objects, or dicts
-            synthesizer: String, Service object, or dict
-            context_format: Format for search context ("simple" or "frontend")
-            
-        Returns:
-            Configured Pipeline ready for execution
-            
-        Example:
-            docs = client.load("alice@example.com/docs")
-            result = client.pipeline_mixed(
-                data_sources=[
-                    "alice@example.com/docs",              # String
-                    docs,                                  # Service object  
-                    {"name": "bob@example.com/wiki"},      # Dict with string
-                    {"name": docs, "topK": 10}             # Dict with Service object
-                ],
-                synthesizer=docs  # Service object
-            ).run(messages=[{"role": "user", "content": "What is Python?"}])
+    # Accounting Integration Methods
+    def register_accounting(self, email: str, password: str, organization: Optional[str] = None):
         """
-        normalized_sources = []
-        if data_sources:
-            specs = self._normalize_service_specs(data_sources)
-            # Convert ServiceSpec objects to dict format for Pipeline
-            normalized_sources = []
-            for spec in specs:
-                source_dict = {"name": spec.name}
-                source_dict.update(spec.params)
-                normalized_sources.append(source_dict)
-        
-        normalized_synthesizer = None
-        if synthesizer:
-            specs = self._normalize_service_specs([synthesizer])
-            spec = specs[0]
-            normalized_synthesizer = {"name": spec.name, **spec.params}
-        
-        return Pipeline(
-            client=self,
-            data_sources=normalized_sources,
-            synthesizer=normalized_synthesizer,
-            context_format=context_format or "simple"
-        )
-    
-    def pipeline_from_services(self, data_sources: List[Service], synthesizer: Service, context_format: str = "simple"):
-        """Create pipeline from Service objects (object-oriented approach).
-        
-        Creates a basic pipeline using Service objects without additional parameters.
-        For complex parameter configuration, use create_pipeline() with add_source() method.
+        Register a new accounting user.
+        """
+        try:
+            asyncio.run(self.accounting_client.create_accounting_user(email, password, organization))
+            self.accounting_client.save_credentials()
+
+            self.connect_accounting(email, password, self.accounting_client.accounting_url)
+            logger.info("Accounting setup completed and connected successful")
+
+        except Exception as e:
+            raise AuthenticationError(f"Accounting setup failed: {e}")
+
+    def connect_accounting(self, email: str, password: str, accounting_url: Optional[str] = None, save_config: bool = False):
+        """Setup accounting credentials.
         
         Args:
-            data_sources: List of Service objects to use as data sources
-            synthesizer: Service object to use for synthesis
-            context_format: Format for search context ("simple" or "frontend")
-            
-        Returns:
-            Configured Pipeline ready for execution
-            
-        Example:
-            # Basic usage
-            docs = client.load("alice@example.com/docs")
-            wiki = client.load("bob@example.com/wiki")
-            gpt = client.load("ai@openai.com/gpt-4")
-            
-            pipeline = client.pipeline_from_services(
-                data_sources=[docs, wiki],
-                synthesizer=gpt
+            email: Accounting service email
+            password: Accounting service password  
+            accounting_url: Accounting service URL (uses env var if not provided)
+            save_config: Whether to save config to file (requires explicit user consent)
+        """
+        # Get service URL from environment if not provided
+        if accounting_url is None:
+            accounting_url = os.getenv('SYFTBOX_ACCOUNTING_URL')
+        
+        if not accounting_url:
+            raise ValueError(
+                "Accounting service URL is required. Please either:\n"
+                "1. Set SYFTBOX_ACCOUNTING_URL in your .env file, or\n"
+                "2. Pass accounting_url parameter to this method"
             )
-            result = pipeline.run(messages=[{"role": "user", "content": "What is Python?"}])
-            
-            # For parameters, use the method-based approach:
-            pipeline = client.create_pipeline()
-            pipeline.add_source(docs, topK=5)
-            pipeline.add_source(wiki, topK=8)
-            pipeline.set_synthesizer(gpt, temperature=0.7)
-        """
-        # Convert Service objects to the format Pipeline expects
-        data_source_specs = [{"name": service.full_name} for service in data_sources]
-        synthesizer_spec = {"name": synthesizer.full_name}
         
-        return Pipeline(
-            client=self, 
-            data_sources=data_source_specs, 
-            synthesizer=synthesizer_spec, 
-            context_format=context_format
-        )
+        try:
+            # Configure the accounting client
+            self.accounting_client.configure(accounting_url, email, password)
+            
+            # Test the connection
+            # await self.accounting_client.get_account_info()
+            
+            # Save config if explicitly requested
+            if save_config:
+                self.accounting_client.save_credentials()
+
+            logger.info(f"Accounting setup successful for {self.accounting_client.get_email()}")
+
+        except Exception as e:
+            raise AuthenticationError(f"Accounting setup failed: {e}")
+        
+    def is_accounting_configured(self) -> bool:
+        """Check if accounting is properly configured."""
+        return self.accounting_client.is_configured()
+    
+    async def get_account_info(self) -> Dict[str, Any]:
+        """Get account information and balance."""
+        if not self.is_accounting_configured():
+            return {"error": "Accounting not configured"}
+        
+        try:
+            return await self.accounting_client.get_account_info()
+        except Exception as e:
+            logger.error(f"Failed to get account info: {e}")
+            return {"error": str(e)}
+
+    async def show_accounting_status(self) -> str:
+        """Show current accounting configuration status."""
+        if not self.is_accounting_configured():
+            return (
+                "Accounting not configured\n"
+                "   Use client.setup_accounting() to configure payment services\n"
+                "   Currently limited to free services only"
+            )
+        
+        try:
+            account_info = await self.get_account_info_async()
+
+            if "error" in account_info:
+                return (
+                    f"Accounting configured but connection failed\n"
+                    f"   Error: {account_info['error']}\n"
+                    f"   May need to reconfigure credentials"
+                )
+            
+            return (
+                f"Accounting configured\n"
+                f"   Email: {account_info['email']}\n" 
+                f"   Balance: ${account_info['balance']}\n"
+                f"   Can use both free and paid services"
+            )
+        except Exception as e:
+            return (
+                f"Accounting configured but connection failed\n"
+                f"   Error: {e}\n"
+                f"   May need to reconfigure credentials"
+            )
+        
+    # Payment Handling - called internally before paid service use
+    async def _ensure_payment_setup(self, service: ServiceInfo) -> Optional[str]:
+        """Ensure payment is set up for a paid service.
+        
+        Args:
+            service: Service that requires payment
+            
+        Returns:
+            Transaction token if payment required, None if free
+        """
+        # Check if service requires payment
+        service_info = None
+        if service.supports_service(ServiceType.CHAT):
+            service_info = service.get_service_info(ServiceType.CHAT)
+        elif service.supports_service(ServiceType.SEARCH):
+            service_info = service.get_service_info(ServiceType.SEARCH)
+        
+        # Early return for free services - skip all accounting logic entirely
+        if not service_info or service_info.pricing == 0:
+            return None  # Free service
+        
+        # Service requires payment - ensure accounting is set up
+        if not self.is_accounting_configured():
+            if self.auto_setup_accounting:
+                print(f"\nPayment Required")
+                print(f"Service '{service.name}' costs ${service_info.pricing} per request")
+                print(f"Datasite: {service.datasite}")
+                print(f"\nAccounting setup required for paid services.")
+                
+                try:
+                    response = input("Would you like to set up accounting now? (y/n): ").lower().strip()
+                    if response in ['y', 'yes']:
+                        # Interactive setup would go here
+                        print("Please use below to configure:\n")
+                        print("     await client.register_accounting_async(email, password) to configure.\n")
+                        print("Or:\n")
+                        print("     client.register_accounting(email, password) to configure.")
+                        return None
+                    else:
+                        print("Payment setup skipped.")
+                        return None
+                except (EOFError, KeyboardInterrupt):
+                    print("\nPayment setup cancelled.")
+                    return None
+            else:
+                from .core.exceptions import PaymentError
+                raise PaymentError(
+                    f"Service '{service.name}' requires payment (${service_info.pricing}) "
+                    "but accounting is not configured"
+                )
+        
+        # Create transaction token????????
+        try:
+            token = await self.accounting_client.create_transaction_token(service.datasite)
+            logger.info(f"Payment authorized: ${service_info.pricing} to {service.datasite}")
+            return token
+        except Exception as e:
+            from .core.exceptions import PaymentError
+            raise PaymentError(f"Failed to create payment token: {e}")
+        

@@ -4,11 +4,9 @@ Supports both inline and object-oriented RAG/FedRAG workflows
 """
 import asyncio
 import logging
-from typing import List, Dict, Any, Optional, Union, TYPE_CHECKING
-from dataclasses import dataclass
+from typing import List, Dict, Optional, Union, TYPE_CHECKING
 
-from ..utils.estimator import CostEstimator
-from .types import ServiceType, ServiceSpec, ChatMessage, DocumentResult
+from .types import ServiceType, ServiceSpec
 from .exceptions import ValidationError, ServiceNotFoundError, ServiceNotSupportedError
 from ..services.chat import ChatService
 from ..services.search import SearchService
@@ -17,6 +15,7 @@ from ..utils.estimator import CostEstimator
 
 if TYPE_CHECKING:
     from ..main import Client
+    from .service import Service 
 
 logger = logging.getLogger(__name__)
 
@@ -24,36 +23,61 @@ class Pipeline:
     """Pipeline for structured RAG/FedRAG workflows"""
     
     def __init__(
-                self, 
-                client: 'Client', 
-                data_sources: Optional[List[Union[str, Dict]]] = None, 
-                synthesizer: Optional[Union[str, Dict]] = None, 
-                context_format: str = "simple"
-            ):
+            self, 
+            client: 'Client', 
+            data_sources: Optional[List[Union[str, Dict, 'Service']]] = None,
+            synthesizer: Optional[Union[str, Dict, 'Service']] = None,
+            context_format: str = "simple"
+        ):
+        """Initialize the pipeline with data sources and synthesizer."""
         self.client = client
         self.data_sources: List[ServiceSpec] = []
         self.synthesizer: Optional[ServiceSpec] = None
         self.context_format = context_format
-        
+            
         # Handle inline initialization
         if data_sources:
             for source in data_sources:
                 if isinstance(source, str):
                     self.data_sources.append(ServiceSpec(name=source, params={}))
+                elif hasattr(source, 'full_name'):  # Service object
+                    self.data_sources.append(ServiceSpec(name=source.full_name, params={}))
                 elif isinstance(source, dict):
                     name = source.pop('name')
                     self.data_sources.append(ServiceSpec(name=name, params=source))
                 else:
                     raise ValidationError(f"Invalid data source format: {source}")
-        
+
         if synthesizer:
             if isinstance(synthesizer, str):
                 self.synthesizer = ServiceSpec(name=synthesizer, params={})
+            elif hasattr(synthesizer, 'full_name'):  # Service object
+                self.synthesizer = ServiceSpec(name=synthesizer.full_name, params={})
             elif isinstance(synthesizer, dict):
                 name = synthesizer.pop('name')
                 self.synthesizer = ServiceSpec(name=name, params=synthesizer)
             else:
                 raise ValidationError(f"Invalid synthesizer format: {synthesizer}")
+            
+        # Handle inline initialization
+        # if data_sources:
+        #     for source in data_sources:
+        #         if isinstance(source, str):
+        #             self.data_sources.append(ServiceSpec(name=source, params={}))
+        #         elif isinstance(source, dict):
+        #             name = source.pop('name')
+        #             self.data_sources.append(ServiceSpec(name=name, params=source))
+        #         else:
+        #             raise ValidationError(f"Invalid data source format: {source}")
+        
+        # if synthesizer:
+        #     if isinstance(synthesizer, str):
+        #         self.synthesizer = ServiceSpec(name=synthesizer, params={})
+        #     elif isinstance(synthesizer, dict):
+        #         name = synthesizer.pop('name')
+        #         self.synthesizer = ServiceSpec(name=name, params=synthesizer)
+        #     else:
+        #         raise ValidationError(f"Invalid synthesizer format: {synthesizer}")
     
     def add_source(self, service_name: str, **params) -> 'Pipeline':
         """Add a data source service with parameters"""
@@ -189,37 +213,6 @@ class Pipeline:
             search_results=unique_results,
             cost=total_cost
         )
-    
-    def _normalize_service_specs(self, services: Union[str, List[str], List[Dict[str, str]]]) -> List[Dict[str, str]]:
-        """Normalize various service specification formats to list of dicts.
-        
-        Args:
-            services: Services in various formats
-            
-        Returns:
-            List of service specs with 'name' and optional 'datasite' keys
-        """
-        if isinstance(services, str):
-            # Single service name
-            return [{"name": services}]
-        
-        elif isinstance(services, list):
-            normalized = []
-            for service in services:
-                if isinstance(service, str):
-                    # List of service names
-                    normalized.append({"name": service})
-                elif isinstance(service, dict):
-                    # List of service specs
-                    if "name" not in service:
-                        raise ValidationError(f"Service spec missing 'name' key: {service}")
-                    normalized.append(service)
-                else:
-                    raise ValidationError(f"Invalid service specification: {service}")
-            return normalized
-        
-        else:
-            raise ValidationError(f"Invalid services format: {type(services)}")
     
     async def _execute_search(self, source_spec: ServiceSpec, query: str):
         """Execute search on a single data source"""

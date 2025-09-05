@@ -8,7 +8,7 @@ from dataclasses import dataclass
 
 from .exceptions import SyftBoxNotFoundError, ConfigurationError
 from ..core.settings import settings
-from ..utils.filesystem import SyftBoxFilesystem
+from ..discovery.filesystem import SyftBoxFilesystem
 from ..utils.constants import (
     SYFTBOX_DIR, 
     CONFIG_FILENAME, 

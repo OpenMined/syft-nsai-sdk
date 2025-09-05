@@ -155,7 +155,7 @@ def get_services_widget_html(
     }}
 
     /* Improved column widths - balanced to fill full width */
-    #{container_id} th:nth-child(1) {{ width: 15%; }} /* Service Name */
+    #{container_id} th:nth-child(1) {{ width: 15%; }} /* Name */
     #{container_id} th:nth-child(2) {{ width: 12%; }} /* Datasite */
     #{container_id} th:nth-child(3) {{ width: 12%; }} /* Services */
     #{container_id} th:nth-child(4) {{ width: 10%; }} /* Pricing */
@@ -477,7 +477,7 @@ def get_services_widget_html(
             <table>
                 <thead>
                     <tr>
-                        <th style="width: 15%;">Service Name</th>
+                        <th style="width: 15%;">Name</th>
                         <th style="width: 12%;">Datasite</th>
                         <th style="width: 12%;">Services</th>
                         <th style="width: 10%;">Pricing</th>

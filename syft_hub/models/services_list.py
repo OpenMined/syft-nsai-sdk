@@ -7,7 +7,7 @@ import os
 from typing import List, Optional, Any
 from pathlib import Path
 
-from .services_widget import get_services_widget_html
+from ..views.services_widget import get_services_widget_html
 
 class ServicesList:
     """A custom list-like class that wraps ServiceInfo objects and provides a show() method."""
