@@ -1,4 +1,4 @@
-# SyftBox NSAI SDK
+# SyftBox Hub NSAI SDK
 
 Python SDK for discovering and using SyftBox AI services with built-in payment handling and RAG coordination.
 
@@ -6,7 +6,7 @@ Python SDK for discovering and using SyftBox AI services with built-in payment h
 
 ```python
 import asyncio
-from syft_nsai_sdk import Client
+from syft_hub import Client
 
 async def main():
     async with Client() as client:
@@ -242,7 +242,7 @@ result.metadata           # Dict: File info, etc.
 ## Error Handling
 
 ```python
-from syft_nsai_sdk.core.exceptions import (
+from syft_hub.core.exceptions import (
     ModelNotFoundError,
     ServiceNotSupportedError,
     PaymentError,

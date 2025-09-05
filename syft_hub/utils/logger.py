@@ -27,7 +27,7 @@ def success(self, message, *args, **kwargs):
 
 logging.Logger.success = success
 
-def get_logger(name: str = "syft_nsai_sdk"):
+def get_logger(name: str = "syft_hub"):
     """
     Returns a custom logger with a colored formatter.
     """

@@ -50,7 +50,7 @@ uv venv -p 3.12 .venv
 uv sync
 
 # Install the package in development mode
-echo "Installing syft-nsai-sdk in development mode..."
+echo "Installing syft-hub in development mode..."
 uv pip install -e .
 
 echo "Starting FastAPI server..."

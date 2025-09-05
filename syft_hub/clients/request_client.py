@@ -32,7 +32,7 @@ class HTTPClient:
                  timeout: float = 30.0,
                  max_retries: int = 3,
                  retry_delay: float = 1.0,
-                 user_agent: str = "syft-nsai-sdk/0.1.0"):
+                 user_agent: str = "syft-hub/0.1.0"):
         """Initialize HTTP client with SyftBox defaults.
         
         Args:
