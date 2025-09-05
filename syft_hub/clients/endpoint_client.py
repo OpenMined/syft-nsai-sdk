@@ -1,9 +1,9 @@
 """
 HTTP endpoint construction utilities for SyftBox RPC clients
 """
+import logging
 from urllib.parse import quote, urljoin
 from typing import Dict, Any, Optional
-import logging
 
 from ..utils.validator import EmailValidator, URLValidator, ValidationError
 from ..discovery.filesystem import SyftURLBuilder

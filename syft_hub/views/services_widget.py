@@ -129,7 +129,7 @@ def get_services_widget_html(
 
     #{container_id} .search-controls input, #{container_id} .search-controls select {{
         flex: 1;
-        min-width: 150px;
+        min-width: 120px;
         padding: 0.5rem;
         border: 1px solid #d1d5db;
         border-radius: 0.25rem;
@@ -151,17 +151,18 @@ def get_services_widget_html(
         border-collapse: collapse;
         font-size: 0.75rem;
         table-layout: fixed;
-        min-width: 800px; /* Ensure minimum width for readability */
+        min-width: 900px;
     }}
 
-    /* Improved column widths - balanced to fill full width */
-    #{container_id} th:nth-child(1) {{ width: 15%; }} /* Name */
-    #{container_id} th:nth-child(2) {{ width: 12%; }} /* Datasite */
-    #{container_id} th:nth-child(3) {{ width: 12%; }} /* Services */
-    #{container_id} th:nth-child(4) {{ width: 10%; }} /* Pricing */
-    #{container_id} th:nth-child(5) {{ width: 10%; }} /* Status */
-    #{container_id} th:nth-child(6) {{ width: 15%; }} /* Tags */
-    #{container_id} th:nth-child(7) {{ width: 26%; }} /* Summary */
+    /* Updated column widths to accommodate new Availability column */
+    #{container_id} th:nth-child(1) {{ width: 14%; }} /* Name */
+    #{container_id} th:nth-child(2) {{ width: 11%; }} /* Datasite */
+    #{container_id} th:nth-child(3) {{ width: 11%; }} /* Services */
+    #{container_id} th:nth-child(4) {{ width: 9%; }}  /* Pricing */
+    #{container_id} th:nth-child(5) {{ width: 9%; }}  /* Status */
+    #{container_id} th:nth-child(6) {{ width: 10%; }} /* Availability */
+    #{container_id} th:nth-child(7) {{ width: 14%; }} /* Tags */
+    #{container_id} th:nth-child(8) {{ width: 22%; }} /* Summary */
 
     #{container_id} thead {{
         background: #f8f9fa;
@@ -325,9 +326,10 @@ def get_services_widget_html(
         border: 1px solid #d1d5db;
     }}
 
-    #{container_id} .health-status {{
+    #{container_id} .availability-status {{
         display: flex;
         align-items: center;
+        justify-content: center;
         gap: 0.25rem;
         font-size: 0.75rem;
     }}
@@ -368,6 +370,15 @@ def get_services_widget_html(
         gap: 0.25rem;
         max-height: 2.5rem;
         overflow: hidden;
+    }}
+
+    #{container_id} .tag {{
+        background: #f3f4f6;
+        color: #374151;
+        padding: 0.125rem 0.375rem;
+        border-radius: 0.25rem;
+        font-size: 0.625rem;
+        border: 1px solid #d1d5db;
     }}
 
     #{container_id} .tags-more {{
@@ -471,19 +482,27 @@ def get_services_widget_html(
                 <option value="free">Free Only</option>
                 <option value="paid">Paid Only</option>
             </select>
+            <select id="{container_id}-availability-filter" style="flex: 1;">
+                <option value="">All Availability</option>
+                <option value="online">Online Only</option>
+                <option value="offline">Offline Only</option>
+                <option value="timeout">Timeout Only</option>
+                <option value="unknown">Unknown Only</option>
+            </select>
         </div>
 
         <div class="table-container">
             <table>
                 <thead>
                     <tr>
-                        <th style="width: 15%;">Name</th>
-                        <th style="width: 12%;">Datasite</th>
-                        <th style="width: 12%;">Services</th>
-                        <th style="width: 10%;">Pricing</th>
-                        <th style="width: 10%;">Status</th>
-                        <th style="width: 15%;">Tags</th>
-                        <th style="width: 26%;">Summary</th>
+                        <th>Name</th>
+                        <th>Datasite</th>
+                        <th>Services</th>
+                        <th>Pricing</th>
+                        <th>Status</th>
+                        <th>Availability</th>
+                        <th>Tags</th>
+                        <th>Summary</th>
                     </tr>
                 </thead>
                 <tbody id="{container_id}-tbody">
@@ -509,6 +528,8 @@ def get_services_widget_html(
 
     <script>
     (function() {{
+        console.log('Widget initialization starting...');
+
         // Configuration
         var CONFIG = {{
             currentUserEmail: '{current_user_email}'
@@ -520,163 +541,32 @@ def get_services_widget_html(
         var currentPage = {page};
         var itemsPerPage = {items_per_page};
 
-        // Update progress
-        function updateProgress(percent, status) {{
-            var loadingBar = document.getElementById('loading-bar-{container_id}');
-            var loadingStatus = document.getElementById('loading-status-{container_id}');
-
-            if (loadingBar) {{
-                loadingBar.style.width = percent + '%';
-            }}
-            if (loadingStatus) {{
-                loadingStatus.innerHTML = status;
-            }}
-        }}
-
-        // Load services data
-        async function loadServices() {{
-            try {{
-                updateProgress(10, 'Initializing...');
-                
-                // Use the actual services data passed from Python
-                var realServices = {json.dumps(services) if services else '[]'};
-                
-                if (realServices && realServices.length > 0) {{
-                    // Use real services data
-                    allServices = realServices;
-                    updateProgress(100, 'Services loaded successfully!');
-                }} else {{
-                    // No services found
-                    allServices = [];
-                    updateProgress(100, 'No services found');
-                }}
-                
-                filteredServices = allServices.slice();
-                
-                // Hide loading screen and show widget
-                document.getElementById('loading-container-{container_id}').style.display = 'none';
-                document.getElementById('{container_id}').style.display = 'flex';
-                
-                // Initial render
-                renderTable();
-                updateStatus();
-                
-            }} catch (error) {{
-                console.error('Error loading services:', error);
-                updateProgress(0, 'Error loading services. Please refresh the page.');
-            }}
-        }}
-
-
-
-        // Render table
-        function renderTable() {{
-            var tbody = document.getElementById('{container_id}-tbody');
-            var totalServices = filteredServices.length;
-            var totalPages = Math.max(1, Math.ceil(totalServices / itemsPerPage));
-
-            if (currentPage > totalPages) currentPage = totalPages;
+        // Global functions for onclick handlers
+        window.changePage_{container_id} = function(direction) {{
+            var totalPages = Math.max(1, Math.ceil(filteredServices.length / itemsPerPage));
+            currentPage += direction;
             if (currentPage < 1) currentPage = 1;
+            if (currentPage > totalPages) currentPage = totalPages;
+            renderTable();
+        }};
 
-            document.getElementById('{container_id}-prev-btn').disabled = currentPage === 1;
-            document.getElementById('{container_id}-next-btn').disabled = currentPage === totalPages;
-            document.getElementById('{container_id}-page-info').textContent = 'Page ' + currentPage + ' of ' + totalPages;
-
-            if (totalServices === 0) {{
-                tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 40px;">No services found</td></tr>';
-                return;
-            }}
-
-            var start = (currentPage - 1) * itemsPerPage;
-            var end = Math.min(start + itemsPerPage, totalServices);
-
-            var html = '';
-            for (var i = start; i < end; i++) {{
-                var service = filteredServices[i];
-                
-                html += '<tr onclick="copyServiceId_{container_id}(\\'' + service.name + '\\', \\'' + service.datasite + '\\')">' +
-                    '<td><div class="truncate" data-full-text="' + escapeHtml(service.name) + '" title="' + escapeHtml(service.name) + '">' + escapeHtml(service.name) + '</div></td>' +
-                    '<td><div class="truncate" data-full-text="' + escapeHtml(service.datasite) + '" title="' + escapeHtml(service.datasite) + '">' + escapeHtml(service.datasite) + '</div></td>' +
-                    '<td>' + formatServices(service.services) + '</td>' +
-                    '<td>' + formatPricing(service.min_pricing, service.max_pricing) + '</td>' +
-                    '<td>' + formatStatus(service.config_status, service.health_status) + '</td>' +
-                    '<td>' + formatTags(service.tags) + '</td>' +
-                    '<td><div class="summary truncate" data-full-text="' + escapeHtml(service.summary) + '" title="' + escapeHtml(service.summary) + '">' + escapeHtml(service.summary) + '</div></td>' +
-                '</tr>';
-            }}
-
-            tbody.innerHTML = html;
-        }}
-
-        // Format services
-        function formatServices(services) {{
-            if (!services || services.length === 0) return '<span class="type-badge">None</span>';
-            
-            var enabledServices = services.filter(s => s.enabled);
-            if (enabledServices.length === 0) return '<span class="type-badge">Disabled</span>';
-            
-            return enabledServices.map(s => 
-                '<span class="type-badge">' + s.type + '</span>'
-            ).join(' ');
-        }}
-
-        // Format pricing
-        function formatPricing(minPrice, maxPrice) {{
-            if (minPrice === 0 && maxPrice === 0) {{
-                return '<span class="pricing free">Free</span>';
-            }} else if (minPrice === maxPrice) {{
-                return '<span class="pricing paid">$' + minPrice.toFixed(3) + '</span>';
+        window.copyServiceId_{container_id} = function(name, datasite) {{
+            var serviceId = name + ' by ' + datasite;
+            if (navigator.clipboard) {{
+                navigator.clipboard.writeText(serviceId).then(function() {{
+                    document.getElementById('{container_id}-status').textContent = 'Copied: ' + serviceId;
+                    setTimeout(function() {{
+                        updateStatus();
+                    }}, 2000);
+                }}).catch(function() {{
+                    console.log('Clipboard failed, but service ID is: ' + serviceId);
+                }});
             }} else {{
-                return '<span class="pricing paid">$' + minPrice.toFixed(3) + ' - $' + maxPrice.toFixed(3) + '</span>';
+                console.log('Service ID: ' + serviceId);
             }}
-        }}
+        }};
 
-        // Format status
-        function formatStatus(configStatus, healthStatus) {{
-            var statusHtml = '<span class="type-badge">' + configStatus + '</span>';
-            
-            if (healthStatus) {{
-                var healthClass = 'health-' + healthStatus;
-                var healthIcon = '';
-                
-                switch(healthStatus) {{
-                    case 'online': healthIcon = '✅'; break;
-                    case 'offline': healthIcon = '❌'; break;
-                    case 'timeout': healthIcon = '⏱️'; break;
-                    default: healthIcon = '❓';
-                }}
-                
-                statusHtml += ' <span class="' + healthClass + '">' + healthIcon + '</span>';
-            }}
-            
-            return statusHtml;
-        }}
-
-        // Format tags
-        function formatTags(tags) {{
-            if (!tags || tags.length === 0) return '<span style="color: #9ca3af;">None</span>';
-            
-            var visibleTags = tags.slice(0, 2); // Show only 2 tags
-            var remainingCount = tags.length - 2;
-            
-            var html = '<div class="tags-container">';
-            
-            // Add visible tags
-            visibleTags.forEach(tag => {{
-                html += '<span class="tag" title="' + escapeHtml(tag) + '">' + escapeHtml(tag) + ',' + '</span>';
-            }});
-            
-            // Add "more" indicator if there are additional tags
-            if (remainingCount > 0) {{
-                html += '<span class="tags-more" onclick="showAllTags_{container_id}(event, ' + JSON.stringify(tags) + ')" title="Click to see all ' + tags.length + ' tags">+' + remainingCount + '</span>';
-            }}
-            
-            html += '</div>';
-            return html;
-        }}
-
-        // Function to show all tags in a popup
-        function showAllTags_{container_id}(event, tags) {{
+        window.showAllTags_{container_id} = function(event, tags) {{
             event.stopPropagation();
             
             var popup = document.createElement('div');
@@ -715,117 +605,291 @@ def get_services_widget_html(
                     }}
                 }});
             }}, 100);
+        }};
+
+        // Update progress
+        function updateProgress(percent, status) {{
+            try {{
+                var loadingBar = document.getElementById('loading-bar-{container_id}');
+                var loadingStatus = document.getElementById('loading-status-{container_id}');
+
+                if (loadingBar) {{
+                    loadingBar.style.width = percent + '%';
+                }}
+                if (loadingStatus) {{
+                    loadingStatus.innerHTML = status;
+                }}
+            }} catch (error) {{
+                console.error('Error updating progress:', error);
+            }}
+        }}
+
+        // Load services data
+        async function loadServices() {{
+            try {{
+                console.log('Loading services...');
+                updateProgress(10, 'Initializing...');
+                
+                // Use the actual services data passed from Python
+                var realServices = {json.dumps(services) if services else '[]'};
+                console.log('Services data:', realServices);
+                
+                if (realServices && realServices.length > 0) {{
+                    // Use real services data
+                    allServices = realServices;
+                    updateProgress(100, 'Services loaded successfully!');
+                }} else {{
+                    // No services found - create some demo data for testing
+                    allServices = [
+                        {{
+                            name: "Demo Service 1",
+                            datasite: "demo@example.com",
+                            services: [{{type: "chat", enabled: true}}],
+                            min_pricing: 0,
+                            max_pricing: 0,
+                            config_status: "active",
+                            health_status: "online",
+                            tags: ["demo", "test"],
+                            summary: "This is a demo service for testing",
+                            description: "Demo service"
+                        }},
+                        {{
+                            name: "Demo Service 2", 
+                            datasite: "demo2@example.com",
+                            services: [{{type: "search", enabled: true}}],
+                            min_pricing: 0.01,
+                            max_pricing: 0.05,
+                            config_status: "active",
+                            health_status: "offline",
+                            tags: ["demo", "search"],
+                            summary: "Another demo service",
+                            description: "Demo service 2"
+                        }}
+                    ];
+                    updateProgress(100, 'No services found - showing demo data');
+                }}
+                
+                filteredServices = allServices.slice();
+                
+                // Hide loading screen and show widget
+                document.getElementById('loading-container-{container_id}').style.display = 'none';
+                document.getElementById('{container_id}').style.display = 'flex';
+                
+                // Initial render
+                renderTable();
+                updateStatus();
+                
+            }} catch (error) {{
+                console.error('Error loading services:', error);
+                updateProgress(0, 'Error loading services: ' + error.message);
+            }}
+        }}
+
+        // Render table
+        function renderTable() {{
+            try {{
+                var tbody = document.getElementById('{container_id}-tbody');
+                var totalServices = filteredServices.length;
+                var totalPages = Math.max(1, Math.ceil(totalServices / itemsPerPage));
+
+                if (currentPage > totalPages) currentPage = totalPages;
+                if (currentPage < 1) currentPage = 1;
+
+                document.getElementById('{container_id}-prev-btn').disabled = currentPage === 1;
+                document.getElementById('{container_id}-next-btn').disabled = currentPage === totalPages;
+                document.getElementById('{container_id}-page-info').textContent = 'Page ' + currentPage + ' of ' + totalPages;
+
+                if (totalServices === 0) {{
+                    tbody.innerHTML = '<tr><td colspan="8" style="text-align: center; padding: 40px;">No services found</td></tr>';
+                    return;
+                }}
+
+                var start = (currentPage - 1) * itemsPerPage;
+                var end = Math.min(start + itemsPerPage, totalServices);
+
+                var html = '';
+                for (var i = start; i < end; i++) {{
+                    var service = filteredServices[i];
+                    
+                    html += '<tr onclick="copyServiceId_{container_id}(\\'' + escapeHtml(service.name) + '\\', \\'' + escapeHtml(service.datasite) + '\\')">' +
+                        '<td><div class="truncate" data-full-text="' + escapeHtml(service.name) + '" title="' + escapeHtml(service.name) + '">' + escapeHtml(service.name) + '</div></td>' +
+                        '<td><div class="truncate" data-full-text="' + escapeHtml(service.datasite) + '" title="' + escapeHtml(service.datasite) + '">' + escapeHtml(service.datasite) + '</div></td>' +
+                        '<td>' + formatServices(service.services) + '</td>' +
+                        '<td>' + formatPricing(service.min_pricing, service.max_pricing) + '</td>' +
+                        '<td>' + formatStatus(service.config_status) + '</td>' +
+                        '<td>' + formatAvailability(service.health_status) + '</td>' +
+                        '<td>' + formatTags(service.tags) + '</td>' +
+                        '<td><div class="summary truncate" data-full-text="' + escapeHtml(service.summary) + '" title="' + escapeHtml(service.summary) + '">' + escapeHtml(service.summary) + '</div></td>' +
+                    '</tr>';
+                }}
+
+                tbody.innerHTML = html;
+            }} catch (error) {{
+                console.error('Error rendering table:', error);
+            }}
+        }}
+
+        // Format services
+        function formatServices(services) {{
+            if (!services || services.length === 0) return '<span class="type-badge">None</span>';
+            
+            var enabledServices = services.filter(s => s.enabled);
+            if (enabledServices.length === 0) return '<span class="type-badge">Disabled</span>';
+            
+            return enabledServices.map(s => 
+                '<span class="type-badge">' + escapeHtml(s.type) + '</span>'
+            ).join(' ');
+        }}
+
+        // Format pricing
+        function formatPricing(minPrice, maxPrice) {{
+            if (minPrice === 0 && maxPrice === 0) {{
+                return '<span class="pricing free">Free</span>';
+            }} else if (minPrice === maxPrice) {{
+                return '<span class="pricing paid">$' + minPrice.toFixed(3) + '</span>';
+            }} else {{
+                return '<span class="pricing paid">$' + minPrice.toFixed(3) + ' - $' + maxPrice.toFixed(3) + '</span>';
+            }}
+        }}
+
+        // Format status (config status only)
+        function formatStatus(configStatus) {{
+            return '<span class="type-badge">' + escapeHtml(configStatus || 'unknown') + '</span>';
+        }}
+
+        // Format availability (health status only)
+        function formatAvailability(healthStatus) {{
+            if (!healthStatus) {{
+                return '<div class="availability-status health-unknown">❓ Unknown</div>';
+            }}
+            
+            var healthClass = 'health-' + healthStatus;
+            var healthIcon = '';
+            var healthText = '';
+            
+            switch(healthStatus) {{
+                case 'online': 
+                    healthIcon = '✅'; 
+                    healthText = 'Online';
+                    break;
+                case 'offline': 
+                    healthIcon = '❌'; 
+                    healthText = 'Offline';
+                    break;
+                case 'timeout': 
+                    healthIcon = '⏱️'; 
+                    healthText = 'Timeout';
+                    break;
+                default: 
+                    healthIcon = '❓';
+                    healthText = 'Unknown';
+            }}
+            
+            return '<div class="availability-status ' + healthClass + '">' + healthIcon + ' ' + healthText + '</div>';
+        }}
+
+        // Format tags
+        function formatTags(tags) {{
+            if (!tags || tags.length === 0) return '<span style="color: #9ca3af;">None</span>';
+            
+            var visibleTags = tags.slice(0, 2); // Show only 2 tags
+            var remainingCount = tags.length - 2;
+            
+            var html = '<div class="tags-container">';
+            
+            // Add visible tags
+            visibleTags.forEach(tag => {{
+                html += '<span class="tag" title="' + escapeHtml(tag) + '">' + escapeHtml(tag) + '</span>';
+            }});
+            
+            // Add "more" indicator if there are additional tags
+            if (remainingCount > 0) {{
+                html += '<span class="tags-more" onclick="showAllTags_{container_id}(event, ' + JSON.stringify(tags) + ')" title="Click to see all ' + tags.length + ' tags">+' + remainingCount + '</span>';
+            }}
+            
+            html += '</div>';
+            return html;
         }}
 
         // Update status
         function updateStatus() {{
-            var serviceCount = filteredServices.length;
-            var chatServices = filteredServices.filter(m => m.services.some(s => s.type === 'chat' && s.enabled)).length;
-            var searchServices = filteredServices.filter(m => m.services.some(s => s.type === 'search' && s.enabled)).length;
-            var freeServices = filteredServices.filter(m => m.min_pricing === 0).length;
-            var paidServices = filteredServices.filter(m => m.min_pricing > 0).length;
-            
-            var statusText = serviceCount + ' services • ' + chatServices + ' chat • ' + searchServices + ' search • ' + freeServices + ' free • ' + paidServices + ' paid';
-            
-            // if (showFooterTip) {{ statusText += ' • 💡 ' + '{footer_tip}'; }}
-            if ({str(show_footer_tip).lower()}) {{ statusText += ' • 💡 ' + '{footer_tip}'; }}
-            
-            document.getElementById('{container_id}-status').textContent = statusText;
+            try {{
+                var serviceCount = filteredServices.length;
+                var chatServices = filteredServices.filter(m => m.services && m.services.some(s => s.type === 'chat' && s.enabled)).length;
+                var searchServices = filteredServices.filter(m => m.services && m.services.some(s => s.type === 'search' && s.enabled)).length;
+                var freeServices = filteredServices.filter(m => m.min_pricing === 0).length;
+                var paidServices = filteredServices.filter(m => m.min_pricing > 0).length;
+                var onlineServices = filteredServices.filter(m => m.health_status === 'online').length;
+                var offlineServices = filteredServices.filter(m => m.health_status === 'offline').length;
+                
+                var statusText = serviceCount + ' services • ' + chatServices + ' chat • ' + searchServices + ' search • ' + freeServices + ' free • ' + paidServices + ' paid • ' + onlineServices + ' online • ' + offlineServices + ' offline';
+                
+                // if ({str(show_footer_tip).lower()}) {{ statusText += ' • 💡 ' + '{footer_tip}'; }}
+                
+                document.getElementById('{container_id}-status').textContent = statusText;
+            }} catch (error) {{
+                console.error('Error updating status:', error);
+            }}
         }}
 
         // Search services
         function searchServices_{container_id}() {{
-            var searchTerm = document.getElementById('{container_id}-search').value.toLowerCase();
-            var datasiteFilter = document.getElementById('{container_id}-datasite-filter').value.toLowerCase();
-            var serviceFilter = document.getElementById('{container_id}-service-filter').value;
-            var pricingFilter = document.getElementById('{container_id}-pricing-filter').value;
+            try {{
+                var searchTerm = document.getElementById('{container_id}-search').value.toLowerCase();
+                var datasiteFilter = document.getElementById('{container_id}-datasite-filter').value.toLowerCase();
+                var serviceFilter = document.getElementById('{container_id}-service-filter').value;
+                var pricingFilter = document.getElementById('{container_id}-pricing-filter').value;
+                var availabilityFilter = document.getElementById('{container_id}-availability-filter').value;
 
-            filteredServices = allServices.filter(function(service) {{
-                // Datasite filter
-                if (datasiteFilter && !service.datasite.toLowerCase().includes(datasiteFilter)) {{
-                    return false;
-                }}
-                
-                // Service filter
-                if (serviceFilter) {{
-                    var hasService = service.services.some(s => s.type === serviceFilter && s.enabled);
-                    if (!hasService) return false;
-                }}
-                
-                // Pricing filter
-                if (pricingFilter === 'free' && service.min_pricing > 0) {{
-                    return false;
-                }} else if (pricingFilter === 'paid' && service.min_pricing === 0) {{
-                    return false;
-                }}
-                
-                // Search filter
-                if (searchTerm) {{
-                    var searchableContent = [
-                        service.name,
-                        service.datasite,
-                        service.summary,
-                        service.description,
-                        service.tags.join(' ')
-                    ].join(' ').toLowerCase();
+                filteredServices = allServices.filter(function(service) {{
+                    // Datasite filter
+                    if (datasiteFilter && !service.datasite.toLowerCase().includes(datasiteFilter)) {{
+                        return false;
+                    }}
                     
-                    return searchableContent.includes(searchTerm);
-                }}
-                
-                return true;
-            }});
+                    // Service filter
+                    if (serviceFilter) {{
+                        var hasService = service.services && service.services.some(s => s.type === serviceFilter && s.enabled);
+                        if (!hasService) return false;
+                    }}
+                    
+                    // Pricing filter
+                    if (pricingFilter === 'free' && service.min_pricing > 0) {{
+                        return false;
+                    }} else if (pricingFilter === 'paid' && service.min_pricing === 0) {{
+                        return false;
+                    }}
+                    
+                    // Availability filter
+                    if (availabilityFilter) {{
+                        var serviceHealthStatus = service.health_status || 'unknown';
+                        if (availabilityFilter !== serviceHealthStatus) {{
+                            return false;
+                        }}
+                    }}
+                    
+                    // Search filter
+                    if (searchTerm) {{
+                        var searchableContent = [
+                            service.name,
+                            service.datasite,
+                            service.summary,
+                            service.description,
+                            (service.tags || []).join(' ')
+                        ].join(' ').toLowerCase();
+                        
+                        return searchableContent.includes(searchTerm);
+                    }}
+                    
+                    return true;
+                }});
 
-            currentPage = 1;
-            renderTable();
-            updateStatus();
-        }}
-
-        // Change page
-        function changePage_{container_id}(direction) {{
-            var totalPages = Math.max(1, Math.ceil(filteredServices.length / itemsPerPage));
-            currentPage += direction;
-            if (currentPage < 1) currentPage = 1;
-            if (currentPage > totalPages) currentPage = totalPages;
-            renderTable();
-        }}
-
-        // Copy service ID
-        function copyServiceId_{container_id}(name, datasite) {{
-            var serviceId = name + ' by ' + datasite;
-            navigator.clipboard.writeText(serviceId).then(function() {{
-                document.getElementById('{container_id}-status').textContent = 'Copied: ' + serviceId;
-                setTimeout(function() {{
-                    updateStatus();
-                }}, 2000);
-            }});
-        }}
-
-        // Chat with service
-        function chatWithService_{container_id}(name, datasite) {{
-            var command = 'await client.chat(service_name="' + name + '", datasite="' + datasite + '", prompt="Hello!")';
-            navigator.clipboard.writeText(command).then(function() {{
-                document.getElementById('{container_id}-status').textContent = 'Chat command copied to clipboard';
-                setTimeout(function() {{
-                    updateStatus();
-                }}, 2000);
-            }});
-        }}
-
-        // Search with service
-        function searchWithService_{container_id}(name, datasite) {{
-            var command = 'await client.search(service_name="' + name + '", datasite="' + datasite + '", query="search query")';
-            navigator.clipboard.writeText(command).then(function() {{
-                document.getElementById('{container_id}-status').textContent = 'Search command copied to clipboard';
-                setTimeout(function() {{
-                    updateStatus();
-                }}, 2000);
-            }});
-        }}
-
-        // Refresh services
-        function refreshServices_{container_id}() {{
-            document.getElementById('{container_id}-status').textContent = 'Refreshing services...';
-            loadServices();
+                currentPage = 1;
+                renderTable();
+                updateStatus();
+            }} catch (error) {{
+                console.error('Error searching services:', error);
+            }}
         }}
 
         // Utility functions
@@ -836,13 +900,28 @@ def get_services_widget_html(
         }}
 
         // Add event listeners
-        document.getElementById('{container_id}-search').addEventListener('input', searchServices_{container_id});
-        document.getElementById('{container_id}-datasite-filter').addEventListener('input', searchServices_{container_id});
-        document.getElementById('{container_id}-service-filter').addEventListener('change', searchServices_{container_id});
-        document.getElementById('{container_id}-pricing-filter').addEventListener('change', searchServices_{container_id});
+        function setupEventListeners() {{
+            try {{
+                document.getElementById('{container_id}-search').addEventListener('input', searchServices_{container_id});
+                document.getElementById('{container_id}-datasite-filter').addEventListener('input', searchServices_{container_id});
+                document.getElementById('{container_id}-service-filter').addEventListener('change', searchServices_{container_id});
+                document.getElementById('{container_id}-pricing-filter').addEventListener('change', searchServices_{container_id});
+                document.getElementById('{container_id}-availability-filter').addEventListener('change', searchServices_{container_id});
+                console.log('Event listeners set up successfully');
+            }} catch (error) {{
+                console.error('Error setting up event listeners:', error);
+            }}
+        }}
 
         // Start loading services when page loads
-        loadServices();
+        setTimeout(function() {{
+            loadServices().then(function() {{
+                setupEventListeners();
+            }}).catch(function(error) {{
+                console.error('Failed to load services:', error);
+                updateProgress(0, 'Failed to load services: ' + error.message);
+            }});
+        }}, 100);
     }})();
     </script>
 </body>

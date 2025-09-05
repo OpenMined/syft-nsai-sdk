@@ -1,45 +1,38 @@
 """
 Main SyftBox NSAI SDK client
 """
+import json
 import os
 import asyncio
-import asyncio
-import nest_asyncio
+import concurrent.futures
 import logging
+import threading
 
-from typing import List, Optional, Dict, Any, Union
+from typing import List, Optional, Dict, Any, Union, Awaitable
 from pathlib import Path
 from dotenv import load_dotenv
 
-from .core import Service
-from .core import Pipeline
-# from .core.decorators import require_account
+from .core import Service, Pipeline
 from .core.config import ConfigManager
-from .core.types import ServiceSpec, ServiceType, HealthStatus, DocumentResult
+from .core.types import ServiceType, HealthStatus, DocumentResult
 from .core.exceptions import (
     AuthenticationError,
-    ServiceNotSupportedError, 
+    ServiceNotFoundError,
     SyftBoxNotFoundError, 
     SyftBoxNotRunningError,
-    ServiceNotFoundError,
+    ServiceNotSupportedError, 
     ValidationError,
 )
-from .discovery.scanner import FastScanner
-from .discovery.parser import MetadataParser
-from .discovery.filters import ServiceFilter, FilterCriteria
-from .clients.rpc_client import SyftBoxRPCClient
-from .clients.accounting_client import AccountingClient
-from .services.chat import ChatService
-from .services.search import SearchService
-from .services.health import check_service_health, batch_health_check, HealthMonitor
-from .models.services_list import ServicesList
-from .models.service_info import ServiceInfo
-from .models.responses import ChatResponse, SearchResponse, DocumentResult
+from .discovery import FastScanner, MetadataParser, ServiceFilter, FilterCriteria
+from .clients import SyftBoxRPCClient, AccountingClient
+from .services import ChatService, SearchService, HealthMonitor, check_service_health, batch_health_check
+from .models import ChatResponse, SearchResponse, DocumentResult, ServicesList, ServiceInfo
 from .utils.formatting import format_services_table, format_service_details
+from .utils.async_utils import detect_async_context, run_async_in_thread
 
 logger = logging.getLogger(__name__)
 
-nest_asyncio.apply()
+# Load environment variables
 load_dotenv()
 
 class Client:
@@ -58,6 +51,7 @@ class Client:
         Args:
             syftbox_config_path: Custom path to SyftBox config file
             cache_server_url: Override cache server URL
+            accounting_client: Pre-configured AccountingClient instance
             auto_setup_accounting: Whether to prompt for accounting setup when needed
             auto_health_check_threshold: Max services for auto health checking
         """
@@ -116,7 +110,6 @@ class Client:
         
         self.rpc_client = SyftBoxRPCClient(
             cache_server_url=server_url,
-            # from_email=from_email,
             accounting_client=self.accounting_client,
         )
         
@@ -211,14 +204,12 @@ class Client:
         )
         
         if should_health_check:
-            # Check if we're in Jupyter to avoid asyncio.run() issues
+            # Use thread-based approach to avoid event loop conflicts
             try:
-                filtered_services = asyncio.run(self._add_health_status(filtered_services))
-            except ImportError:
-                # IPython not available, safe to use asyncio.run()
-                filtered_services = asyncio.run(self._add_health_status(filtered_services))
+                filtered_services = run_async_in_thread(
+                    self._add_health_status(filtered_services)
+                )
             except Exception as e:
-                # Any other error, log and continue without health check
                 logger.warning(f"Health check failed: {e}. Continuing without health status.")
         
         logger.debug(f"Discovered {len(filtered_services)} services (health_check={should_health_check})")
@@ -253,7 +244,49 @@ class Client:
 
     # Service Usage Methods 
     # @require_account
-    def chat(
+    async def chat_async(self,
+            service_name: str,
+            messages: str,
+            temperature: Optional[float] = None,
+            max_tokens: Optional[int] = None,
+            **kwargs
+        ) -> ChatResponse:
+        """Chat with a specific service  (async version).
+        
+        Args:
+            service_name: Datasite/Name of the service to use
+            messages: Message to send
+            temperature: Sampling temperature (0.0-1.0)
+            max_tokens: Maximum tokens to generate
+            **kwargs: Additional service-specific parameters
+            
+        Returns:
+            Chat response from the specified service
+        """
+        # Find the specific service
+        service = self.get_service(service_name)
+        logger.info(f"Using service: {service.name} from datasite: {service.datasite}") 
+        
+        # Validate service supports chat
+        if not service.supports_service(ServiceType.CHAT):
+            raise ServiceNotSupportedError(service.name, "chat", service)
+
+        # Build request parameters
+        chat_params = {
+            "messages": messages,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+            **kwargs
+        }
+        
+        # Remove None values
+        chat_params = {k: v for k, v in chat_params.items() if v is not None}
+        
+        # Create service and make request
+        chat_service = ChatService(service, self.rpc_client)
+        return await chat_service.chat_with_params(chat_params)
+    
+    def chat_sync(
             self,
             service_name: str,
             messages: str,
@@ -274,31 +307,46 @@ class Client:
             Chat response from the specified service
         """
         
-        # Find the specific service
-        service = self.get_service(service_name)
-        logger.info(f"Using service: {service.name} from datasite: {service.datasite}") 
-        
-        # Validate service supports chat
-        if not service.supports_service(ServiceType.CHAT):
-            raise ServiceNotSupportedError(service.name, "chat", service)
-
-        # Build request parameters
-        chat_params = {
-            "messages": messages,
-            "temperature": temperature,
-            "max_tokens": max_tokens,
+        # A thread-safe synchronous wrapper around chat_async.
+        return run_async_in_thread(
+            self.chat_async(service_name, messages, temperature, max_tokens, **kwargs)
+        )
+    
+    def chat(
+            self,
+            service_name: str,
+            messages: str,
+            temperature: Optional[float] = None,
+            max_tokens: Optional[int] = None,
             **kwargs
-        }
+        ) -> Union[ChatResponse, Awaitable[ChatResponse]]:
+        """Smart chat method that adapts to the execution context.
         
-        # Remove None values
-        chat_params = {k: v for k, v in chat_params.items() if v is not None}
-        
-        # Execute chat
-        chat_service = ChatService(service, self.rpc_client)
-        return asyncio.run(chat_service.chat_with_params(chat_params))
+        Args:
+            service_name: Datasite/Name of the service to use
+            messages: Message to send
+            temperature: Sampling temperature (0.0-1.0)
+            max_tokens: Maximum tokens to generate
+            **kwargs: Additional service-specific parameters
+            
+        Returns:
+            ChatResponse (sync) or Awaitable[ChatResponse] (async)
+            
+        Examples:
+            # In async context (Jupyter, async function):
+            response = await client.chat("service", "Hello")
+            
+            # In sync context:
+            response = client.chat("service", "Hello")
+        """
+        if detect_async_context():
+            # Return coroutine - caller must await it
+            return self.chat_async(service_name, messages, temperature, max_tokens, **kwargs)
+        else:
+            # Safe to use thread-based sync version
+            return self.chat_sync(service_name, messages, temperature, max_tokens, **kwargs)
 
-    # @require_account
-    def search(
+    def search_async(
             self,
             service_name: str, 
             message: str,
@@ -340,64 +388,9 @@ class Client:
         
         # Create service and make request
         search_service = SearchService(service, self.rpc_client)
-
         return asyncio.run(search_service.search_with_params(search_params))
-
-    # @require_account
-    async def chat_async(self,
-            service_name: str,
-            messages: str,
-            temperature: Optional[float] = None,
-            max_tokens: Optional[int] = None,
-            **kwargs
-        ) -> ChatResponse:
-        """Chat with a specific service.
-        
-        Args:
-            service_name: Name of the service to use (REQUIRED)
-            prompt: Message to send
-            datasite: Datasite email (required if service name is ambiguous)
-            temperature: Sampling temperature (0.0-1.0)
-            max_tokens: Maximum tokens to generate
-            **kwargs: Additional service-specific parameters
-            
-        Returns:
-            Chat response from the specified service
-            
-        Example:
-            response = await client.chat(
-                service_name="public-tinnyllama",
-                datasite="irina@openmined.org", 
-                prompt="Hello! Testing the API",
-                temperature=0.7
-            )
-        """
-        # Find the specific service
-        service = self.get_service(service_name)
-        logger.info(f"Using service: {service.name} from datasite: {service.datasite}") 
-        
-        # Validate service supports chat
-        if not service.supports_service(ServiceType.CHAT):
-            raise ServiceNotSupportedError(service.name, "chat", service)
-
-        # Build request parameters
-        chat_params = {
-            "messages": messages,
-            "temperature": temperature,
-            "max_tokens": max_tokens,
-            **kwargs
-        }
-        
-        # Remove None values
-        chat_params = {k: v for k, v in chat_params.items() if v is not None}
-        
-        # Create service and make request
-        chat_service = ChatService(service, self.rpc_client)
-        
-        return await chat_service.chat_with_params(chat_params)
     
-    # @require_account
-    async def search_async(
+    async def search_sync(
             self,
             service_name: str, 
             message: str,
@@ -417,38 +410,40 @@ class Client:
             
         Returns:
             Search response from the specified service
-            
-        Example:
-            results = await client.search(
-                service_name="the-city",
-                query="latest news",
-                datasite="speters@thecity.nyc"
-            )
         """
-        # Find the specific service
-        service = self.get_service(service_name)
-        logger.info(f"Using service: {service.name} from datasite: {service.datasite}") 
-        
-        # Validate service supports search
-        if not service.supports_service(ServiceType.SEARCH):
-            raise ServiceNotSupportedError(service.name, "search", service)
 
-        # Build request parameters
-        search_params = {
-            "message": message,
-            "topK": topK,
-            "similarity_threshold": similarity_threshold,
+        # A thread-safe synchronous wrapper around search_async.
+        return run_async_in_thread(
+            self.search_async(service_name, message, topK, similarity_threshold, **kwargs)
+        )
+
+    def search(
+            self,
+            service_name: str, 
+            message: str,
+            topK: Optional[int] = None,
+            similarity_threshold: Optional[float] = None,
             **kwargs
-        }
-        
-        # Remove None values
-        search_params = {k: v for k, v in search_params.items() if v is not None}
-        
-        # Create service and make request
-        search_service = SearchService(service, self.rpc_client)
-        
-        return await search_service.search_with_params(search_params)
-    
+        ) -> Union[SearchResponse, Awaitable[SearchResponse]]:
+        """Smart search method that adapts to the execution context.
+
+        Args:
+            service_name: Datasite/Name of the service to use
+            message: Search message
+            topK: Maximum number of results
+            similarity_threshold: Minimum similarity score
+            **kwargs: Additional service-specific parameters
+            
+        Returns:
+            SearchResponse (sync) or Awaitable[SearchResponse] (async)
+        """
+        if detect_async_context():
+            # Return coroutine - caller must await it
+            return self.search_async(service_name, message, topK, similarity_threshold, **kwargs)
+        else:
+            # Safe to use thread-based sync version
+            return self.search_sync(service_name, message, topK, similarity_threshold, **kwargs)
+
     # Service Parameters
     def get_parameters(self, service_name: str, datasite: Optional[str] = None) -> Dict[str, Any]:
         """Get available parameters for a specific service."""
@@ -472,87 +467,6 @@ class Client:
                 parameters["search"] = self._extract_request_parameters(search_request, schemas)
         
         return parameters
-
-    def _extract_request_parameters(self, request_schema: Dict[str, Any], all_schemas: Dict[str, Any]) -> Dict[str, Any]:
-        """Extract parameters from request schema."""
-        parameters = {}
-        properties = request_schema.get("properties", {})
-        required_fields = set(request_schema.get("required", []))
-        
-        # Skip system fields
-        skip_fields = {"userEmail", "service", "messages", "query", "transactionToken"}
-        
-        for field_name, field_info in properties.items():
-            if field_name in skip_fields:
-                continue
-                
-            param_info = {
-                "required": field_name in required_fields,
-                "description": field_info.get("description", "")
-            }
-            
-            # Handle direct type
-            if "type" in field_info:
-                param_info["type"] = field_info["type"]
-                self._add_constraints(param_info, field_info)
-            
-            # Handle $ref
-            elif "$ref" in field_info:
-                ref_name = field_info["$ref"].split("/")[-1]
-                if ref_name in all_schemas:
-                    nested = self._extract_schema_properties(all_schemas[ref_name])
-                    param_info.update(nested)
-            
-            # Handle anyOf (optional references)
-            elif "anyOf" in field_info:
-                for option in field_info["anyOf"]:
-                    if "$ref" in option:
-                        ref_name = option["$ref"].split("/")[-1]
-                        if ref_name in all_schemas:
-                            nested = self._extract_schema_properties(all_schemas[ref_name])
-                            param_info.update(nested)
-                            break
-                    elif "type" in option and option["type"] != "null":
-                        param_info["type"] = option["type"]
-                        self._add_constraints(param_info, option)
-            
-            parameters[field_name] = param_info
-        
-        return parameters
-
-    def _extract_schema_properties(self, schema: Dict[str, Any]) -> Dict[str, Any]:
-        """Extract properties from nested schema."""
-        result = {"type": "object", "properties": {}}
-        properties = schema.get("properties", {})
-        
-        for prop_name, prop_info in properties.items():
-            if prop_name == "extensions":
-                continue
-                
-            prop_data = {
-                "description": prop_info.get("description", ""),
-                "required": False
-            }
-            
-            if "type" in prop_info:
-                prop_data["type"] = prop_info["type"]
-                self._add_constraints(prop_data, prop_info)
-            elif "anyOf" in prop_info:
-                for option in prop_info["anyOf"]:
-                    if "type" in option and option["type"] != "null":
-                        prop_data["type"] = option["type"]
-                        self._add_constraints(prop_data, option)
-                        break
-            
-            result["properties"][prop_name] = prop_data
-        
-        return result
-
-    def _add_constraints(self, param_info: Dict[str, Any], field_info: Dict[str, Any]):
-        """Add validation constraints to parameter info."""
-        for constraint in ["minimum", "maximum", "enum", "format"]:
-            if constraint in field_info:
-                param_info[constraint] = field_info[constraint]
 
     def show_service_usage(self, service_name: str, datasite: Optional[str] = None) -> str:
         """Show usage examples for a specific service.
@@ -644,7 +558,6 @@ class Client:
         if format == "table":
             return format_services_table(services)
         elif format == "json":
-            import json
             service_dicts = [self._service_to_dict(service) for service in services]
             return json.dumps(service_dicts, indent=2)
         elif format == "summary":
@@ -664,7 +577,7 @@ class Client:
         """
         service = self.get_service(service_name, datasite)
         if not service:
-            return f"Service '{service_name}' not found"
+            raise ServiceNotFoundError(f"Service '{service_name}' not found")
         
         return format_service_details(service)
     
@@ -685,9 +598,11 @@ class Client:
 
         return await check_service_health(service, self.rpc_client, timeout)
     
-    async def check_all_services_health(self, 
-                                     service_type: Optional[ServiceType] = None,
-                                     timeout: float = 2.0) -> Dict[str, HealthStatus]:
+    async def check_all_services_health(
+            self, 
+            service_type: Optional[ServiceType] = None,
+            timeout: float = 2.0
+        ) -> Dict[str, HealthStatus]:
         """Check health of all discovered services.
         
         Args:
@@ -700,9 +615,11 @@ class Client:
         services = self.list_services(service_type=service_type, health_check="never")
         return await batch_health_check(services, self.rpc_client, timeout)
     
-    def start_health_monitoring(self, 
-                               services: Optional[List[str]] = None,
-                               check_interval: float = 30.0) -> HealthMonitor:
+    def start_health_monitoring(
+            self, 
+            services: Optional[List[str]] = None,
+            check_interval: float = 30.0
+        ) -> HealthMonitor:
         """Start continuous health monitoring.
         
         Args:
@@ -741,13 +658,236 @@ class Client:
         if self._health_monitor:
             await self._health_monitor.stop_monitoring()
             self._health_monitor = None
+
+    # RAG pipeline methods
+    def create_pipeline(self) -> Pipeline:
+        """Create a new pipeline for RAG workflows"""
+        return Pipeline(client=self)
+
+    def pipeline(self, data_sources: Optional[List[Union[str, Dict]]] = None, 
+                synthesizer: Optional[Union[str, Dict]] = None, 
+                context_format: Optional[str] = None) -> Pipeline:
+        """Create and configure a pipeline in one call (inline approach)
+        
+        Args:
+            data_sources: List of search services to use as data sources
+            synthesizer: Chat service to use for synthesis
+            context_format: Format for search context ("simple" or "frontend")
+        
+        Returns:
+            Configured Pipeline ready for execution
+        
+        Example:
+            result = client.pipeline(
+                data_sources=["alice@example.com/docs", "bob@example.com/wiki"],
+                synthesizer="ai@openai.com/gpt-4"
+            ).run(messages=[{"role": "user", "content": "What is Python?"}])
+        """
+        return Pipeline(
+            client=self, 
+            data_sources=data_sources, 
+            synthesizer=synthesizer,
+            context_format=context_format or "simple"
+        )
+
+    # Accounting Integration Methods
+    async def register_accounting_async(self, email: str, password: str, organization: Optional[str] = None):
+        """Register a new accounting user (async)."""
+        try:
+            await self.accounting_client.create_accounting_user(email, password, organization)
+            self.accounting_client.save_credentials()
+            await self.connect_accounting_async(email, password, self.accounting_client.accounting_url)
+            logger.info("Accounting setup completed and connected successfully")
+        except Exception as e:
+            raise AuthenticationError(f"Accounting setup failed: {e}")
+
+    def register_accounting(self, email: str, password: str, organization: Optional[str] = None):
+        """Register a new accounting user (sync wrapper)."""
+        return run_async_in_thread(
+            self.register_accounting_async(email, password, organization)
+        )
+
+    async def connect_accounting_async(self, email: str, password: str, accounting_url: Optional[str] = None, save_config: bool = False):
+        """Setup accounting credentials (async)."""
+        # Get service URL from environment if not provided
+        if accounting_url is None:
+            accounting_url = os.getenv('SYFTBOX_ACCOUNTING_URL')
+        
+        if not accounting_url:
+            raise ValueError(
+                "Accounting service URL is required. Please either:\n"
+                "1. Set SYFTBOX_ACCOUNTING_URL in your .env file, or\n"
+                "2. Pass accounting_url parameter to this method"
+            )
+        
+        try:
+            # Configure the accounting client
+            self.accounting_client.configure(accounting_url, email, password)
+            
+            # Save config if explicitly requested
+            if save_config:
+                self.accounting_client.save_credentials()
+
+            logger.info(f"Accounting setup successful for {self.accounting_client.get_email()}")
+
+        except Exception as e:
+            raise AuthenticationError(f"Accounting setup failed: {e}")
+        
+    def connect_accounting(self, email: str, password: str, accounting_url: Optional[str] = None, save_config: bool = False):
+        """Setup accounting credentials (sync wrapper)."""
+        return run_async_in_thread(
+            self.connect_accounting_async(email, password, accounting_url, save_config)
+        )
+
+    def is_accounting_configured(self) -> bool:
+        """Check if accounting is properly configured."""
+        return self.accounting_client.is_configured()
+
+    async def get_account_info_async(self) -> Dict[str, Any]:
+        """Get account information and balance (async)."""
+        if not self.is_accounting_configured():
+            return {"error": "Accounting not configured"}
+        
+        try:
+            return await self.accounting_client.get_account_info()
+        except Exception as e:
+            logger.error(f"Failed to get account info: {e}")
+            return {"error": str(e)}
+
+    def get_account_info(self) -> Dict[str, Any]:
+        """Get account information and balance (sync wrapper)."""
+        if not self.is_accounting_configured():
+            return {"error": "Accounting not configured"}
+        
+        try:
+            return run_async_in_thread(self.get_account_info_async())
+        except Exception as e:
+            logger.error(f"Failed to get account info: {e}")
+            return {"error": str(e)}
+
+    async def show_accounting_status_async(self) -> str:
+        """Show current accounting configuration status (async)."""
+        if not self.is_accounting_configured():
+            return (
+                "Accounting not configured\n"
+                "   Use client.connect_accounting() to configure payment services\n"
+                "   Currently limited to free services only"
+            )
+        
+        try:
+            account_info = await self.get_account_info_async()
+
+            if "error" in account_info:
+                return (
+                    f"Accounting configured but connection failed\n"
+                    f"   Error: {account_info['error']}\n"
+                    f"   May need to reconfigure credentials"
+                )
+            
+            return (
+                f"Accounting configured\n"
+                f"   Email: {account_info['email']}\n" 
+                f"   Balance: ${account_info['balance']}\n"
+                f"   Can use both free and paid services"
+            )
+        except Exception as e:
+            return (
+                f"Accounting configured but connection failed\n"
+                f"   Error: {e}\n"
+                f"   May need to reconfigure credentials"
+            )
+
+    def show_accounting_status(self) -> str:
+        """Show current accounting configuration status (sync wrapper)."""
+        return run_async_in_thread(self.show_accounting_status_async())
     
     # Updated Service Usage Methods
     def clear_cache(self):
         """Clear the service discovery cache."""
         self.scanner.clear_cache()
     
-    # Private Helper Methods
+    # Private helper methods
+    def _extract_request_parameters(self, request_schema: Dict[str, Any], all_schemas: Dict[str, Any]) -> Dict[str, Any]:
+        """Extract parameters from request schema."""
+        parameters = {}
+        properties = request_schema.get("properties", {})
+        required_fields = set(request_schema.get("required", []))
+        
+        # Skip system fields
+        skip_fields = {"userEmail", "service", "messages", "query", "transactionToken"}
+        
+        for field_name, field_info in properties.items():
+            if field_name in skip_fields:
+                continue
+                
+            param_info = {
+                "required": field_name in required_fields,
+                "description": field_info.get("description", "")
+            }
+            
+            # Handle direct type
+            if "type" in field_info:
+                param_info["type"] = field_info["type"]
+                self._add_constraints(param_info, field_info)
+            
+            # Handle $ref
+            elif "$ref" in field_info:
+                ref_name = field_info["$ref"].split("/")[-1]
+                if ref_name in all_schemas:
+                    nested = self._extract_schema_properties(all_schemas[ref_name])
+                    param_info.update(nested)
+            
+            # Handle anyOf (optional references)
+            elif "anyOf" in field_info:
+                for option in field_info["anyOf"]:
+                    if "$ref" in option:
+                        ref_name = option["$ref"].split("/")[-1]
+                        if ref_name in all_schemas:
+                            nested = self._extract_schema_properties(all_schemas[ref_name])
+                            param_info.update(nested)
+                            break
+                    elif "type" in option and option["type"] != "null":
+                        param_info["type"] = option["type"]
+                        self._add_constraints(param_info, option)
+            
+            parameters[field_name] = param_info
+        
+        return parameters
+
+    def _extract_schema_properties(self, schema: Dict[str, Any]) -> Dict[str, Any]:
+        """Extract properties from nested schema."""
+        result = {"type": "object", "properties": {}}
+        properties = schema.get("properties", {})
+        
+        for prop_name, prop_info in properties.items():
+            if prop_name == "extensions":
+                continue
+                
+            prop_data = {
+                "description": prop_info.get("description", ""),
+                "required": False
+            }
+            
+            if "type" in prop_info:
+                prop_data["type"] = prop_info["type"]
+                self._add_constraints(prop_data, prop_info)
+            elif "anyOf" in prop_info:
+                for option in prop_info["anyOf"]:
+                    if "type" in option and option["type"] != "null":
+                        prop_data["type"] = option["type"]
+                        self._add_constraints(prop_data, option)
+                        break
+            
+            result["properties"][prop_name] = prop_data
+        
+        return result
+
+    def _add_constraints(self, param_info: Dict[str, Any], field_info: Dict[str, Any]):
+        """Add validation constraints to parameter info."""
+        for constraint in ["minimum", "maximum", "enum", "format"]:
+            if constraint in field_info:
+                param_info[constraint] = field_info[constraint]
+
     def _should_do_health_check(self, health_check: str, service_count: int) -> bool:
         """Determine if health checking should be performed."""
         if health_check == "always":
@@ -827,7 +967,6 @@ class Client:
         
         return "\n".join(lines)
 
-    # Private methods to support RAG coordination
     def _format_search_context(self, results: List[DocumentResult], format_type: str = "frontend") -> str:
         """Format search results as context for chat injection.
         
@@ -886,136 +1025,7 @@ class Client:
         
         return unique_results
     
-    # RAG pipeline methods
-    def create_pipeline(self) -> Pipeline:
-        """Create a new pipeline for RAG workflows"""
-        return Pipeline(client=self)
-
-    def pipeline(self, data_sources: Optional[List[Union[str, Dict]]] = None, 
-                synthesizer: Optional[Union[str, Dict]] = None, 
-                context_format: Optional[str] = None) -> Pipeline:
-        """Create and configure a pipeline in one call (inline approach)
-        
-        Args:
-            data_sources: List of search services to use as data sources
-            synthesizer: Chat service to use for synthesis
-            context_format: Format for search context ("simple" or "frontend")
-        
-        Returns:
-            Configured Pipeline ready for execution
-        
-        Example:
-            result = client.pipeline(
-                data_sources=["alice@example.com/docs", "bob@example.com/wiki"],
-                synthesizer="ai@openai.com/gpt-4"
-            ).run(messages=[{"role": "user", "content": "What is Python?"}])
-        """
-        return Pipeline(
-            client=self, 
-            data_sources=data_sources, 
-            synthesizer=synthesizer,
-            context_format=context_format or "simple"
-        )
-    
-    # Accounting Integration Methods
-    def register_accounting(self, email: str, password: str, organization: Optional[str] = None):
-        """
-        Register a new accounting user.
-        """
-        try:
-            asyncio.run(self.accounting_client.create_accounting_user(email, password, organization))
-            self.accounting_client.save_credentials()
-
-            self.connect_accounting(email, password, self.accounting_client.accounting_url)
-            logger.info("Accounting setup completed and connected successful")
-
-        except Exception as e:
-            raise AuthenticationError(f"Accounting setup failed: {e}")
-
-    def connect_accounting(self, email: str, password: str, accounting_url: Optional[str] = None, save_config: bool = False):
-        """Setup accounting credentials.
-        
-        Args:
-            email: Accounting service email
-            password: Accounting service password  
-            accounting_url: Accounting service URL (uses env var if not provided)
-            save_config: Whether to save config to file (requires explicit user consent)
-        """
-        # Get service URL from environment if not provided
-        if accounting_url is None:
-            accounting_url = os.getenv('SYFTBOX_ACCOUNTING_URL')
-        
-        if not accounting_url:
-            raise ValueError(
-                "Accounting service URL is required. Please either:\n"
-                "1. Set SYFTBOX_ACCOUNTING_URL in your .env file, or\n"
-                "2. Pass accounting_url parameter to this method"
-            )
-        
-        try:
-            # Configure the accounting client
-            self.accounting_client.configure(accounting_url, email, password)
-            
-            # Test the connection
-            # await self.accounting_client.get_account_info()
-            
-            # Save config if explicitly requested
-            if save_config:
-                self.accounting_client.save_credentials()
-
-            logger.info(f"Accounting setup successful for {self.accounting_client.get_email()}")
-
-        except Exception as e:
-            raise AuthenticationError(f"Accounting setup failed: {e}")
-        
-    def is_accounting_configured(self) -> bool:
-        """Check if accounting is properly configured."""
-        return self.accounting_client.is_configured()
-    
-    async def get_account_info(self) -> Dict[str, Any]:
-        """Get account information and balance."""
-        if not self.is_accounting_configured():
-            return {"error": "Accounting not configured"}
-        
-        try:
-            return await self.accounting_client.get_account_info()
-        except Exception as e:
-            logger.error(f"Failed to get account info: {e}")
-            return {"error": str(e)}
-
-    async def show_accounting_status(self) -> str:
-        """Show current accounting configuration status."""
-        if not self.is_accounting_configured():
-            return (
-                "Accounting not configured\n"
-                "   Use client.setup_accounting() to configure payment services\n"
-                "   Currently limited to free services only"
-            )
-        
-        try:
-            account_info = await self.get_account_info_async()
-
-            if "error" in account_info:
-                return (
-                    f"Accounting configured but connection failed\n"
-                    f"   Error: {account_info['error']}\n"
-                    f"   May need to reconfigure credentials"
-                )
-            
-            return (
-                f"Accounting configured\n"
-                f"   Email: {account_info['email']}\n" 
-                f"   Balance: ${account_info['balance']}\n"
-                f"   Can use both free and paid services"
-            )
-        except Exception as e:
-            return (
-                f"Accounting configured but connection failed\n"
-                f"   Error: {e}\n"
-                f"   May need to reconfigure credentials"
-            )
-        
-    # Payment Handling - called internally before paid service use
+    # TODO: Payment Handling - called internally before paid service use
     async def _ensure_payment_setup(self, service: ServiceInfo) -> Optional[str]:
         """Ensure payment is set up for a paid service.
         

@@ -8,8 +8,8 @@ from typing import Dict, Any, List, Optional
 
 from ..core.types import ServiceItem, ServiceType, PricingChargeType, ServiceStatus
 from ..core.exceptions import MetadataParsingError
+from ..discovery.filesystem import SyftURLBuilder
 from ..models.service_info import ServiceInfo
-from ..clients.endpoint_client import SyftURLBuilder
 
 logger = logging.getLogger(__name__)
 
@@ -299,7 +299,6 @@ class MetadataParser:
         
         # Create service info
         return cls.create_service_info(metadata_path, metadata, rpc_schema)
-
 
 class SchemaValidator:
     """Validates parsed metadata and RPC schemas."""
