@@ -171,14 +171,21 @@ class ProcessValidator:
     def is_syftbox_process_running() -> bool:
         """Check if SyftBox process is running."""
         try:
-            for proc in psutil.process_iter(['name', 'exe']):
+            for proc in psutil.process_iter(['name', 'exe', 'cmdline']):
                 try:
                     name = proc.info.get('name', '').lower()
-                    exe = proc.info.get('exe', '').lower()
+                    exe = proc.info.get('exe', '').lower() if proc.info.get('exe') else ''
+                    cmdline = proc.info.get('cmdline', [])
                     
                     # Check if any SyftBox process name matches
                     for process_name in SYFTBOX_PROCESS_NAMES:
                         if process_name in name or process_name in exe:
+                            return True
+                    
+                    # Also check command line for syftbox
+                    if cmdline:
+                        cmdline_str = ' '.join(cmdline).lower()
+                        if 'syftbox' in cmdline_str and not 'grep' in cmdline_str:
                             return True
                             
                 except (psutil.NoSuchProcess, psutil.AccessDenied):
