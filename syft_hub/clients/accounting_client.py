@@ -339,7 +339,7 @@ class AccountingClient:
         """
         import os
         
-        accounting_url = os.getenv("SYFTBOX_ACCOUNTING_URL", "https://syftaccounting.centralus.cloudapp.azure.com/")
+        accounting_url = os.getenv("SYFTBOX_ACCOUNTING_URL")
         email = os.getenv("SYFTBOX_ACCOUNTING_EMAIL")
         password = os.getenv("SYFTBOX_ACCOUNTING_PASSWORD")
         
