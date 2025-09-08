@@ -145,7 +145,7 @@ class Client:
             'search',
             'search_async',
             'get_service_params',
-            'show_service_details',
+            'show_service',
             
             # RAG/Pipeline
             'pipeline',
@@ -288,6 +288,20 @@ class Client:
             response = service.chat(messages=[{"role": "user", "content": "Hello"}])
         """
         service_info = self._get_service(service_name)
+        
+        # Check health status if not already checked
+        if service_info.health_status is None:
+            try:
+                from .core.health import check_service_health
+                from .utils.async_utils import run_async_in_thread
+                health_status = run_async_in_thread(
+                    check_service_health(service_info, self._rpc_client, timeout=2.0)
+                )
+                service_info.health_status = health_status
+            except Exception as e:
+                logger.debug(f"Health check failed for {service_name}: {e}")
+                # Leave health_status as None if check fails
+        
         return Service(service_info, self)
 
     # Service Usage Methods 
@@ -550,15 +564,12 @@ class Client:
         else:
             return [self._service_to_dict(service) for service in services]
     
-    def show_service_details(self, service_name: str, datasite: Optional[str] = None) -> str:
-        """Show detailed information about a specific service.
+    def show_service(self, service_name: str, datasite: Optional[str] = None) -> None:
+        """Show service information using an HTML widget (similar to client.show()).
         
         Args:
             service_name: Name of the service (can be "service" or "datasite/service")
             datasite: Optional datasite to narrow search
-            
-        Returns:
-            Formatted service details
         """
         # Format service name with datasite if provided and not already in the name
         if datasite and "/" not in service_name:
@@ -568,7 +579,7 @@ class Client:
         if not service:
             raise ServiceNotFoundError(f"Service '{service_name}' not found")
         
-        return format_service_details(service)
+        service.show()
     
     # Health Monitoring Methods
     async def check_service_health(self, service_name: str, timeout: float = 2.0) -> HealthStatus:
@@ -942,7 +953,7 @@ class Client:
                 <div style="margin-bottom: 8px; font-weight: 500;">Common operations:</div>
                 <div style="line-height: 1.8;">
                     <span class="command-code">client.list_services()</span> — Discover available services<br>
-                    <span class="command-code">client.chat("service", "message")</span> — Chat with a service<br>
+                    <span class="command-code">client.chat("service", messages=[])</span> — Chat with a service<br>
                     <span class="command-code">client.search("service", "query")</span> — Search with a service<br>
                     <span class="command-code">client.register_accounting(email)</span> — Register accounting<br>
                     <span class="command-code">client.connect_accounting(email, password)</span> — Connect accounting
@@ -979,7 +990,7 @@ class Client:
             f"",
             f"Common operations:",
             f"  client.list_services()                    — Discover available services",
-            f"  client.chat('service', 'message')         — Chat with a service",
+            f"  client.chat('service', messages=[])       — Chat with a service",
             f"  client.search('service', 'query')         — Search with a service",
             f"  client.register_accounting(email)         — Register account",
             f"  client.connect_accounting(email, password) — Connect account"

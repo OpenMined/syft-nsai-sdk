@@ -315,10 +315,242 @@ class ServiceInfo:
         }
     
     def __repr__(self) -> str:
-        """String representation of ServiceInfo."""
-        service_types = ', '.join([s.type.value for s in self.services if s.enabled])
-        return (f"ServiceInfo(name='{self.name}', datasite='{self.datasite}', "
-                f"services=[{service_types}], status={self.config_status.value})")
+        """String representation of ServiceInfo in client's __repr__ format."""
+        # Get basic service info
+        service_name = self.name
+        datasite = self.datasite
+        summary = self.summary
+        status = self.config_status.value
+        
+        # Get enabled services
+        enabled_services = []
+        total_cost = 0
+        for service_item in self.services:
+            if service_item.enabled:
+                enabled_services.append(service_item.type.value.title())
+                total_cost += service_item.pricing
+        
+        services_str = ", ".join(enabled_services) if enabled_services else "None"
+        
+        # Health status
+        health_str = ""
+        if self.health_status:
+            health_map = {
+                HealthStatus.ONLINE: "Online",
+                HealthStatus.OFFLINE: "Offline", 
+                HealthStatus.TIMEOUT: "Timeout",
+                HealthStatus.UNKNOWN: "Unknown"
+            }
+            health_str = f" [{health_map.get(self.health_status, 'Unknown')}]"
+        
+        # Pricing info
+        pricing_str = "Free" if total_cost == 0 else f"${total_cost:.2f}/request"
+        
+        # Tags (limit to 3-4 for display)
+        tags_display = ""
+        if self.tags:
+            display_tags = self.tags[:4]
+            tags_display = ", ".join(display_tags)
+            if len(self.tags) > 4:
+                tags_display += f" (+{len(self.tags) - 4} more)"
+        
+        # Build lines in client's __repr__ format (exactly matching spacing)
+        lines = [
+            f"{service_name} Service [{status}]{health_str}",
+            "",
+            f"Datasite:         {datasite}",
+            f"Summary:          {summary}",
+            f"Services:         {services_str}",
+            f"Pricing:          {pricing_str}",
+        ]
+        
+        if tags_display:
+            lines.append(f"Tags:             {tags_display}")
+        
+        lines.extend([
+            "",
+            "Available operations:",
+            f"  client.chat('{datasite}/{service_name}', messages=[...])   — Chat with service{'✅' if self.is_healthy else '❌' if self.health_status and not self.is_healthy else ''}",
+            f"  client.search('{datasite}/{service_name}', 'query')       — Search with service{'✅' if self.is_healthy else '❌' if self.health_status and not self.is_healthy else ''}",
+        ])
+        
+        return "\n".join(lines)
+    
+    def show(self) -> None:
+        """Display service information as an HTML widget in notebooks."""
+        try:
+            from IPython.display import display, HTML
+        except ImportError:
+            # Fallback to text representation if not in a notebook
+            print(self.__repr__())
+            return
+        
+        # Get basic service info
+        service_name = self.name
+        datasite = self.datasite
+        summary = self.summary
+        description = self.description if self.description != self.summary else ""
+        status = self.config_status.value
+        
+        # Get enabled services
+        enabled_services = []
+        total_cost = 0
+        for service_item in self.services:
+            if service_item.enabled:
+                enabled_services.append(service_item.type.value.title())
+                total_cost += service_item.pricing
+        
+        services_str = ", ".join(enabled_services) if enabled_services else "None"
+        
+        # Health status with styling
+        health_class = ""
+        health_text = ""
+        if self.health_status:
+            health_map = {
+                HealthStatus.ONLINE: ("online", "Online"),
+                HealthStatus.OFFLINE: ("offline", "Offline"), 
+                HealthStatus.TIMEOUT: ("timeout", "Timeout"),
+                HealthStatus.UNKNOWN: ("unknown", "Unknown")
+            }
+            health_class, health_text = health_map.get(self.health_status, ("unknown", "Unknown"))
+            health_text = f" [{health_text}]"
+        
+        # Pricing info
+        pricing_str = "Free" if total_cost == 0 else f"${total_cost:.2f}/request"
+        pricing_class = "free" if total_cost == 0 else "paid"
+        
+        # Tags (limit for display)
+        tags_display = ""
+        if self.tags:
+            display_tags = self.tags[:4]
+            tags_display = ", ".join(display_tags)
+            if len(self.tags) > 4:
+                tags_display += f" (+{len(self.tags) - 4} more)"
+        
+        # Build HTML widget with styling similar to client's show()
+        html = f'''
+        <style>
+            .serviceinfo-widget {{
+                font-family: system-ui, -apple-system, sans-serif;
+                padding: 12px 0;
+                color: #333;
+                line-height: 1.5;
+            }}
+            .serviceinfo-title {{
+                font-size: 14px;
+                font-weight: 600;
+                margin-bottom: 12px;
+                color: #333;
+            }}
+            .serviceinfo-status-line {{
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                margin-bottom: 8px;
+            }}
+            .serviceinfo-status {{
+                font-size: 12px;
+                padding: 2px 6px;
+                border-radius: 3px;
+                background: #e8f5e8;
+                color: #2d5a2d;
+            }}
+            .serviceinfo-status.online {{
+                background: #e8f5e8;
+                color: #2d5a2d;
+            }}
+            .serviceinfo-status.offline {{
+                background: #ffe6e6;
+                color: #cc0000;
+            }}
+            .serviceinfo-status.timeout {{
+                background: #fff3cd;
+                color: #856404;
+            }}
+            .serviceinfo-status.unknown {{
+                background: #e2e3e5;
+                color: #6c757d;
+            }}
+            .serviceinfo-info {{
+                display: grid;
+                grid-template-columns: 100px 1fr;
+                gap: 8px 12px;
+                margin: 12px 0;
+                font-size: 12px;
+            }}
+            .serviceinfo-label {{
+                font-weight: 500;
+                color: #666;
+            }}
+            .serviceinfo-value {{
+                color: #333;
+            }}
+            .serviceinfo-pricing {{
+                font-weight: 500;
+            }}
+            .serviceinfo-pricing.free {{
+                color: #2d5a2d;
+            }}
+            .serviceinfo-pricing.paid {{
+                color: #d63384;
+            }}
+            .serviceinfo-operations {{
+                margin-top: 16px;
+                padding-top: 12px;
+                border-top: 1px solid #e0e0e0;
+            }}
+            .serviceinfo-operations-title {{
+                font-size: 12px;
+                font-weight: 500;
+                margin-bottom: 8px;
+                color: #666;
+            }}
+            .serviceinfo-command-code {{
+                font-family: Monaco, 'Courier New', monospace;
+                background: #f5f5f5;
+                padding: 1px 4px;
+                border-radius: 2px;
+                color: #0066cc;
+                font-size: 11px;
+            }}
+            .command-code {{
+                font-family: Monaco, 'Courier New', monospace;
+                background: #f5f5f5;
+                padding: 1px 4px;
+                border-radius: 2px;
+                color: #0066cc;
+                font-size: 11px;
+            }}
+        </style>
+        <div class="serviceinfo-widget">
+            <div class="serviceinfo-title">{service_name} Service</div>
+            <div class="serviceinfo-status-line">
+                <span>Status: {status}</span>
+                {f'<span class="serviceinfo-status {health_class}">Health: {health_text.strip("[] ")}</span>' if health_text else ''}
+            </div>
+            <div class="serviceinfo-info">
+                <div class="serviceinfo-label">Datasite:</div>
+                <div class="serviceinfo-value">{datasite}</div>
+                <div class="serviceinfo-label">Summary:</div>
+                <div class="serviceinfo-value">{summary}</div>
+                <div class="serviceinfo-label">Services:</div>
+                <div class="serviceinfo-value">{services_str}</div>
+                <div class="serviceinfo-label">Pricing:</div>
+                <div class="serviceinfo-value serviceinfo-pricing {pricing_class}">{pricing_str}</div>
+                {f'<div class="serviceinfo-label">Tags:</div><div class="serviceinfo-value">{tags_display}</div>' if tags_display else ''}
+            </div>
+            {f'<div style="margin: 12px 0; padding: 12px; background: #fff; border-radius: 4px; border: 1px solid #e9ecef; font-size: 13px; line-height: 1.6; color: #555;"><strong>Description:</strong><br>{description}</div>' if description else ''}
+            <div class="serviceinfo-operations">
+                <div class="serviceinfo-operations-title">Available operations:</div>
+                <div style="line-height: 1.8;">
+                    <span class="serviceinfo-command-code">client.chat('{datasite}/{service_name}', messages=[])</span> — Chat with service {"✅" if self.is_healthy else "❌" if self.health_status and not self.is_healthy else ""}<br>
+                    <span class="serviceinfo-command-code">client.search('{datasite}/{service_name}', 'query')</span> — Search with service {"✅" if self.is_healthy else "❌" if self.health_status and not self.is_healthy else ""}
+                </div>
+            </div>
+        </div>
+        '''
+        
+        display(HTML(html))
     
     def __str__(self) -> str:
         """Human-readable string representation."""
