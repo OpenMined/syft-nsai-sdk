@@ -22,7 +22,7 @@ class AccountingClient:
     """Client for handling accounting operations."""
     
     def __init__(self, 
-                 accounting_url: Optional[str] = None,
+                 accounting_url: str = "https://syftaccounting.centralus.cloudapp.azure.com/",
                  credentials: Optional[Dict[str, str]] = None
         ):
         """Initialize accounting client.
@@ -259,7 +259,7 @@ class AccountingClient:
                 "email": self._credentials["email"],
                 "password": self._credentials["password"],
                 "created_at": datetime.now().isoformat(),
-                "organization": self._credentials["organization"],
+                # "organization": self._credentials["organization"],
             }
             
             with open(config_path, 'w') as f:
@@ -339,7 +339,7 @@ class AccountingClient:
         """
         import os
         
-        accounting_url = os.getenv("SYFTBOX_ACCOUNTING_URL")
+        accounting_url = os.getenv("SYFTBOX_ACCOUNTING_URL", "https://syftaccounting.centralus.cloudapp.azure.com/")
         email = os.getenv("SYFTBOX_ACCOUNTING_EMAIL")
         password = os.getenv("SYFTBOX_ACCOUNTING_PASSWORD")
         
