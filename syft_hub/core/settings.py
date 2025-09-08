@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     log_level: str = Field("INFO", env="LOG_LEVEL")
     
     # Security
-    jwt_secret: str = Field(..., env="JWT_SECRET")
+    # jwt_secret: str = Field(..., env="JWT_SECRET")
     
     # SyftBox paths
     syftbox_config_path: Path = Field("~/.syftbox/config.json", env="SYFTBOX_CONFIG_PATH")
