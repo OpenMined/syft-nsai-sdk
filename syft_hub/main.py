@@ -43,8 +43,8 @@ class Client:
             syftbox_config_path: Optional[Path] = None,
             cache_server_url: Optional[str] = None,
             accounting_client: Optional[AccountingClient] = None,
-            auto_setup_accounting: bool = True,
-            auto_health_check_threshold: int = 10
+            _auto_setup_accounting: bool = True,
+            _auto_health_check_threshold: int = 10
         ):
         """Initialize SyftBox client.
         
@@ -52,8 +52,8 @@ class Client:
             syftbox_config_path: Custom path to SyftBox config file
             cache_server_url: Override cache server URL
             accounting_client: Pre-configured AccountingClient instance
-            auto_setup_accounting: Whether to prompt for accounting setup when needed
-            auto_health_check_threshold: Max services for auto health checking
+            _auto_setup_accounting: Whether to prompt for accounting setup when needed
+            _auto_health_check_threshold: Max services for auto health checking
         """
         # Check SyftBox availability and config manager with custom path if provided
         self.config_manager = ConfigManager(syftbox_config_path)
@@ -108,18 +108,18 @@ class Client:
         # Set up RPC client
         server_url = cache_server_url or self.config.cache_server_url
         
-        self.rpc_client = SyftBoxRPCClient(
+        self._rpc_client = SyftBoxRPCClient(
             cache_server_url=server_url,
             accounting_client=self.accounting_client,
         )
         
         # Set up service scanner
         self.scanner = FastScanner(self.config)
-        self.parser = MetadataParser()
+        self._parser = MetadataParser()
         
         # Configuration
-        self.auto_health_check_threshold = auto_health_check_threshold
-        self.auto_setup_accounting = auto_setup_accounting
+        self._auto_health_check_threshold = _auto_health_check_threshold
+        self._auto_setup_accounting = _auto_setup_accounting
         
         # Optional health monitor
         self._health_monitor: Optional[HealthMonitor] = None
@@ -127,9 +127,50 @@ class Client:
         # Load user email from config if not provided (from_email and self._account_configured)
         logger.info(f"Client initialized for {self.config.email}")
     
+    def __dir__(self):
+        """Control what appears in autocomplete suggestions.
+        
+        Returns only the main public methods that users should interact with.
+        """
+        return [
+            # Display methods
+            'show',
+            'show_services',
+            
+            # Service discovery and usage
+            'list_services',
+            'chat',
+            'chat_async',
+            'search',
+            'search_async',
+            'get_parameters',
+            'show_service_usage',
+            'show_service_details',
+            
+            # Accounting
+            'accounting_client',
+            'register_accounting',
+            'connect_accounting',
+            'show_accounting_status',
+            
+            # Health monitoring
+            'health_check',
+            'batch_health_check',
+            'start_health_monitoring',
+            'stop_health_monitoring',
+            
+            # Properties
+            'config',
+            'config_manager',
+            
+            # Cleanup
+            'cleanup',
+            'close',
+        ]
+    
     async def close(self):
         """Close client and cleanup resources."""
-        await self.rpc_client.close()
+        await self._rpc_client.close()
         if self._health_monitor:
             await self._health_monitor.stop_monitoring()
     
@@ -169,7 +210,7 @@ class Client:
         services = []
         for metadata_path in metadata_paths:
             try:
-                service_info = self.parser.parse_service_from_files(metadata_path)
+                service_info = self._parser.parse_service_from_files(metadata_path)
                 services.append(service_info)
             except Exception as e:
                 logger.debug(f"Failed to parse {metadata_path}: {e}")
@@ -215,7 +256,7 @@ class Client:
         logger.debug(f"Discovered {len(filtered_services)} services (health_check={should_health_check})")
         return ServicesList(filtered_services, self)
     
-    def get_service(self, service_name: str) -> ServiceInfo:
+    def _get_service(self, service_name: str) -> ServiceInfo:
         if not service_name:
             raise ValidationError("Valid service name (datasite/service_name) must be provided")
         datasite, name = service_name.split("/", 1)
@@ -224,7 +265,7 @@ class Client:
         if not metadata_path:
             raise ServiceNotFoundError(f"'{service_name}'")
         
-        return self.parser.parse_service_from_files(metadata_path)
+        return self._parser.parse_service_from_files(metadata_path)
     
     def load_service(self, service_name: str) -> Service:
         """Load a service by name and return Service object for interaction.
@@ -239,7 +280,7 @@ class Client:
             service = client.load_service("alice@example.com/gpt-assistant")
             response = service.chat(messages=[{"role": "user", "content": "Hello"}])
         """
-        service_info = self.get_service(service_name)
+        service_info = self._get_service(service_name)
         return Service(service_info, self)
 
     # Service Usage Methods 
@@ -264,7 +305,7 @@ class Client:
             Chat response from the specified service
         """
         # Find the specific service
-        service = self.get_service(service_name)
+        service = self._get_service(service_name)
         logger.info(f"Using service: {service.name} from datasite: {service.datasite}") 
         
         # Validate service supports chat
@@ -283,10 +324,10 @@ class Client:
         chat_params = {k: v for k, v in chat_params.items() if v is not None}
         
         # Create service and make request
-        chat_service = ChatService(service, self.rpc_client)
+        chat_service = ChatService(service, self._rpc_client)
         return await chat_service.chat_with_params(chat_params)
     
-    def chat_sync(
+    def _chat_sync(
             self,
             service_name: str,
             messages: str,
@@ -344,7 +385,7 @@ class Client:
             return self.chat_async(service_name, messages, temperature, max_tokens, **kwargs)
         else:
             # Safe to use thread-based sync version
-            return self.chat_sync(service_name, messages, temperature, max_tokens, **kwargs)
+            return self._chat_sync(service_name, messages, temperature, max_tokens, **kwargs)
 
     def search_async(
             self,
@@ -368,7 +409,7 @@ class Client:
         """
 
         # Find the specific service
-        service = self.get_service(service_name)
+        service = self._get_service(service_name)
         logger.info(f"Using service: {service.name} from datasite: {service.datasite}") 
         
         # Validate service supports search
@@ -387,10 +428,10 @@ class Client:
         search_params = {k: v for k, v in search_params.items() if v is not None}
         
         # Create service and make request
-        search_service = SearchService(service, self.rpc_client)
+        search_service = SearchService(service, self._rpc_client)
         return asyncio.run(search_service.search_with_params(search_params))
     
-    async def search_sync(
+    async def _search_sync(
             self,
             service_name: str, 
             message: str,
@@ -442,12 +483,12 @@ class Client:
             return self.search_async(service_name, message, topK, similarity_threshold, **kwargs)
         else:
             # Safe to use thread-based sync version
-            return self.search_sync(service_name, message, topK, similarity_threshold, **kwargs)
+            return self._search_sync(service_name, message, topK, similarity_threshold, **kwargs)
 
     # Service Parameters
     def get_parameters(self, service_name: str, datasite: Optional[str] = None) -> Dict[str, Any]:
         """Get available parameters for a specific service."""
-        service = self.get_service(service_name, datasite)
+        service = self._get_service(service_name, datasite)
         if not service:
             raise ServiceNotFoundError(f"Service '{service_name}' not found")
         
@@ -478,7 +519,7 @@ class Client:
         Returns:
             Formatted usage examples
         """
-        service = self.get_service(service_name, datasite)
+        service = self._get_service(service_name, datasite)
         if not service:
             raise ServiceNotFoundError(f"Service '{service_name}' not found")
         
@@ -536,7 +577,7 @@ class Client:
         return "\n".join(examples)
     
     # Display Methods 
-    def format_services(self, 
+    def _format_services(self, 
                    service_type: Optional[ServiceType] = None,
                    health_check: str = "auto",
                    format: str = "table") -> str:
@@ -575,7 +616,7 @@ class Client:
         Returns:
             Formatted service details
         """
-        service = self.get_service(service_name, datasite)
+        service = self._get_service(service_name, datasite)
         if not service:
             raise ServiceNotFoundError(f"Service '{service_name}' not found")
         
@@ -592,11 +633,11 @@ class Client:
         Returns:
             Health status of the service
         """
-        service = self.get_service(service_name)
+        service = self._get_service(service_name)
         if not service:
             raise ServiceNotFoundError(f"Service '{service_name}' not found")
 
-        return await check_service_health(service, self.rpc_client, timeout)
+        return await check_service_health(service, self._rpc_client, timeout)
     
     async def check_all_services_health(
             self, 
@@ -613,7 +654,7 @@ class Client:
             Dictionary mapping service names to health status
         """
         services = self.list_services(service_type=service_type, health_check="never")
-        return await batch_health_check(services, self.rpc_client, timeout)
+        return await batch_health_check(services, self._rpc_client, timeout)
     
     def start_health_monitoring(
             self, 
@@ -633,12 +674,12 @@ class Client:
             logger.warning("Health monitoring already running")
             return self._health_monitor
         
-        self._health_monitor = HealthMonitor(self.rpc_client, check_interval)
+        self._health_monitor = HealthMonitor(self._rpc_client, check_interval)
         
         # Add services to monitor
         if services:
             for service_name in services:
-                service = self.get_service(service_name)
+                service = self._get_service(service_name)
                 if service:
                     self._health_monitor.add_service(service)
         else:
@@ -805,6 +846,40 @@ class Client:
         return run_async_in_thread(self.show_accounting_status_async())
     
     # Display Methods
+    def show_services(self, health_check: str = "always", **kwargs) -> None:
+        """Display available services using ServicesList's show_services method.
+        
+        Args:
+            health_check: Health checking mode ("auto", "always", "never")
+                - "always": Always check health status (shows real availability)
+                - "never": Skip health checks (faster, shows Unknown)
+                - "auto": Check only if ≤10 services (default threshold)
+            **kwargs: Arguments to pass to ServicesList.show_services()
+                page: Starting page number
+                items_per_page: Services per page
+                current_user_email: Current user's email for context
+                save_to_file: Force save to file even in notebooks
+                output_path: Custom output path for HTML file
+                open_in_browser: Force open in browser even in Jupyter notebooks
+        """
+        try:
+            services_list = self.list_services(health_check=health_check)
+            # ServicesList has its own show_services method
+            services_list.show_services(**kwargs)
+        except Exception as e:
+            logger.error(f"Failed to show services: {e}")
+            # Fallback display
+            from IPython.display import display, HTML
+            html = '''
+            <div style="font-family: system-ui, -apple-system, sans-serif; padding: 12px 0; color: #333;">
+                <div style="font-size: 14px; font-weight: 600; margin-bottom: 12px;">Available Services</div>
+                <div style="color: #999; font-style: italic; font-size: 13px;">
+                    Error loading services. Make sure SyftBox is running.
+                </div>
+            </div>
+            '''
+            display(HTML(html))
+    
     def show(self) -> None:
         """Display client status as an HTML widget."""
         from IPython.display import display, HTML
@@ -818,7 +893,7 @@ class Client:
         # Count available services
         try:
             services = self.list_services()
-            service_count = len(services.services) if services else 0
+            service_count = len(services) if services else 0
         except:
             service_count = 0
         
@@ -921,8 +996,8 @@ class Client:
                     <span class="command-code">client.list_services()</span> — Discover available services<br>
                     <span class="command-code">client.chat("service", "message")</span> — Chat with a service<br>
                     <span class="command-code">client.search("service", "query")</span> — Search with a service<br>
-                    <span class="command-code">client.register_accounting(email)</span> — Register account<br>
-                    <span class="command-code">client.connect_accounting(email, password)</span> — Connect account
+                    <span class="command-code">client.register_accounting(email)</span> — Register accounting<br>
+                    <span class="command-code">client.connect_accounting(email, password)</span> — Connect accounting
                 </div>
             </div>
         </div>
@@ -941,7 +1016,7 @@ class Client:
         # Count available services
         try:
             services = self.list_services()
-            service_count = len(services.services) if services else 0
+            service_count = len(services) if services else 0
         except:
             service_count = 0
         
@@ -975,7 +1050,7 @@ class Client:
         # Count available services
         try:
             services = self.list_services()
-            service_count = len(services.services) if services else 0
+            service_count = len(services) if services else 0
         except:
             service_count = 0
         
@@ -1181,13 +1256,13 @@ class Client:
         elif health_check == "never":
             return False
         elif health_check == "auto":
-            return service_count <= self.auto_health_check_threshold
+            return service_count <= self._auto_health_check_threshold
         else:
             raise ValueError(f"Invalid health_check value: {health_check}")
     
     async def _add_health_status(self, services: List[ServiceInfo]) -> List[ServiceInfo]:
         """Add health status to services."""
-        health_status = await batch_health_check(services, self.rpc_client, timeout=2.0)
+        health_status = await batch_health_check(services, self._rpc_client, timeout=2.0)
         
         for service in services:
             service.health_status = health_status.get(service.name, HealthStatus.UNKNOWN)
@@ -1334,7 +1409,7 @@ class Client:
         
         # Service requires payment - ensure accounting is set up
         if not self.is_accounting_configured():
-            if self.auto_setup_accounting:
+            if self._auto_setup_accounting:
                 print(f"\nPayment Required")
                 print(f"Service '{service.name}' costs ${service_info.pricing} per request")
                 print(f"Datasite: {service.datasite}")

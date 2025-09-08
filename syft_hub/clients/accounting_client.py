@@ -34,6 +34,31 @@ class AccountingClient:
         self.accounting_url = accounting_url
         self._credentials = credentials
         self._client = None
+    
+    def __dir__(self):
+        """Control what appears in autocomplete suggestions.
+        
+        Returns only the main public methods that users should interact with.
+        """
+        return [
+            # Display methods
+            'show',
+            
+            # Account management
+            'register_accounting',
+            'connect_accounting',
+            'get_account_balance',
+            
+            # Status and info
+            'is_configured',
+            'get_email',
+            
+            # Transactions
+            'create_transaction',
+            
+            # Properties
+            'accounting_url',
+        ]
 
     def _create_accounting_user(
         self,
