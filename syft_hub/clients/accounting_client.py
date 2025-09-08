@@ -345,7 +345,7 @@ class AccountingClient:
         
         if not all([accounting_url, email, password]):
             missing = []
-            if not accounting_url: missing.append("SYFTBOX_ACCOUNTING_URL", "https://syftaccounting.centralus.cloudapp.azure.com/")
+            if not accounting_url: missing.append("SYFTBOX_ACCOUNTING_URL")
             if not email: missing.append("SYFTBOX_ACCOUNTING_EMAIL") 
             if not password: missing.append("SYFTBOX_ACCOUNTING_PASSWORD")
             
