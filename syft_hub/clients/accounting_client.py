@@ -259,7 +259,7 @@ class AccountingClient:
                 "email": self._credentials["email"],
                 "password": self._credentials["password"],
                 "created_at": datetime.now().isoformat(),
-                "organization": self._credentials["organization"],
+                # "organization": self._credentials["organization"],
             }
             
             with open(config_path, 'w') as f:

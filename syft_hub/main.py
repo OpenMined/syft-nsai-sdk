@@ -707,12 +707,15 @@ class Client:
             self.register_accounting_async(email, password, organization)
         )
 
-    async def connect_accounting_async(self, email: str, password: str, accounting_url: Optional[str] = None, save_config: bool = False):
+    async def connect_accounting_async(self, email: str, password: str, accounting_url: Optional[str] = None, save_config: bool = True):
         """Setup accounting credentials (async)."""
         # Get service URL from environment if not provided
+        if not accounting_url:
+            accounting_url = self.accounting_client.accounting_url
+            
         if accounting_url is None:
             accounting_url = os.getenv('SYFTBOX_ACCOUNTING_URL')
-        
+
         if not accounting_url:
             raise ValueError(
                 "Accounting service URL is required. Please either:\n"
@@ -733,7 +736,7 @@ class Client:
         except Exception as e:
             raise AuthenticationError(f"Accounting setup failed: {e}")
         
-    def connect_accounting(self, email: str, password: str, accounting_url: Optional[str] = None, save_config: bool = False):
+    def connect_accounting(self, email: str, password: str, accounting_url: Optional[str] = None, save_config: bool = True):
         """Setup accounting credentials (sync wrapper)."""
         return run_async_in_thread(
             self.connect_accounting_async(email, password, accounting_url, save_config)
