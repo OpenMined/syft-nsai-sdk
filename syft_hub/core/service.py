@@ -143,3 +143,78 @@ class Service:
         if not self.supports_search:
             raise ServiceNotSupportedError(f"Service '{self.name}' doesn't support search")
         return await self._client.search_async(self.full_name, message, **kwargs)
+    
+    def show_example(self) -> str:
+        """Show usage examples for this service.
+        
+        Returns:
+            Formatted usage examples
+        """
+        examples = []
+        examples.append(f"# Usage examples for {self.name}")
+        examples.append(f"# Datasite: {self.datasite}")
+        examples.append("")
+        
+        # Object-oriented examples (using Service object)
+        examples.append("## Using Service object:")
+        examples.append(f'service = client.load_service("{self.full_name}")')
+        examples.append("")
+        
+        if self.supports_chat:
+            examples.extend([
+                "# Basic chat",
+                'response = service.chat("Hello! How are you?")',
+                "",
+                "# Chat with parameters",
+                'response = service.chat(',
+                '    messages="Write a story",',
+                '    temperature=0.7,',
+                '    max_tokens=200',
+                ')',
+                ""
+            ])
+        
+        if self.supports_search:
+            examples.extend([
+                "# Basic search",
+                'results = service.search("machine learning")',
+                "",
+                "# Search with parameters", 
+                'results = service.search(',
+                '    message="latest AI research",',
+                '    topK=10,',
+                '    similarity_threshold=0.8',
+                ')',
+                ""
+            ])
+        
+        # Direct client examples
+        examples.append("## Using client directly:")
+        
+        if self.supports_chat:
+            examples.extend([
+                "# Basic chat",
+                f'response = await client.chat(',
+                f'    service_name="{self.full_name}",',
+                f'    messages="Hello! How are you?"',
+                f')',
+                ""
+            ])
+        
+        if self.supports_search:
+            examples.extend([
+                "# Basic search",
+                f'results = await client.search(',
+                f'    service_name="{self.full_name}",',
+                f'    message="machine learning"',
+                f')',
+                ""
+            ])
+        
+        # Add pricing info
+        if self.cost > 0:
+            examples.append(f"# Cost: ${self.cost} per request")
+        else:
+            examples.append("# Cost: Free")
+        
+        return "\n".join(examples)

@@ -114,7 +114,7 @@ class Client:
         )
         
         # Set up service scanner
-        self.scanner = FastScanner(self.config)
+        self._scanner = FastScanner(self.config)
         self._parser = MetadataParser()
         
         # Configuration
@@ -139,23 +139,29 @@ class Client:
             
             # Service discovery and usage
             'list_services',
+            'load_service',
             'chat',
             'chat_async',
             'search',
             'search_async',
-            'get_parameters',
-            'show_service_usage',
+            'get_service_params',
             'show_service_details',
+            
+            # RAG/Pipeline
+            'pipeline',
+            'create_pipeline',
             
             # Accounting
             'accounting_client',
             'register_accounting',
             'connect_accounting',
-            'show_accounting_status',
+            'get_accounting_status',
+            'is_accounting_configured',
+            'get_account_info',
             
             # Health monitoring
-            'health_check',
-            'batch_health_check',
+            'check_service_health',
+            'check_all_services_health',
             'start_health_monitoring',
             'stop_health_monitoring',
             
@@ -163,7 +169,8 @@ class Client:
             'config',
             'config_manager',
             
-            # Cleanup
+            # Maintenance
+            'clear_cache',
             'cleanup',
             'close',
         ]
@@ -204,7 +211,7 @@ class Client:
             List of discovered and filtered services
         """
         # Scan for metadata files
-        metadata_paths = self.scanner.scan_with_cache()
+        metadata_paths = self._scanner.scan_with_cache()
         
         # Parse services from metadata
         services = []
@@ -260,7 +267,7 @@ class Client:
         if not service_name:
             raise ValidationError("Valid service name (datasite/service_name) must be provided")
         datasite, name = service_name.split("/", 1)
-        metadata_path = self.scanner.get_service_path(datasite, name)
+        metadata_path = self._scanner.get_service_path(datasite, name)
         
         if not metadata_path:
             raise ServiceNotFoundError(f"'{service_name}'")
@@ -486,9 +493,13 @@ class Client:
             return self._search_sync(service_name, message, topK, similarity_threshold, **kwargs)
 
     # Service Parameters
-    def get_parameters(self, service_name: str, datasite: Optional[str] = None) -> Dict[str, Any]:
+    def get_service_params(self, service_name: str, datasite: Optional[str] = None) -> Dict[str, Any]:
         """Get available parameters for a specific service."""
-        service = self._get_service(service_name, datasite)
+        # Format service name with datasite if provided and not already in the name
+        if datasite and "/" not in service_name:
+            service_name = f"{datasite}/{service_name}"
+        
+        service = self._get_service(service_name)
         if not service:
             raise ServiceNotFoundError(f"Service '{service_name}' not found")
         
@@ -509,73 +520,6 @@ class Client:
         
         return parameters
 
-    def show_service_usage(self, service_name: str, datasite: Optional[str] = None) -> str:
-        """Show usage examples for a specific service.
-        
-        Args:
-            service_name: Name of the service
-            datasite: Datasite email if needed
-            
-        Returns:
-            Formatted usage examples
-        """
-        service = self._get_service(service_name, datasite)
-        if not service:
-            raise ServiceNotFoundError(f"Service '{service_name}' not found")
-        
-        examples = []
-        examples.append(f"# Usage examples for {service.name}")
-        examples.append(f"# Datasite: {service.datasite}")
-        examples.append("")
-        
-        if service.supports_service(ServiceType.CHAT):
-            examples.extend([
-                "# Basic chat",
-                f'response = await client.chat(',
-                f'    service_name="{service.name}",',
-                f'    datasite="{service.datasite}",',
-                f'    prompt="Hello! How are you?"',
-                f')',
-                "",
-                "# Chat with parameters",
-                f'response = await client.chat(',
-                f'    service_name="{service.name}",',
-                f'    datasite="{service.datasite}",',
-                f'    prompt="Write a story",',
-                f'    temperature=0.7,',
-                f'    max_tokens=200',
-                f')',
-                ""
-            ])
-        
-        if service.supports_service(ServiceType.SEARCH):
-            examples.extend([
-                "# Basic search",
-                f'results = await client.search(',
-                f'    service_name="{service.name}",',
-                f'    datasite="{service.datasite}",',
-                f'    query="machine learning"',
-                f')',
-                "",
-                "# Search with parameters", 
-                f'results = await client.search(',
-                f'    service_name="{service.name}",',
-                f'    datasite="{service.datasite}",',
-                f'    query="latest AI research",',
-                f'    limit=10,',
-                f'    similarity_threshold=0.8',
-                f')',
-                ""
-            ])
-        
-        # Add pricing info
-        if service.min_pricing > 0:
-            examples.append(f"# Cost: ${service.min_pricing} per request")
-        else:
-            examples.append("# Cost: Free")
-        
-        return "\n".join(examples)
-    
     # Display Methods 
     def _format_services(self, 
                    service_type: Optional[ServiceType] = None,
@@ -610,13 +554,17 @@ class Client:
         """Show detailed information about a specific service.
         
         Args:
-            service_name: Name of the service
+            service_name: Name of the service (can be "service" or "datasite/service")
             datasite: Optional datasite to narrow search
             
         Returns:
             Formatted service details
         """
-        service = self._get_service(service_name, datasite)
+        # Format service name with datasite if provided and not already in the name
+        if datasite and "/" not in service_name:
+            service_name = f"{datasite}/{service_name}"
+        
+        service = self._get_service(service_name)
         if not service:
             raise ServiceNotFoundError(f"Service '{service_name}' not found")
         
@@ -809,7 +757,7 @@ class Client:
             logger.error(f"Failed to get account info: {e}")
             return {"error": str(e)}
 
-    async def show_accounting_status_async(self) -> str:
+    async def get_accounting_status_async(self) -> str:
         """Show current accounting configuration status (async)."""
         if not self.is_accounting_configured():
             return (
@@ -841,9 +789,9 @@ class Client:
                 f"   May need to reconfigure credentials"
             )
 
-    def show_accounting_status(self) -> str:
+    def get_accounting_status(self) -> str:
         """Show current accounting configuration status (sync wrapper)."""
-        return run_async_in_thread(self.show_accounting_status_async())
+        return run_async_in_thread(self.get_accounting_status_async())
     
     # Display Methods
     def show_services(self, health_check: str = "always", **kwargs) -> None:
@@ -1165,7 +1113,7 @@ class Client:
     # Updated Service Usage Methods
     def clear_cache(self):
         """Clear the service discovery cache."""
-        self.scanner.clear_cache()
+        self._scanner.clear_cache()
     
     # Private helper methods
     def _extract_request_parameters(self, request_schema: Dict[str, Any], all_schemas: Dict[str, Any]) -> Dict[str, Any]:
