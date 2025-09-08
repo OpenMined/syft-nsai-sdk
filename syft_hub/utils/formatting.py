@@ -107,10 +107,10 @@ def format_service_details(service: ServiceInfo) -> str:
     # Services
     lines.append("\nServices:")
     if service.services:
-        for service in service.services:
-            status = "✅ Enabled" if service.enabled else "❌ Disabled"
-            pricing = f"${service.pricing}/{service.charge_type.value}" if service.pricing > 0 else "Free"
-            lines.append(f"  • {service.type.value.title()}: {status} ({pricing})")
+        for service_item in service.services:
+            status = "✅ Enabled" if service_item.enabled else "❌ Disabled"
+            pricing = f"${service_item.pricing}/{service_item.charge_type.value}" if service_item.pricing > 0 else "Free"
+            lines.append(f"  • {service_item.type.value.title()}: {status} ({pricing})")
     else:
         lines.append("  No services defined")
     
