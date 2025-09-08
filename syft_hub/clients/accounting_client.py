@@ -22,7 +22,7 @@ class AccountingClient:
     """Client for handling accounting operations."""
     
     def __init__(self, 
-                 accounting_url: Optional[str] = None,
+                 accounting_url: Optional[str] = "https://syftaccounting.centralus.cloudapp.azure.com/",
                  credentials: Optional[Dict[str, str]] = None
         ):
         """Initialize accounting client.
