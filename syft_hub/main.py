@@ -804,6 +804,289 @@ class Client:
         """Show current accounting configuration status (sync wrapper)."""
         return run_async_in_thread(self.show_accounting_status_async())
     
+    # Display Methods
+    def show(self) -> None:
+        """Display client status as an HTML widget."""
+        from IPython.display import display, HTML
+        
+        # Get status information
+        syftbox_status = "Running" if self.config_manager.is_syftbox_running() else "Not Running"
+        syftbox_path = str(self.config.data_dir)
+        cache_server = self.config.cache_server_url
+        account_email = self.accounting_client.get_email() if self._account_configured else None
+        
+        # Count available services
+        try:
+            services = self.list_services()
+            service_count = len(services.services) if services else 0
+        except:
+            service_count = 0
+        
+        # Build HTML widget with minimal notebook-like styling
+        html = '''
+        <style>
+            .syfthub-widget {
+                font-family: system-ui, -apple-system, sans-serif;
+                padding: 12px 0;
+                color: #333;
+                line-height: 1.5;
+            }
+            .widget-title {
+                font-size: 14px;
+                font-weight: 600;
+                margin-bottom: 12px;
+                color: #333;
+            }
+            .status-line {
+                display: flex;
+                align-items: center;
+                margin: 6px 0;
+                font-size: 13px;
+            }
+            .status-label {
+                color: #666;
+                min-width: 140px;
+                margin-right: 12px;
+            }
+            .status-value {
+                font-family: monospace;
+                color: #333;
+            }
+            .status-badge {
+                display: inline-block;
+                padding: 2px 8px;
+                border-radius: 3px;
+                font-size: 11px;
+                margin-left: 8px;
+            }
+            .badge-ready {
+                background: #d4edda;
+                color: #155724;
+            }
+            .badge-not-ready {
+                background: #f8d7da;
+                color: #721c24;
+            }
+            .docs-section {
+                margin-top: 16px;
+                padding-top: 12px;
+                border-top: 1px solid #e0e0e0;
+                font-size: 12px;
+                color: #666;
+            }
+            .command-code {
+                font-family: monospace;
+                background: #f5f5f5;
+                padding: 1px 4px;
+                border-radius: 2px;
+                color: #333;
+            }
+        </style>
+        '''
+        
+        # Determine badges
+        syftbox_badge = '<span class="status-badge badge-ready">Running</span>' if syftbox_status == "Running" else '<span class="status-badge badge-not-ready">Not Running</span>'
+        account_badge = '<span class="status-badge badge-ready">Configured</span>' if self._account_configured else '<span class="status-badge badge-not-ready">Not Configured</span>'
+        
+        html += f'''
+        <div class="syfthub-widget">
+            <div class="widget-title">
+                SyftHub Client {syftbox_badge}
+            </div>
+            
+            <div class="status-line">
+                <span class="status-label">SyftBox Path:</span>
+                <span class="status-value">{syftbox_path}</span>
+            </div>
+            
+            <div class="status-line">
+                <span class="status-label">Cache Server:</span>
+                <span class="status-value">{cache_server}</span>
+            </div>
+            
+            <div class="status-line">
+                <span class="status-label">Account:</span>
+                <span class="status-value">{account_email or "Not configured"}</span>
+                {account_badge}
+            </div>
+            
+            <div class="status-line">
+                <span class="status-label">Services Found:</span>
+                <span class="status-value">{service_count} services</span>
+            </div>
+            
+            <div class="docs-section">
+                <div style="margin-bottom: 8px; font-weight: 500;">Common operations:</div>
+                <div style="line-height: 1.8;">
+                    <span class="command-code">client.list_services()</span> — Discover available services<br>
+                    <span class="command-code">client.chat("service", "message")</span> — Chat with a service<br>
+                    <span class="command-code">client.search("service", "query")</span> — Search with a service<br>
+                    <span class="command-code">client.register_accounting(email)</span> — Register account<br>
+                    <span class="command-code">client.connect_accounting(email, password)</span> — Connect account
+                </div>
+            </div>
+        </div>
+        '''
+        
+        display(HTML(html))
+    
+    def __repr__(self) -> str:
+        """Return a text representation of the client's status."""
+        # Get status information
+        syftbox_status = "Running" if self.config_manager.is_syftbox_running() else "Not Running"
+        syftbox_path = str(self.config.data_dir)
+        cache_server = self.config.cache_server_url
+        account_email = self.accounting_client.get_email() if self._account_configured else None
+        
+        # Count available services
+        try:
+            services = self.list_services()
+            service_count = len(services.services) if services else 0
+        except:
+            service_count = 0
+        
+        # Build text output
+        lines = [
+            f"SyftHub Client [{syftbox_status}]",
+            f"",
+            f"SyftBox Path:     {syftbox_path}",
+            f"Cache Server:     {cache_server}",
+            f"Account:          {account_email or 'Not configured'}",
+            f"Services:         {service_count} services found",
+            f"",
+            f"Common operations:",
+            f"  client.list_services()                    — Discover available services",
+            f"  client.chat('service', 'message')         — Chat with a service",
+            f"  client.search('service', 'query')         — Search with a service",
+            f"  client.register_accounting(email)         — Register account",
+            f"  client.connect_accounting(email, password) — Connect account"
+        ]
+        
+        return "\n".join(lines)
+    
+    def _repr_html_(self) -> str:
+        """Display HTML widget in Jupyter environments - same as show()."""
+        # Get status information
+        syftbox_status = "Running" if self.config_manager.is_syftbox_running() else "Not Running"
+        syftbox_path = str(self.config.data_dir)
+        cache_server = self.config.cache_server_url
+        account_email = self.accounting_client.get_email() if self._account_configured else None
+        
+        # Count available services
+        try:
+            services = self.list_services()
+            service_count = len(services.services) if services else 0
+        except:
+            service_count = 0
+        
+        # Build HTML widget with minimal notebook-like styling (same as show())
+        html = '''
+        <style>
+            .syfthub-widget {
+                font-family: system-ui, -apple-system, sans-serif;
+                padding: 12px 0;
+                color: #333;
+                line-height: 1.5;
+            }
+            .widget-title {
+                font-size: 14px;
+                font-weight: 600;
+                margin-bottom: 12px;
+                color: #333;
+            }
+            .status-line {
+                display: flex;
+                align-items: center;
+                margin: 6px 0;
+                font-size: 13px;
+            }
+            .status-label {
+                color: #666;
+                min-width: 140px;
+                margin-right: 12px;
+            }
+            .status-value {
+                font-family: monospace;
+                color: #333;
+            }
+            .status-badge {
+                display: inline-block;
+                padding: 2px 8px;
+                border-radius: 3px;
+                font-size: 11px;
+                margin-left: 8px;
+            }
+            .badge-ready {
+                background: #d4edda;
+                color: #155724;
+            }
+            .badge-not-ready {
+                background: #f8d7da;
+                color: #721c24;
+            }
+            .docs-section {
+                margin-top: 16px;
+                padding-top: 12px;
+                border-top: 1px solid #e0e0e0;
+                font-size: 12px;
+                color: #666;
+            }
+            .command-code {
+                font-family: monospace;
+                background: #f5f5f5;
+                padding: 1px 4px;
+                border-radius: 2px;
+                color: #333;
+            }
+        </style>
+        '''
+        
+        # Determine badges
+        syftbox_badge = '<span class="status-badge badge-ready">Running</span>' if syftbox_status == "Running" else '<span class="status-badge badge-not-ready">Not Running</span>'
+        account_badge = '<span class="status-badge badge-ready">Configured</span>' if self._account_configured else '<span class="status-badge badge-not-ready">Not Configured</span>'
+        
+        html += f'''
+        <div class="syfthub-widget">
+            <div class="widget-title">
+                SyftHub Client {syftbox_badge}
+            </div>
+            
+            <div class="status-line">
+                <span class="status-label">SyftBox Path:</span>
+                <span class="status-value">{syftbox_path}</span>
+            </div>
+            
+            <div class="status-line">
+                <span class="status-label">Cache Server:</span>
+                <span class="status-value">{cache_server}</span>
+            </div>
+            
+            <div class="status-line">
+                <span class="status-label">Account:</span>
+                <span class="status-value">{account_email or "Not configured"}</span>
+                {account_badge}
+            </div>
+            
+            <div class="status-line">
+                <span class="status-label">Services Found:</span>
+                <span class="status-value">{service_count} services</span>
+            </div>
+            
+            <div class="docs-section">
+                <div style="margin-bottom: 8px; font-weight: 500;">Common operations:</div>
+                <div style="line-height: 1.8;">
+                    <span class="command-code">client.list_services()</span> — Discover available services<br>
+                    <span class="command-code">client.chat("service", "message")</span> — Chat with a service<br>
+                    <span class="command-code">client.search("service", "query")</span> — Search with a service<br>
+                    <span class="command-code">client.register_accounting(email)</span> — Register account<br>
+                    <span class="command-code">client.connect_accounting(email, password)</span> — Connect account
+                </div>
+            </div>
+        </div>
+        '''
+        
+        return html
+    
     # Updated Service Usage Methods
     def clear_cache(self):
         """Clear the service discovery cache."""
