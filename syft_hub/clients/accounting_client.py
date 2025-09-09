@@ -468,7 +468,7 @@ class AccountingClient:
         
         return html
     
-    async def _create_transaction_token(self, recipient_email: str) -> str:
+    async def create_transaction_token(self, recipient_email: str) -> str:
         """Create a transaction token for paying a service datasite.
         
         Args:

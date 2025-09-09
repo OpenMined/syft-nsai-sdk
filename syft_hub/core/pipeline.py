@@ -462,12 +462,31 @@ pipeline = client.pipeline(
             message_count=message_count
         )
     
-    def run(self, messages: List[Dict[str, str]]) -> PipelineResult:
-        """Execute the pipeline synchronously"""
-        return asyncio.run(self.run_async(messages))
+    def run(self, messages: List[Dict[str, str]], continue_without_results: bool = False) -> PipelineResult:
+        """Execute the pipeline synchronously
+        
+        Args:
+            messages: List of message dicts with 'role' and 'content'
+            continue_without_results: If True, automatically continue synthesis even if no search results found.
+                                    If False (default), prompts user when no results found.
+        """
+        from ..utils.async_utils import detect_async_context, run_async_in_thread
+        
+        if detect_async_context():
+            # In Jupyter or other async context, use run_async_in_thread
+            return run_async_in_thread(self.run_async(messages, continue_without_results))
+        else:
+            # In regular sync context, use asyncio.run
+            return asyncio.run(self.run_async(messages, continue_without_results))
     
-    async def run_async(self, messages: List[Dict[str, str]]) -> PipelineResult:
-        """Execute the pipeline asynchronously with parallel search execution"""
+    async def run_async(self, messages: List[Dict[str, str]], continue_without_results: bool = False) -> PipelineResult:
+        """Execute the pipeline asynchronously with parallel search execution
+        
+        Args:
+            messages: List of message dicts with 'role' and 'content'
+            continue_without_results: If True, automatically continue synthesis even if no search results found.
+                                    If False (default), prompts user when no results found.
+        """
         # Validate pipeline first
         self.validate()
         
@@ -501,6 +520,7 @@ pipeline = client.pipeline(
         for i, result in enumerate(search_results_list):
             if isinstance(result, Exception):
                 logger.warning(f"Search failed for source {self.data_sources[i].name}: {result}")
+                print(f"Search failed for source {self.data_sources[i].name}: {result}")
                 continue
             
             search_response, cost = result
@@ -508,13 +528,31 @@ pipeline = client.pipeline(
             total_cost += cost
         
         if not all_search_results:
-            raise ValidationError("All data source searches failed")
+            if not continue_without_results:
+                # Interactive prompt
+                print("\n⚠️  No search results found from data sources")
+                print("Options: Continue with predictions without sources or cancel")
+                
+                try:
+                    response = input("Continue without search results? (y/n): ").lower().strip()
+                    if response not in ['y', 'yes']:
+                        print("Pipeline cancelled. Consider:")
+                        print("  • Adjusting your query")
+                        print("  • Checking data source availability")
+                        print("  • Using different data sources")
+                        raise ValidationError("Pipeline cancelled by user - no search results available")
+                except (EOFError, KeyboardInterrupt):
+                    print("\nPipeline cancelled.")
+                    raise ValidationError("Pipeline cancelled by user - no search results available")
+            
+            print("Continuing with synthesis without search context...")
+            logger.warning("All data source searches failed or returned empty results")
         
         # Remove duplicate results
-        unique_results = self.client._remove_duplicate_results(all_search_results)
+        unique_results = self.client.remove_duplicate_results(all_search_results)
         
         # Format search context for synthesizer
-        context = self.client._format_search_context(unique_results, self.context_format)
+        context = self.client.format_search_context(unique_results, self.context_format)
         
         # Prepare messages with context
         enhanced_messages = self._prepare_enhanced_messages(messages, context)

@@ -108,7 +108,7 @@ class Client:
         # Set up RPC client
         server_url = cache_server_url or self.config.cache_server_url
         
-        self._rpc_client = SyftBoxRPCClient(
+        self.rpc_client = SyftBoxRPCClient(
             cache_server_url=server_url,
             accounting_client=self.accounting_client,
         )
@@ -140,6 +140,7 @@ class Client:
             # Service discovery and usage
             'list_services',
             'load_service',
+            'get_service',
             'chat',
             'chat_async',
             'search',
@@ -167,6 +168,11 @@ class Client:
             # Properties
             'config',
             'config_manager',
+            'rpc_client',
+            
+            # Helper methods
+            'remove_duplicate_results',
+            'format_search_context',
             
             # Maintenance
             'clear_cache',
@@ -175,7 +181,7 @@ class Client:
     
     async def close(self):
         """Close client and cleanup resources."""
-        await self._rpc_client.close()
+        await self.rpc_client.close()
         if self._health_monitor:
             await self._health_monitor.stop_monitoring()
     
@@ -261,7 +267,7 @@ class Client:
         logger.debug(f"Discovered {len(filtered_services)} services (health_check={should_health_check})")
         return ServicesList(filtered_services, self)
     
-    def _get_service(self, service_name: str) -> ServiceInfo:
+    def get_service(self, service_name: str) -> ServiceInfo:
         if not service_name:
             raise ValidationError("Valid service name (datasite/service_name) must be provided")
         datasite, name = service_name.split("/", 1)
@@ -290,7 +296,7 @@ class Client:
             search_service = client.load_service("bob@example.com/document-search")
             results = search_service.search(message="Python tutorial")
         """
-        service_info = self._get_service(service_name)
+        service_info = self.get_service(service_name)
         
         # Check health status if not already checked
         if service_info.health_status is None:
@@ -298,7 +304,7 @@ class Client:
                 from .services.health import check_service_health
                 from .utils.async_utils import run_async_in_thread
                 health_status = run_async_in_thread(
-                    check_service_health(service_info, self._rpc_client, timeout=2.0)
+                    check_service_health(service_info, self.rpc_client, timeout=2.0)
                 )
                 service_info.health_status = health_status
             except Exception as e:
@@ -344,7 +350,7 @@ class Client:
             )
         """
         # Find the specific service
-        service = self._get_service(service_name)
+        service = self.get_service(service_name)
         logger.info(f"Using service: {service.name} from datasite: {service.datasite}") 
         
         # Validate service supports chat
@@ -363,7 +369,7 @@ class Client:
         chat_params = {k: v for k, v in chat_params.items() if v is not None}
         
         # Create service and make request
-        chat_service = ChatService(service, self._rpc_client)
+        chat_service = ChatService(service, self.rpc_client)
         return await chat_service.chat_with_params(chat_params)
     
     def chat_sync(
@@ -455,7 +461,7 @@ class Client:
         """
 
         # Find the specific service
-        service = self._get_service(service_name)
+        service = self.get_service(service_name)
         logger.info(f"Using service: {service.name} from datasite: {service.datasite}") 
         
         # Validate service supports search
@@ -474,7 +480,7 @@ class Client:
         search_params = {k: v for k, v in search_params.items() if v is not None}
         
         # Create service and make request  
-        search_service = SearchService(service, self._rpc_client)
+        search_service = SearchService(service, self.rpc_client)
         return run_async_in_thread(search_service.search_with_params(search_params))
     
     async def search_async(
@@ -514,7 +520,7 @@ class Client:
         """
 
         # Find the specific service
-        service = self._get_service(service_name)
+        service = self.get_service(service_name)
         logger.info(f"Using service: {service.name} from datasite: {service.datasite}") 
         
         # Validate service supports search
@@ -533,7 +539,7 @@ class Client:
         search_params = {k: v for k, v in search_params.items() if v is not None}
         
         # Create service and make request
-        search_service = SearchService(service, self._rpc_client)
+        search_service = SearchService(service, self.rpc_client)
         return await search_service.search_with_params(search_params)
 
     def search(
@@ -594,7 +600,7 @@ class Client:
             print(params["chat"])  # Shows available chat parameters
             print(params["search"])  # Shows available search parameters
         """
-        service = self._get_service(service_name)
+        service = self.get_service(service_name)
         if not service:
             raise ServiceNotFoundError(f"Service '{service_name}' not found")
         
@@ -658,7 +664,7 @@ class Client:
             # Shows service details, parameters, and usage examples
             client.show_service("bob@example.com/document-search")
         """
-        service = self._get_service(service_name)
+        service = self.get_service(service_name)
         if not service:
             raise ServiceNotFoundError(f"Service '{service_name}' not found")
         
@@ -687,11 +693,11 @@ class Client:
                 timeout=1.0
             )
         """
-        service = self._get_service(service_name)
+        service = self.get_service(service_name)
         if not service:
             raise ServiceNotFoundError(f"Service '{service_name}' not found")
 
-        return await check_service_health(service, self._rpc_client, timeout)
+        return await check_service_health(service, self.rpc_client, timeout)
     
     async def check_all_services_health(
             self, 
@@ -708,7 +714,7 @@ class Client:
             Dictionary mapping service names to health status
         """
         services = self.list_services(service_type=service_type, health_check="never")
-        return await batch_health_check(services, self._rpc_client, timeout)
+        return await batch_health_check(services, self.rpc_client, timeout)
     
     def start_health_monitoring(
             self, 
@@ -728,12 +734,12 @@ class Client:
             logger.warning("Health monitoring already running")
             return self._health_monitor
         
-        self._health_monitor = HealthMonitor(self._rpc_client, check_interval)
+        self._health_monitor = HealthMonitor(self.rpc_client, check_interval)
         
         # Add services to monitor
         if services:
             for service_name in services:
-                service = self._get_service(service_name)
+                service = self.get_service(service_name)
                 if service:
                     self._health_monitor.add_service(service)
         else:
@@ -1351,7 +1357,7 @@ class Client:
     
     async def _add_health_status(self, services: List[ServiceInfo]) -> List[ServiceInfo]:
         """Add health status to services."""
-        health_status = await batch_health_check(services, self._rpc_client, timeout=2.0)
+        health_status = await batch_health_check(services, self.rpc_client, timeout=2.0)
         
         for service in services:
             service.health_status = health_status.get(service.name, HealthStatus.UNKNOWN)
@@ -1417,7 +1423,7 @@ class Client:
         
         return "\n".join(lines)
 
-    def _format_search_context(self, results: List[DocumentResult], format_type: str = "simple") -> str:
+    def format_search_context(self, results: List[DocumentResult], format_type: str = "simple") -> str:
         """Format search results as context for chat injection.
         
         Args:
@@ -1451,7 +1457,7 @@ class Client:
         else:
             raise ValidationError(f"Unknown context format: {format_type}")
 
-    def _remove_duplicate_results(self, results: List[DocumentResult]) -> List[DocumentResult]:
+    def remove_duplicate_results(self, results: List[DocumentResult]) -> List[DocumentResult]:
         """Remove duplicate results based on content similarity.
         
         Args:
