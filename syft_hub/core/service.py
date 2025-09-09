@@ -144,7 +144,7 @@ class Service:
         if self.supports_chat:
             chat_examples = [
                 f'service.chat("Hello! How are you?")',
-                f'service.chat(messages="Write a story", temperature=0.7, max_tokens=200)',
+                f'service.chat(messages=[{{"role": "user", "content": "Write a story"}}], temperature=0.7, max_tokens=200)',
                 f'client.chat("{datasite}/{service_name}", "Hello!")'
             ]
         
@@ -205,6 +205,14 @@ class Service:
                 color: #155724;
             }}
             .service-obj-badge-not-ready {{
+                background: #f8d7da;
+                color: #721c24;
+            }}
+            .service-obj-badge-online {{
+                background: #d4edda;
+                color: #155724;
+            }}
+            .service-obj-badge-offline {{
                 background: #f8d7da;
                 color: #721c24;
             }}
@@ -303,11 +311,7 @@ class Service:
         </style>
         <div class="service-obj-widget">
             <div class="service-obj-title">
-                {service_name} Service
-                {f'<span class="service-obj-status-badge service-obj-badge-ready">Health: {health_text}</span>' if health_text and health_class == 'online' else ''}
-                {f'<span class="service-obj-status-badge service-obj-badge-not-ready">Health: {health_text}</span>' if health_text and health_class == 'offline' else ''}
-                {f'<span class="service-obj-status-badge service-obj-badge-timeout">Health: {health_text}</span>' if health_text and health_class == 'timeout' else ''}
-                {f'<span class="service-obj-status-badge service-obj-badge-unknown">Health: {health_text}</span>' if health_text and health_class == 'unknown' else ''}
+                {service_name} Service{f' <span class="service-obj-status-badge service-obj-badge-{health_class}">{health_text}</span>' if health_text else ""}
             </div>
             
             <div class="service-obj-status-line">
@@ -387,76 +391,93 @@ results = service.search(
         display(HTML(html))
     
     def __repr__(self) -> str:
-        """Comprehensive text representation of the service."""
-        service_info = self._service_info
-        
-        # Basic info
-        lines = [
-            f"{self.name} Service [{service_info.config_status.value}]",
-            "",
-            f"Datasite:         {self.datasite}",
-            f"Summary:          {service_info.summary}",
-        ]
-        
-        # Services
-        enabled_services = []
-        total_cost = 0
-        for service_item in service_info.services:
-            if service_item.enabled:
-                cost_str = f"${service_item.pricing:.2f}" if service_item.pricing > 0 else "Free"
-                enabled_services.append(f"{service_item.type.value.title()} ({cost_str})")
-                total_cost += service_item.pricing
-        
-        services_str = ", ".join(enabled_services) if enabled_services else "None"
-        lines.append(f"Services:         {services_str}")
-        
-        # Overall pricing
-        pricing_str = "Free" if total_cost == 0 else f"${total_cost:.2f}/request"
-        lines.append(f"Total Cost:       {pricing_str}")
-        
-        # Health status
-        if service_info.health_status:
-            from ..core.types import HealthStatus
-            health_map = {
-                HealthStatus.ONLINE: "✅ Online",
-                HealthStatus.OFFLINE: "❌ Offline", 
-                HealthStatus.TIMEOUT: "⏱️ Timeout",
-                HealthStatus.UNKNOWN: "❓ Unknown"
-            }
-            health_str = health_map.get(service_info.health_status, "❓ Unknown")
-            lines.append(f"Health:           {health_str}")
-        
-        # Tags
-        if service_info.tags:
-            tags_display = ", ".join(service_info.tags[:4])
-            if len(service_info.tags) > 4:
-                tags_display += f" (+{len(service_info.tags) - 4} more)"
-            lines.append(f"Tags:             {tags_display}")
-        
-        # Technical details
-        if service_info.version:
-            lines.append(f"Version:          {service_info.version}")
-        
-        if service_info.delegate_email:
-            lines.append(f"Delegate:         {service_info.delegate_email}")
-        
-        # Usage examples
-        lines.extend([
-            "",
-            "Usage examples:",
-            f"  service = client.load_service('{self.full_name}')",
-        ])
-        
-        if self.supports_chat:
-            health_icon = "✅" if service_info.is_healthy else "❌" if service_info.health_status and not service_info.is_healthy else ""
-            health_display = f" {health_icon}" if health_icon else ""
-            lines.append(f"  service.chat(messages=[...])              — Chat with service{health_display}")
-        if self.supports_search:
-            health_icon = "✅" if service_info.is_healthy else "❌" if service_info.health_status and not service_info.is_healthy else ""
-            health_display = f" {health_icon}" if health_icon else ""
-            lines.append(f"  service.search('query')                   — Search with service{health_display}")
-        
-        return "\n".join(lines)
+        """Display service using show() method - same display for both service and service.show()."""
+        try:
+            from IPython.display import display, HTML
+            # In notebook environment, call show() which displays the HTML widget
+            self.show()
+            return ""  # Return empty string to avoid double output
+        except ImportError:
+            # Not in notebook - provide comprehensive text representation
+            service_info = self._service_info
+            
+            # Basic info with health status like client's "Running"
+            health_status_text = ""
+            if service_info.health_status:
+                from ..core.types import HealthStatus
+                if service_info.health_status == HealthStatus.ONLINE:
+                    health_status_text = " [Online]"
+                elif service_info.health_status == HealthStatus.OFFLINE:
+                    health_status_text = " [Offline]"
+                elif service_info.health_status == HealthStatus.TIMEOUT:
+                    health_status_text = " [Timeout]"
+            
+            lines = [
+                f"{self.name} Service{health_status_text}",
+                "",
+                f"Datasite:         {self.datasite}",
+                f"Summary:          {service_info.summary}",
+            ]
+            
+            # Services
+            enabled_services = []
+            total_cost = 0
+            for service_item in service_info.services:
+                if service_item.enabled:
+                    cost_str = f"${service_item.pricing:.2f}" if service_item.pricing > 0 else "Free"
+                    enabled_services.append(f"{service_item.type.value.title()} ({cost_str})")
+                    total_cost += service_item.pricing
+            
+            services_str = ", ".join(enabled_services) if enabled_services else "None"
+            lines.append(f"Services:         {services_str}")
+            
+            # Overall pricing
+            pricing_str = "Free" if total_cost == 0 else f"${total_cost:.2f}/request"
+            lines.append(f"Total Cost:       {pricing_str}")
+            
+            # Health status
+            if service_info.health_status:
+                from ..core.types import HealthStatus
+                health_map = {
+                    HealthStatus.ONLINE: "✅ Online",
+                    HealthStatus.OFFLINE: "❌ Offline", 
+                    HealthStatus.TIMEOUT: "⏱️ Timeout",
+                    HealthStatus.UNKNOWN: "❓ Unknown"
+                }
+                health_str = health_map.get(service_info.health_status, "❓ Unknown")
+                lines.append(f"Health:           {health_str}")
+            
+            # Tags
+            if service_info.tags:
+                tags_display = ", ".join(service_info.tags[:4])
+                if len(service_info.tags) > 4:
+                    tags_display += f" (+{len(service_info.tags) - 4} more)"
+                lines.append(f"Tags:             {tags_display}")
+            
+            # Technical details
+            if service_info.version:
+                lines.append(f"Version:          {service_info.version}")
+            
+            if service_info.delegate_email:
+                lines.append(f"Delegate:         {service_info.delegate_email}")
+            
+            # Usage examples
+            lines.extend([
+                "",
+                "Usage examples:",
+                f"  service = client.load_service('{self.full_name}')",
+            ])
+            
+            if self.supports_chat:
+                health_icon = "✅" if service_info.is_healthy else "❌" if service_info.health_status and not service_info.is_healthy else ""
+                health_display = f" {health_icon}" if health_icon else ""
+                lines.append(f"  service.chat(messages=[...])              — Chat with service{health_display}")
+            if self.supports_search:
+                health_icon = "✅" if service_info.is_healthy else "❌" if service_info.health_status and not service_info.is_healthy else ""
+                health_display = f" {health_icon}" if health_icon else ""
+                lines.append(f"  service.search('message')                 — Search with service{health_display}")
+            
+            return "\n".join(lines)
     
     # Service methods (always present, error if not supported)
     def chat(self, messages, **kwargs):

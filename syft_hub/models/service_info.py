@@ -371,7 +371,7 @@ class ServiceInfo:
             "",
             "Available operations:",
             f"  client.chat('{datasite}/{service_name}', messages=[...])   — Chat with service{'✅' if self.is_healthy else '❌' if self.health_status and not self.is_healthy else ''}",
-            f"  client.search('{datasite}/{service_name}', 'query')       — Search with service{'✅' if self.is_healthy else '❌' if self.health_status and not self.is_healthy else ''}",
+            f"  client.search('{datasite}/{service_name}', 'message')     — Search with service{'✅' if self.is_healthy else '❌' if self.health_status and not self.is_healthy else ''}",
         ])
         
         return "\n".join(lines)
@@ -544,7 +544,7 @@ class ServiceInfo:
                 <div class="serviceinfo-operations-title">Available operations:</div>
                 <div style="line-height: 1.8;">
                     <span class="serviceinfo-command-code">client.chat('{datasite}/{service_name}', messages=[])</span> — Chat with service {"✅" if self.is_healthy else "❌" if self.health_status and not self.is_healthy else ""}<br>
-                    <span class="serviceinfo-command-code">client.search('{datasite}/{service_name}', 'query')</span> — Search with service {"✅" if self.is_healthy else "❌" if self.health_status and not self.is_healthy else ""}
+                    <span class="serviceinfo-command-code">client.search('{datasite}/{service_name}', 'message')</span> — Search with service {"✅" if self.is_healthy else "❌" if self.health_status and not self.is_healthy else ""}
                 </div>
             </div>
         </div>

@@ -171,7 +171,6 @@ class Client:
             
             # Maintenance
             'clear_cache',
-            'cleanup',
             'close',
         ]
     
@@ -292,7 +291,7 @@ class Client:
         # Check health status if not already checked
         if service_info.health_status is None:
             try:
-                from .core.health import check_service_health
+                from .services.health import check_service_health
                 from .utils.async_utils import run_async_in_thread
                 health_status = run_async_in_thread(
                     check_service_health(service_info, self._rpc_client, timeout=2.0)
@@ -408,7 +407,7 @@ class Client:
             # Safe to use thread-based sync version
             return self._chat_sync(service_name, messages, temperature, max_tokens, **kwargs)
 
-    def search_async(
+    def _search_sync(
             self,
             service_name: str, 
             message: str,
@@ -416,7 +415,7 @@ class Client:
             similarity_threshold: Optional[float] = None,
             **kwargs
         ) -> SearchResponse:
-        """Search with a specific service.
+        """Search with a specific service (sync version).
         
         Args:
             service_name: Datasite/Name of the service to use
@@ -448,11 +447,11 @@ class Client:
         # Remove None values
         search_params = {k: v for k, v in search_params.items() if v is not None}
         
-        # Create service and make request
+        # Create service and make request  
         search_service = SearchService(service, self._rpc_client)
-        return asyncio.run(search_service.search_with_params(search_params))
+        return run_async_in_thread(search_service.search_with_params(search_params))
     
-    async def _search_sync(
+    async def search_async(
             self,
             service_name: str, 
             message: str,
@@ -464,7 +463,7 @@ class Client:
         
         Args:
             service_name: Name of the service to use (REQUIRED)
-            query: Search query
+            message: Search message
             datasite: Datasite email (required if service name is ambiguous)
             limit: Maximum number of results
             similarity_threshold: Minimum similarity score
@@ -474,10 +473,28 @@ class Client:
             Search response from the specified service
         """
 
-        # A thread-safe synchronous wrapper around search_async.
-        return run_async_in_thread(
-            self.search_async(service_name, message, topK, similarity_threshold, **kwargs)
-        )
+        # Find the specific service
+        service = self._get_service(service_name)
+        logger.info(f"Using service: {service.name} from datasite: {service.datasite}") 
+        
+        # Validate service supports search
+        if not service.supports_service(ServiceType.SEARCH):
+            raise ServiceNotSupportedError(service.name, "search", service)
+        
+        # Build request parameters
+        search_params = {
+            "message": message,
+            "topK": topK,
+            "similarity_threshold": similarity_threshold,
+            **kwargs
+        }
+        
+        # Remove None values
+        search_params = {k: v for k, v in search_params.items() if v is not None}
+        
+        # Create service and make request
+        search_service = SearchService(service, self._rpc_client)
+        return await search_service.search_with_params(search_params)
 
     def search(
             self,
@@ -691,12 +708,12 @@ class Client:
         )
 
     # Accounting Integration Methods
-    async def register_accounting_async(self, email: str, password: str, organization: Optional[str] = None):
+    async def _register_accounting_async(self, email: str, password: str, organization: Optional[str] = None):
         """Register a new accounting user (async)."""
         try:
             await self.accounting_client.create_accounting_user(email, password, organization)
             self.accounting_client.save_credentials()
-            await self.connect_accounting_async(email, password, self.accounting_client.accounting_url)
+            await self._connect_accounting_async(email, password, self.accounting_client.accounting_url)
             logger.info("Accounting setup completed and connected successfully")
         except Exception as e:
             raise AuthenticationError(f"Accounting setup failed: {e}")
@@ -704,10 +721,10 @@ class Client:
     def register_accounting(self, email: str, password: str, organization: Optional[str] = None):
         """Register a new accounting user (sync wrapper)."""
         return run_async_in_thread(
-            self.register_accounting_async(email, password, organization)
+            self._register_accounting_async(email, password, organization)
         )
 
-    async def connect_accounting_async(self, email: str, password: str, accounting_url: Optional[str] = None, save_config: bool = True):
+    async def _connect_accounting_async(self, email: str, password: str, accounting_url: Optional[str] = None, save_config: bool = True):
         """Setup accounting credentials (async)."""
         # Get service URL from environment if not provided
         if not accounting_url:
@@ -739,14 +756,14 @@ class Client:
     def connect_accounting(self, email: str, password: str, accounting_url: Optional[str] = None, save_config: bool = True):
         """Setup accounting credentials (sync wrapper)."""
         return run_async_in_thread(
-            self.connect_accounting_async(email, password, accounting_url, save_config)
+            self._connect_accounting_async(email, password, accounting_url, save_config)
         )
 
     def is_accounting_configured(self) -> bool:
         """Check if accounting is properly configured."""
         return self.accounting_client.is_configured()
 
-    async def get_account_info_async(self) -> Dict[str, Any]:
+    async def _get_account_info_async(self) -> Dict[str, Any]:
         """Get account information and balance (async)."""
         if not self.is_accounting_configured():
             return {"error": "Accounting not configured"}
@@ -763,12 +780,12 @@ class Client:
             return {"error": "Accounting not configured"}
         
         try:
-            return run_async_in_thread(self.get_account_info_async())
+            return run_async_in_thread(self._get_account_info_async())
         except Exception as e:
             logger.error(f"Failed to get account info: {e}")
             return {"error": str(e)}
 
-    async def get_accounting_status_async(self) -> str:
+    async def _get_accounting_status_async(self) -> str:
         """Show current accounting configuration status (async)."""
         if not self.is_accounting_configured():
             return (
@@ -778,7 +795,7 @@ class Client:
             )
         
         try:
-            account_info = await self.get_account_info_async()
+            account_info = await self._get_account_info_async()
 
             if "error" in account_info:
                 return (
@@ -802,7 +819,7 @@ class Client:
 
     def get_accounting_status(self) -> str:
         """Show current accounting configuration status (sync wrapper)."""
-        return run_async_in_thread(self.get_accounting_status_async())
+        return run_async_in_thread(self._get_accounting_status_async())
     
     # Display Methods
     def show_services(self, health_check: str = "always", **kwargs) -> None:
@@ -954,7 +971,7 @@ class Client:
                 <div style="line-height: 1.8;">
                     <span class="command-code">client.list_services()</span> — Discover available services<br>
                     <span class="command-code">client.chat("service", messages=[])</span> — Chat with a service<br>
-                    <span class="command-code">client.search("service", "query")</span> — Search with a service<br>
+                    <span class="command-code">client.search("service", "message")</span> — Search with a service<br>
                     <span class="command-code">client.register_accounting(email)</span> — Register accounting<br>
                     <span class="command-code">client.connect_accounting(email, password)</span> — Connect accounting
                 </div>
@@ -991,7 +1008,7 @@ class Client:
             f"Common operations:",
             f"  client.list_services()                    — Discover available services",
             f"  client.chat('service', messages=[])       — Chat with a service",
-            f"  client.search('service', 'query')         — Search with a service",
+            f"  client.search('service', 'message')       — Search with a service",
             f"  client.register_accounting(email)         — Register account",
             f"  client.connect_accounting(email, password) — Connect account"
         ]
@@ -1111,7 +1128,7 @@ class Client:
                 <div style="line-height: 1.8;">
                     <span class="command-code">client.list_services()</span> — Discover available services<br>
                     <span class="command-code">client.chat("service", "message")</span> — Chat with a service<br>
-                    <span class="command-code">client.search("service", "query")</span> — Search with a service<br>
+                    <span class="command-code">client.search("service", "message")</span> — Search with a service<br>
                     <span class="command-code">client.register_accounting(email)</span> — Register account<br>
                     <span class="command-code">client.connect_accounting(email, password)</span> — Connect account
                 </div>
@@ -1379,8 +1396,6 @@ class Client:
                     if response in ['y', 'yes']:
                         # Interactive setup would go here
                         print("Please use below to configure:\n")
-                        print("     await client.register_accounting_async(email, password) to configure.\n")
-                        print("Or:\n")
                         print("     client.register_accounting(email, password) to configure.")
                         return None
                     else:

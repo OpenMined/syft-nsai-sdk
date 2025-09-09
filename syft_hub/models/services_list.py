@@ -112,7 +112,7 @@ class ServicesList:
         
         return str(file_path)
     
-    def show_services(self, 
+    def show(self, 
              page: int = 1,
              items_per_page: int = 50,
              current_user_email: str = "",
@@ -186,18 +186,9 @@ class ServicesList:
         if self._is_jupyter_notebook() and not save_to_file and not open_in_browser:
             # Display directly in notebook (default Jupyter behavior)
             self._display_in_notebook(html)
-            return ""  # Return empty string since we're displaying in notebook
         else:
             # Save to file and optionally open in browser
-            return self._save_and_open_file(html, output_path)
-    
-    def show(self, **kwargs):
-        """Alias for show_services() method for backward compatibility."""
-        return self.show_services(**kwargs)
-    
-    def display(self, **kwargs):
-        """Alias for show() method."""
-        return self.show(**kwargs)
+            self._save_and_open_file(html, output_path)
     
     def to_widget(self, **kwargs):
         """Generate widget HTML without displaying.
