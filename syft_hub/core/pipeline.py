@@ -20,7 +20,11 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 class Pipeline:
-    """Pipeline for structured RAG/FedRAG workflows"""
+    """Pipeline for structured RAG/FedRAG workflows.
+    
+    Provides a streamlined way to combine multiple search services (data sources)
+    with chat services (synthesizers) to create powerful RAG/FedRAG applications.
+    """
     
     def __init__(
             self, 
@@ -29,7 +33,22 @@ class Pipeline:
             synthesizer: Optional[Union[str, Dict, 'Service']] = None,
             context_format: str = "simple"
         ):
-        """Initialize the pipeline with data sources and synthesizer."""
+        """Initialize the pipeline with data sources and synthesizer.
+        
+        Args:
+            client: SyftBox client instance
+            data_sources: List of search services for data retrieval. Each item can be:
+                - str: Service name like "alice@example.com/docs" 
+                - dict: Service with params like {"name": "service", "topK": 10}
+                - Service: Loaded service object from client.load_service()
+            synthesizer: Chat service for response generation. Can be:
+                - str: Service name like "ai@openai.com/gpt-4"
+                - dict: Service with params like {"name": "service", "temperature": 0.7}
+                - Service: Loaded service object
+            context_format: Format for injecting search context (default: "simple")
+                - "simple": Clean format with ## headers for each source document
+                - "frontend": Compact [filename] format matching web application
+        """
         self.client = client
         self.data_sources: List[ServiceSpec] = []
         self.synthesizer: Optional[ServiceSpec] = None
@@ -46,7 +65,7 @@ class Pipeline:
                     name = source.pop('name')
                     self.data_sources.append(ServiceSpec(name=name, params=source))
                 else:
-                    raise ValidationError(f"Invalid data source format: {source}")
+                    raise ValidationError(f"Invalid data source format: {source}. Expected str (service name), dict (service with params), or Service object.")
 
         if synthesizer:
             if isinstance(synthesizer, str):
@@ -57,27 +76,7 @@ class Pipeline:
                 name = synthesizer.pop('name')
                 self.synthesizer = ServiceSpec(name=name, params=synthesizer)
             else:
-                raise ValidationError(f"Invalid synthesizer format: {synthesizer}")
-            
-        # Handle inline initialization
-        # if data_sources:
-        #     for source in data_sources:
-        #         if isinstance(source, str):
-        #             self.data_sources.append(ServiceSpec(name=source, params={}))
-        #         elif isinstance(source, dict):
-        #             name = source.pop('name')
-        #             self.data_sources.append(ServiceSpec(name=name, params=source))
-        #         else:
-        #             raise ValidationError(f"Invalid data source format: {source}")
-        
-        # if synthesizer:
-        #     if isinstance(synthesizer, str):
-        #         self.synthesizer = ServiceSpec(name=synthesizer, params={})
-        #     elif isinstance(synthesizer, dict):
-        #         name = synthesizer.pop('name')
-        #         self.synthesizer = ServiceSpec(name=name, params=synthesizer)
-        #     else:
-        #         raise ValidationError(f"Invalid synthesizer format: {synthesizer}")
+                raise ValidationError(f"Invalid synthesizer format: {synthesizer}. Expected str (service name), dict (service with params), or Service object.")
     
     def add_source(self, service_name: str, **params) -> 'Pipeline':
         """Add a data source service with parameters"""

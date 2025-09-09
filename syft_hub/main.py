@@ -149,7 +149,6 @@ class Client:
             
             # RAG/Pipeline
             'pipeline',
-            'create_pipeline',
             
             # Accounting
             'accounting_client',
@@ -282,9 +281,14 @@ class Client:
         Returns:
             Service object for object-oriented interaction
             
-        Example:
+        Examples:
+            # Load a chat service
             service = client.load_service("alice@example.com/gpt-assistant")
             response = service.chat(messages=[{"role": "user", "content": "Hello"}])
+            
+            # Load a search service
+            search_service = client.load_service("bob@example.com/document-search")
+            results = search_service.search(message="Python tutorial")
         """
         service_info = self._get_service(service_name)
         
@@ -315,7 +319,7 @@ class Client:
         """Chat with a specific service  (async version).
         
         Args:
-            service_name: Datasite/Name of the service to use
+            service_name: Full service name in format 'datasite/service_name'
             messages: Message to send
             temperature: Sampling temperature (0.0-1.0)
             max_tokens: Maximum tokens to generate
@@ -323,6 +327,21 @@ class Client:
             
         Returns:
             Chat response from the specified service
+        
+        Examples:
+            # Basic chat
+            response = await client.chat_async(
+                "alice@example.com/gpt-assistant",
+                "What is machine learning?"
+            )
+            
+            # Chat with parameters
+            response = await client.chat_async(
+                "bob@example.com/creative-writer",
+                "Write a poem about clouds",
+                temperature=0.8,
+                max_tokens=200
+            )
         """
         # Find the specific service
         service = self._get_service(service_name)
@@ -358,7 +377,7 @@ class Client:
         """Chat with a specific service.
         
         Args:
-            service_name: Datasite/Name of the service to use
+            service_name: Full service name in format 'datasite/service_name'
             messages: Message to send
             temperature: Sampling temperature (0.0-1.0)
             max_tokens: Maximum tokens to generate
@@ -384,7 +403,7 @@ class Client:
         """Smart chat method that adapts to the execution context.
         
         Args:
-            service_name: Datasite/Name of the service to use
+            service_name: Full service name in format 'datasite/service_name'
             messages: Message to send
             temperature: Sampling temperature (0.0-1.0)
             max_tokens: Maximum tokens to generate
@@ -395,10 +414,17 @@ class Client:
             
         Examples:
             # In async context (Jupyter, async function):
-            response = await client.chat("service", "Hello")
+            response = await client.chat("alice@example.com/gpt-assistant", "Hello")
             
             # In sync context:
-            response = client.chat("service", "Hello")
+            response = client.chat("bob@example.com/creative-writer", "Write a story")
+            
+            # With parameters:
+            response = client.chat(
+                "charlie@example.com/code-assistant",
+                "Explain this Python function",
+                temperature=0.3
+            )
         """
         if detect_async_context():
             # Return coroutine - caller must await it
@@ -418,7 +444,7 @@ class Client:
         """Search with a specific service (sync version).
         
         Args:
-            service_name: Datasite/Name of the service to use
+            service_name: Full service name in format 'datasite/service_name'
             message: Search message
             topK: Maximum number of results
             similarity_threshold: Minimum similarity score
@@ -462,15 +488,29 @@ class Client:
         """Search with a specific service.
         
         Args:
-            service_name: Name of the service to use (REQUIRED)
+            service_name: Full service name in format 'datasite/service_name'
             message: Search message
-            datasite: Datasite email (required if service name is ambiguous)
-            limit: Maximum number of results
+            topK: Maximum number of results
             similarity_threshold: Minimum similarity score
             **kwargs: Additional service-specific parameters
             
         Returns:
             Search response from the specified service
+        
+        Examples:
+            # Basic search
+            results = await client.search_async(
+                "alice@example.com/document-search",
+                "Python tutorial"
+            )
+            
+            # Search with limits
+            results = await client.search_async(
+                "bob@example.com/code-search", 
+                "machine learning algorithms",
+                topK=5,
+                similarity_threshold=0.7
+            )
         """
 
         # Find the specific service
@@ -507,7 +547,7 @@ class Client:
         """Smart search method that adapts to the execution context.
 
         Args:
-            service_name: Datasite/Name of the service to use
+            service_name: Full service name in format 'datasite/service_name'
             message: Search message
             topK: Maximum number of results
             similarity_threshold: Minimum similarity score
@@ -515,6 +555,21 @@ class Client:
             
         Returns:
             SearchResponse (sync) or Awaitable[SearchResponse] (async)
+        
+        Examples:
+            # In async context (Jupyter, async function):
+            results = await client.search("alice@example.com/document-search", "Python")
+            
+            # In sync context:
+            results = client.search("bob@example.com/code-search", "algorithms")
+            
+            # With parameters:
+            results = client.search(
+                "charlie@example.com/wiki-search",
+                "machine learning",
+                topK=10,
+                similarity_threshold=0.8
+            )
         """
         if detect_async_context():
             # Return coroutine - caller must await it
@@ -524,12 +579,21 @@ class Client:
             return self._search_sync(service_name, message, topK, similarity_threshold, **kwargs)
 
     # Service Parameters
-    def get_service_params(self, service_name: str, datasite: Optional[str] = None) -> Dict[str, Any]:
-        """Get available parameters for a specific service."""
-        # Format service name with datasite if provided and not already in the name
-        if datasite and "/" not in service_name:
-            service_name = f"{datasite}/{service_name}"
+    def get_service_params(self, service_name: str) -> Dict[str, Any]:
+        """Get available parameters for a specific service.
         
+        Args:
+            service_name: Full service name in format 'datasite/service_name'
+        
+        Returns:
+            Dictionary of available parameters for chat and search operations
+        
+        Examples:
+            # Get parameters for a specific service
+            params = client.get_service_params("alice@example.com/gpt-assistant")
+            print(params["chat"])  # Shows available chat parameters
+            print(params["search"])  # Shows available search parameters
+        """
         service = self._get_service(service_name)
         if not service:
             raise ServiceNotFoundError(f"Service '{service_name}' not found")
@@ -581,17 +645,19 @@ class Client:
         else:
             return [self._service_to_dict(service) for service in services]
     
-    def show_service(self, service_name: str, datasite: Optional[str] = None) -> None:
+    def show_service(self, service_name: str) -> None:
         """Show service information using an HTML widget (similar to client.show()).
         
         Args:
-            service_name: Name of the service (can be "service" or "datasite/service")
-            datasite: Optional datasite to narrow search
-        """
-        # Format service name with datasite if provided and not already in the name
-        if datasite and "/" not in service_name:
-            service_name = f"{datasite}/{service_name}"
+            service_name: Full service name in format 'datasite/service_name'
         
+        Examples:
+            # Display information for a specific service
+            client.show_service("alice@example.com/gpt-assistant")
+            
+            # Shows service details, parameters, and usage examples
+            client.show_service("bob@example.com/document-search")
+        """
         service = self._get_service(service_name)
         if not service:
             raise ServiceNotFoundError(f"Service '{service_name}' not found")
@@ -603,11 +669,23 @@ class Client:
         """Check health of a specific service.
         
         Args:
-            service_name: Name of the service to check
+            service_name: Full service name in format 'datasite/service_name'
             timeout: Timeout for health check
             
         Returns:
             Health status of the service
+        
+        Examples:
+            # Check if a service is online
+            status = await client.check_service_health("alice@example.com/gpt-assistant")
+            if status == HealthStatus.ONLINE:
+                print("Service is ready to use")
+            
+            # Quick health check with short timeout
+            status = await client.check_service_health(
+                "bob@example.com/slow-service", 
+                timeout=1.0
+            )
         """
         service = self._get_service(service_name)
         if not service:
@@ -678,27 +756,62 @@ class Client:
 
     # RAG pipeline methods
     def create_pipeline(self) -> Pipeline:
-        """Create a new pipeline for RAG workflows"""
-        return Pipeline(client=self)
-
-    def pipeline(self, data_sources: Optional[List[Union[str, Dict]]] = None, 
-                synthesizer: Optional[Union[str, Dict]] = None, 
-                context_format: Optional[str] = None) -> Pipeline:
-        """Create and configure a pipeline in one call (inline approach)
+        """Create a new pipeline for RAG workflows.
         
-        Args:
-            data_sources: List of search services to use as data sources
-            synthesizer: Chat service to use for synthesis
-            context_format: Format for search context ("simple" or "frontend")
+        .. deprecated:: 1.0.0
+            Use :func:`pipeline` instead for more convenient inline configuration.
         
         Returns:
-            Configured Pipeline ready for execution
+            Empty Pipeline that requires further configuration
+            
+        Note:
+            This method is deprecated. Use ``client.pipeline()`` with parameters
+            for a more convenient experience.
+        """
+        import warnings
+        warnings.warn(
+            "create_pipeline() is deprecated and will be removed in v2.0. "
+            "Use client.pipeline(data_sources=..., synthesizer=...) instead.",
+            DeprecationWarning,
+            stacklevel=2
+        )
+        return Pipeline(client=self)
+
+    def pipeline(self, data_sources: Optional[List[Union[str, Dict, 'Service']]] = None, 
+                synthesizer: Optional[Union[str, Dict, 'Service']] = None, 
+                context_format: Optional[str] = None) -> Pipeline:
+        """Create and configure a pipeline for RAG/FedRAG workflows.
         
-        Example:
+        Args:
+            data_sources: List of search services to use as data sources. Each item can be:
+                - str: Service name like "alice@example.com/docs"
+                - dict: Service with params like {"name": "service", "topK": 10}
+                - Service: Loaded service object from client.load_service()
+            synthesizer: Chat service to use for synthesis. Can be:
+                - str: Service name like "ai@openai.com/gpt-4"
+                - dict: Service with params like {"name": "service", "temperature": 0.7}
+                - Service: Loaded service object
+            context_format: Format for search context injection (default: "simple")
+                - "simple": Clean format with ## headers for each source
+                - "frontend": Matches web app format with [filename] headers
+        
+        Returns:
+            Configured Pipeline ready for execution with .run() or .run_async()
+        
+        Examples:
+            # Simple usage
             result = client.pipeline(
                 data_sources=["alice@example.com/docs", "bob@example.com/wiki"],
                 synthesizer="ai@openai.com/gpt-4"
             ).run(messages=[{"role": "user", "content": "What is Python?"}])
+            
+            # With parameters and Service objects
+            service = client.load_service("alice@example.com/docs")
+            result = client.pipeline(
+                data_sources=[service, {"name": "bob@example.com/wiki", "topK": 5}],
+                synthesizer={"name": "ai@openai.com/gpt-4", "temperature": 0.7},
+                context_format="frontend"
+            ).run(messages=[{"role": "user", "content": "Compare these docs"}])
         """
         return Pipeline(
             client=self, 
@@ -1007,8 +1120,8 @@ class Client:
             f"",
             f"Common operations:",
             f"  client.list_services()                    — Discover available services",
-            f"  client.chat('service', messages=[])       — Chat with a service",
-            f"  client.search('service', 'message')       — Search with a service",
+            f"  client.chat('datasite/service', messages=[])       — Chat with a service",
+            f"  client.search('datasite/service', 'message')       — Search with a service",
             f"  client.register_accounting(email)         — Register account",
             f"  client.connect_accounting(email, password) — Connect account"
         ]
@@ -1127,8 +1240,8 @@ class Client:
                 <div style="margin-bottom: 8px; font-weight: 500;">Common operations:</div>
                 <div style="line-height: 1.8;">
                     <span class="command-code">client.list_services()</span> — Discover available services<br>
-                    <span class="command-code">client.chat("service", "message")</span> — Chat with a service<br>
-                    <span class="command-code">client.search("service", "message")</span> — Search with a service<br>
+                    <span class="command-code">client.chat("datasite/service", "message")</span> — Chat with a service<br>
+                    <span class="command-code">client.search("datasite/service", "message")</span> — Search with a service<br>
                     <span class="command-code">client.register_accounting(email)</span> — Register account<br>
                     <span class="command-code">client.connect_accounting(email, password)</span> — Connect account
                 </div>
@@ -1304,7 +1417,7 @@ class Client:
         
         return "\n".join(lines)
 
-    def _format_search_context(self, results: List[DocumentResult], format_type: str = "frontend") -> str:
+    def _format_search_context(self, results: List[DocumentResult], format_type: str = "simple") -> str:
         """Format search results as context for chat injection.
         
         Args:
