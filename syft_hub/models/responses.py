@@ -106,8 +106,161 @@ class ChatResponse(BaseResponse):
         return self.message.content if self.message else ""
     
     def __repr__(self) -> str:
-        """Return full object representation for debugging."""
-        return f"ChatResponse(id='{self.id}', model='{self.model}', message={self.message!r}, usage={self.usage!r}, cost={self.cost}, provider_info={self.provider_info})"
+        """Return user-friendly chat response display similar to service repr."""
+        try:
+            from IPython.display import display, HTML
+            # In notebook environment, show rich display
+            self._display_rich()
+            return ""  # Return empty string to avoid double output
+        except ImportError:
+            # Not in notebook - provide comprehensive text representation
+            lines = [
+                f"Chat Response [{self.status.value.title()}]",
+                "",
+                f"Model:           {self.model}",
+            ]
+            
+            if self.message:
+                # Show content preview (first 100 chars)
+                content_preview = self.message.content[:100] + "..." if len(self.message.content) > 100 else self.message.content
+                lines.append(f"Content:         {content_preview}")
+                lines.append(f"Role:            {self.message.role}")
+            
+            if self.usage:
+                lines.append(f"Tokens:          {self.usage.total_tokens} total ({self.usage.prompt_tokens} prompt + {self.usage.completion_tokens} completion)")
+            
+            if self.cost is not None:
+                lines.append(f"Cost:            ${self.cost:.4f}")
+            
+            if self.finish_reason:
+                lines.append(f"Finish Reason:   {self.finish_reason}")
+                
+            lines.append(f"Timestamp:       {self.timestamp.strftime('%Y-%m-%d %H:%M:%S')}")
+            
+            return "\n".join(lines)
+    
+    def _display_rich(self) -> None:
+        """Display rich HTML representation in Jupyter notebooks."""
+        from IPython.display import display, HTML
+        
+        # Status badge styling
+        status_class = "badge-ready" if self.status.value == "success" else "badge-not-ready"
+        
+        # Content preview
+        content_preview = ""
+        if self.message:
+            content = self.message.content
+            if len(content) > 200:
+                content_preview = content[:200] + "..."
+            else:
+                content_preview = content
+        
+        # Usage info
+        usage_text = ""
+        if self.usage:
+            usage_text = f"{self.usage.total_tokens} tokens ({self.usage.prompt_tokens} + {self.usage.completion_tokens})"
+        
+        # Cost info
+        cost_text = f"${self.cost:.4f}" if self.cost is not None else "Free"
+        
+        html = f"""
+        <style>
+            .chat-response-widget {{
+                font-family: system-ui, -apple-system, sans-serif;
+                padding: 12px 0;
+                color: #333;
+                line-height: 1.5;
+                border: 1px solid #e0e0e0;
+                border-radius: 6px;
+                background: #fafafa;
+                padding: 16px;
+                margin: 8px 0;
+            }}
+            .widget-title {{
+                font-size: 14px;
+                font-weight: 600;
+                margin-bottom: 12px;
+                color: #333;
+            }}
+            .status-line {{
+                display: flex;
+                align-items: flex-start;
+                margin: 6px 0;
+                font-size: 13px;
+            }}
+            .status-label {{
+                color: #666;
+                min-width: 100px;
+                margin-right: 12px;
+                flex-shrink: 0;
+            }}
+            .status-value {{
+                font-family: monospace;
+                color: #333;
+                word-break: break-word;
+            }}
+            .status-badge {{
+                display: inline-block;
+                padding: 2px 8px;
+                border-radius: 3px;
+                font-size: 11px;
+                margin-left: 8px;
+            }}
+            .badge-ready {{
+                background: #d4edda;
+                color: #155724;
+            }}
+            .badge-not-ready {{
+                background: #f8d7da;
+                color: #721c24;
+            }}
+            .content-preview {{
+                background: #f8f9fa;
+                border: 1px solid #e9ecef;
+                border-radius: 4px;
+                padding: 8px;
+                font-family: inherit;
+                font-size: 12px;
+                color: #495057;
+                white-space: pre-wrap;
+                max-height: 120px;
+                overflow-y: auto;
+            }}
+        </style>
+        
+        <div class="chat-response-widget">
+            <div class="widget-title">
+                Chat Response <span class="status-badge {status_class}">{self.status.value.title()}</span>
+            </div>
+            
+            <div class="status-line">
+                <span class="status-label">Model:</span>
+                <span class="status-value">{self.model}</span>
+            </div>
+            
+            <div class="status-line">
+                <span class="status-label">Content:</span>
+            </div>
+            <div class="content-preview">{content_preview}</div>
+            
+            <div class="status-line">
+                <span class="status-label">Usage:</span>
+                <span class="status-value">{usage_text}</span>
+            </div>
+            
+            <div class="status-line">
+                <span class="status-label">Cost:</span>
+                <span class="status-value">{cost_text}</span>
+            </div>
+            
+            <div class="status-line">
+                <span class="status-label">Timestamp:</span>
+                <span class="status-value">{self.timestamp.strftime('%Y-%m-%d %H:%M:%S')}</span>
+            </div>
+        </div>
+        """
+        
+        display(HTML(html))
 
 @dataclass
 class SearchResponse(BaseResponse):
