@@ -366,7 +366,7 @@ class Client:
         chat_service = ChatService(service, self._rpc_client)
         return await chat_service.chat_with_params(chat_params)
     
-    def _chat_sync(
+    def chat_sync(
             self,
             service_name: str,
             messages: str,
@@ -431,9 +431,9 @@ class Client:
             return self.chat_async(service_name, messages, temperature, max_tokens, **kwargs)
         else:
             # Safe to use thread-based sync version
-            return self._chat_sync(service_name, messages, temperature, max_tokens, **kwargs)
+            return self.chat_sync(service_name, messages, temperature, max_tokens, **kwargs)
 
-    def _search_sync(
+    def search_sync(
             self,
             service_name: str, 
             message: str,
@@ -576,7 +576,7 @@ class Client:
             return self.search_async(service_name, message, topK, similarity_threshold, **kwargs)
         else:
             # Safe to use thread-based sync version
-            return self._search_sync(service_name, message, topK, similarity_threshold, **kwargs)
+            return self.search_sync(service_name, message, topK, similarity_threshold, **kwargs)
 
     # Service Parameters
     def get_service_params(self, service_name: str) -> Dict[str, Any]:
