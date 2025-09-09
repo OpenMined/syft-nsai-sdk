@@ -2,9 +2,7 @@
 Services widget HTML template for the SyftBox NSAI SDK.
 """
 import json
-import random
 import uuid
-
 from typing import List, Optional
 
 def get_services_widget_html(
@@ -18,50 +16,9 @@ def get_services_widget_html(
     items_per_page: int = 50,
     current_user_email: str = "",
 ) -> str:
-    """Generate the services widget HTML for web serving.
-    
-    Note: Filtering parameters (service_type, datasite, tags, etc.) are optional.
-    When not provided, the widget will display all services without additional filtering.
-    """
+    """Generate the services widget HTML for web serving."""
     
     container_id = f"syft_services_{uuid.uuid4().hex[:8]}"
-
-    # Non-obvious tips for users
-    tips = [
-        'Use quotation marks to search for exact phrases like "machine learning"',
-        "Multiple words without quotes searches for services containing ALL words",
-        "Press Tab in search boxes for auto-completion suggestions",
-        "Tab completion in Datasite filter shows all available datasite emails",
-        "Click any row to copy its service identifier to clipboard",
-        "Health check shows real-time service availability",
-        "Free services have $0.00 pricing",
-        "Tags help categorize services by purpose or technology",
-        "Datasite shows who published the service",
-        "Services column shows available capabilities (chat, search)",
-        "Status shows if service is active and healthy",
-        "Use client.chat() or client.search() to interact with services",
-        "Filter by max_cost to stay within budget",
-        "Set free_only=True to see only free services",
-        "Health status: ✅ Online, ❌ Offline, ⏱️ Timeout, ❓ Unknown",
-        "Services with multiple services can do both chat and search"
-    ]
-
-    # Pick a random tip for footer
-    footer_tip = random.choice(tips)
-    show_footer_tip = random.random() < 0.5  # 50% chance
-
-    # Handle optional filtering parameters
-    # If not provided, set defaults that show all services
-    if service_type is None:
-        service_type = ""
-    if datasite is None:
-        datasite = ""
-    if tags is None:
-        tags = []
-    if max_cost is None:
-        max_cost = 0  # 0 means no cost limit
-    if health_check is None:
-        health_check = "auto"
 
     # Generate complete HTML with the widget
     return f"""
@@ -73,856 +30,653 @@ def get_services_widget_html(
     <title>SyftBox Services</title>
     <style>
     body {{
-        background-color: #ffffff;
-        color: #000000;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
         margin: 0;
-        padding: 0;
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        padding: 16px;
+        background: #fafafa;
+        color: #333;
+        font-size: 13px;
+        line-height: 1.5;
     }}
-
-    @keyframes float {{
-        0%, 100% {{ transform: translateY(0px); }}
-        50% {{ transform: translateY(-8px); }}
-    }}
-
-    .syftbox-logo {{
-        animation: float 3s ease-in-out infinite;
-        filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.15));
-    }}
-
-    .progress-bar-gradient {{
-        background: linear-gradient(90deg, #3b82f6 0%, #10b981 100%);
-        transition: width 0.4s ease-out;
-        border-radius: 3px;
-    }}
-
-    #{container_id} * {{
-        margin: 0;
-        padding: 0;
-        box-sizing: border-box;
-    }}
-
+    
     #{container_id} {{
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-        font-size: 12px;
-        background: #ffffff;
-        color: #000000;
-        display: flex;
-        flex-direction: column;
-        width: 100%;
-        height: 100vh;
-        margin: 0;
-        border: none;
+        border: 1px solid #e1e1e1;
         border-radius: 8px;
+        background: #fff;
+        max-width: 100%;
         overflow: hidden;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
     }}
-
-    #{container_id} .search-controls {{
+    
+    .header {{
+        background: #f7f7f7;
+        padding: 16px 20px;
+        border-bottom: 1px solid #e1e1e1;
+    }}
+    
+    .header h2 {{
+        margin: 0 0 4px 0;
+        font-size: 17px;
+        font-weight: 500;
+        color: #1a1a1a;
+        letter-spacing: -0.01em;
+    }}
+    
+    .header p {{
+        margin: 0;
+        font-size: 13px;
+        color: #666;
+    }}
+    
+    .controls {{
+        padding: 12px 20px;
+        background: #f9f9f9;
+        border-bottom: 1px solid #e1e1e1;
         display: flex;
-        gap: 0.5rem;
+        gap: 10px;
         flex-wrap: wrap;
-        padding: 0.75rem;
-        background: #f8f9fa;
-        border-bottom: 1px solid #e5e7eb;
-        flex-shrink: 0;
+        align-items: center;
     }}
-
-    #{container_id} .search-controls input, #{container_id} .search-controls select {{
+    
+    .controls input, .controls select {{
+        padding: 6px 10px;
+        border: 1px solid #d0d0d0;
+        border-radius: 5px;
+        font-size: 13px;
+        background: #fff;
+        font-family: inherit;
+        transition: border-color 0.2s ease;
+    }}
+    
+    .controls input {{
         flex: 1;
+        min-width: 200px;
+    }}
+    
+    .controls select {{
         min-width: 120px;
-        padding: 0.5rem;
-        border: 1px solid #d1d5db;
-        border-radius: 0.25rem;
-        font-size: 0.875rem;
-        background: #ffffff;
-        color: #000000;
     }}
-
-    #{container_id} .table-container {{
-        flex: 1;
-        overflow-y: auto;
-        overflow-x: auto;
-        background: #ffffff;
-        min-height: 0;
+    
+    .controls input:focus, .controls select:focus {{
+        outline: none;
+        border-color: #007acc;
+        box-shadow: 0 0 0 2px rgba(0,122,204,0.1);
     }}
-
-    #{container_id} table {{
+    
+    .quick-filters {{
+        padding: 10px 20px;
+        background: #f4f4f4;
+        border-bottom: 1px solid #e1e1e1;
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+    }}
+    
+    .quick-btn {{
+        padding: 4px 10px;
+        border: 1px solid #c0c0c0;
+        border-radius: 4px;
+        background: #fff;
+        color: #333;
+        font-size: 12px;
+        cursor: pointer;
+        text-decoration: none;
+        display: inline-block;
+        font-family: inherit;
+        transition: all 0.15s ease;
+    }}
+    
+    .quick-btn:hover {{
+        background: #f0f0f0;
+        border-color: #999;
+        transform: translateY(-1px);
+    }}
+    
+    .table-container {{
+        overflow: auto;
+        max-height: 400px;
+    }}
+    
+    table {{
         width: 100%;
         border-collapse: collapse;
-        font-size: 0.75rem;
-        table-layout: fixed;
-        min-width: 900px;
+        font-size: 12px;
     }}
-
-    /* Updated column widths to accommodate new Availability column */
-    #{container_id} th:nth-child(1) {{ width: 14%; }} /* Name */
-    #{container_id} th:nth-child(2) {{ width: 11%; }} /* Datasite */
-    #{container_id} th:nth-child(3) {{ width: 11%; }} /* Services */
-    #{container_id} th:nth-child(4) {{ width: 9%; }}  /* Pricing */
-    #{container_id} th:nth-child(5) {{ width: 9%; }}  /* Status */
-    #{container_id} th:nth-child(6) {{ width: 10%; }} /* Availability */
-    #{container_id} th:nth-child(7) {{ width: 14%; }} /* Tags */
-    #{container_id} th:nth-child(8) {{ width: 22%; }} /* Summary */
-
-    #{container_id} thead {{
-        background: #f8f9fa;
-        border-bottom: 1px solid #e5e7eb;
-    }}
-
-    #{container_id} th {{
+    
+    th {{
+        background: #f6f6f6;
+        padding: 10px;
         text-align: left;
-        padding: 0.375rem 0.25rem;
+        border-bottom: 1px solid #e1e1e1;
         font-weight: 500;
-        font-size: 0.75rem;
-        border-bottom: 1px solid #e5e7eb;
+        font-size: 12px;
+        color: #555;
         position: sticky;
         top: 0;
-        background: #f8f9fa;
-        z-index: 10;
-        color: #000000;
     }}
-
-    #{container_id} td {{
-        padding: 0.375rem 0.25rem;
-        border-bottom: 1px solid #f3f4f6;
+    
+    td {{
+        padding: 10px;
+        border-bottom: 1px solid #f0f0f0;
         vertical-align: top;
-        font-size: 0.75rem;
-        text-align: left;
-        color: #000000;
     }}
-
-    #{container_id} tbody tr {{
-        transition: background-color 0.15s;
+    
+    tbody tr:hover {{
+        background: #f8f8f8;
+    }}
+    
+    tbody tr {{
         cursor: pointer;
+        transition: background-color 0.1s ease;
     }}
-
-    #{container_id} tbody tr:hover {{
-        background: rgba(0, 0, 0, 0.03);
+    
+    .badge {{
+        display: inline-block;
+        padding: 2px 6px;
+        border-radius: 3px;
+        font-size: 10px;
+        font-weight: 500;
+        margin-right: 3px;
     }}
-
-    #{container_id} .pagination {{
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        padding: 0.5rem;
-        border-top: 1px solid #e5e7eb;
-        background: rgba(0, 0, 0, 0.02);
-        flex-shrink: 0;
+    
+    .badge-chat {{
+        background: #e1f5fe;
+        color: #0277bd;
+        border: 1px solid #81d4fa;
     }}
-
-    #{container_id} .pagination button {{
-        padding: 0.25rem 0.5rem;
-        border-radius: 0.25rem;
-        font-size: 0.75rem;
-        border: 1px solid #e5e7eb;
-        background: white;
-        color: #000000;
+    
+    .badge-search {{
+        background: #e8f5e8;
+        color: #2e7d32;
+        border: 1px solid #a5d6a7;
+    }}
+    
+    .badge-free {{
+        background: #e8f5e8;
+        color: #2e7d32;
+        border: 1px solid #a5d6a7;
+    }}
+    
+    .badge-paid {{
+        background: #fff3e0;
+        color: #ef6c00;
+        border: 1px solid #ffcc02;
+    }}
+    
+    .badge-online {{
+        background: #e8f5e8;
+        color: #2e7d32;
+        border: 1px solid #a5d6a7;
+    }}
+    
+    .badge-offline {{
+        background: #ffebee;
+        color: #c62828;
+        border: 1px solid #ef9a9a;
+    }}
+    
+    .badge-timeout {{
+        background: #fff8e1;
+        color: #f57f17;
+        border: 1px solid #fff176;
+    }}
+    
+    .badge-unknown {{
+        background: #f5f5f5;
+        color: #666;
+        border: 1px solid #ccc;
+    }}
+    
+    .tag {{
+        background: #f0f0f0;
+        color: #555;
+        padding: 1px 4px;
+        border-radius: 2px;
+        font-size: 10px;
+        margin-right: 2px;
+        margin-bottom: 1px;
+        display: inline-block;
+    }}
+    
+    .copy-btn {{
+        padding: 3px 8px;
+        border: 1px solid #c0c0c0;
+        border-radius: 3px;
+        background: #fff;
+        color: #333;
+        font-size: 10px;
         cursor: pointer;
-        transition: all 0.15s;
+        font-family: inherit;
+        margin-bottom: 3px;
+        display: block;
+        width: 100%;
+        text-align: center;
+        transition: all 0.15s ease;
     }}
-
-    #{container_id} .pagination button:hover:not(:disabled) {{
-        background: #f3f4f6;
+    
+    .copy-btn:hover {{
+        background: #f0f0f0;
+        border-color: #999;
+        transform: translateY(-1px);
     }}
-
-    #{container_id} .pagination button:disabled {{
+    
+    .copy-btn.copied {{
+        background: #e8f5e8;
+        color: #2e7d32;
+        border-color: #a5d6a7;
+    }}
+    
+    .pagination {{
+        padding: 12px 20px;
+        background: #f7f7f7;
+        border-top: 1px solid #e1e1e1;
+        text-align: center;
+        font-size: 13px;
+    }}
+    
+    .pagination button {{
+        padding: 6px 12px;
+        border: 1px solid #c0c0c0;
+        border-radius: 4px;
+        background: #fff;
+        color: #333;
+        font-size: 12px;
+        cursor: pointer;
+        margin: 0 3px;
+        font-family: inherit;
+        transition: all 0.15s ease;
+    }}
+    
+    .pagination button:hover:not(:disabled) {{
+        background: #f0f0f0;
+        border-color: #999;
+        transform: translateY(-1px);
+    }}
+    
+    .pagination button:disabled {{
         opacity: 0.5;
         cursor: not-allowed;
     }}
-
-    #{container_id} .pagination .page-info {{
-        font-size: 0.75rem;
-        color: #6b7280;
-    }}
-
-    #{container_id} .pagination .status {{
-        font-size: 0.75rem;
-        color: #9ca3af;
-        font-style: italic;
-        opacity: 0.8;
-        text-align: center;
-        flex: 1;
-    }}
-
-    /* Enhanced truncation with tooltips */
-    #{container_id} .truncate {{
+    
+    .truncate {{
+        white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
-        white-space: nowrap;
-        position: relative;
-        cursor: help;
-        max-width: 100%;
-    }}
-
-    #{container_id} .truncate:hover::after {{
-        content: attr(data-full-text);
-        position: absolute;
-        left: 0;
-        top: 100%;
-        background: #1f2937;
-        color: white;
-        padding: 0.5rem;
-        border-radius: 0.25rem;
-        font-size: 0.75rem;
-        white-space: normal;
-        max-width: 300px;
-        z-index: 1000;
-        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-    }}
-
-    #{container_id} .btn {{
-        padding: 0.09375rem 0.1875rem;
-        border-radius: 0.25rem;
-        font-size: 0.6875rem;
-        border: none;
-        cursor: pointer;
-        display: inline-flex;
-        align-items: center;
-        gap: 0.125rem;
-        transition: all 0.15s;
-    }}
-
-    #{container_id} .btn:hover {{
-        opacity: 0.85;
-        transform: translateY(-1px);
-        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-    }}
-
-    #{container_id} .btn-blue {{
-        background: #dbeafe;
-        color: #3b82f6;
-    }}
-
-    #{container_id} .btn-green {{
-        background: #d1fae5;
-        color: #16a34a;
-    }}
-
-    #{container_id} .btn-purple {{
-        background: #e9d5ff;
-        color: #a855f7;
-    }}
-
-    #{container_id} .btn-red {{
-        background: #fee2e2;
-        color: #ef4444;
-    }}
-
-    #{container_id} .btn-gray {{
-        background: #f3f4f6;
-        color: #6b7280;
-    }}
-
-    #{container_id} .type-badge {{
-        display: inline-block;
-        padding: 0.125rem 0.375rem;
-        border-radius: 0.25rem;
-        font-size: 0.75rem;
-        font-weight: 500;
-        background: #ffffff;
-        color: #374151;
-        text-align: center;
-        white-space: nowrap;
-        border: 1px solid #d1d5db;
-    }}
-
-    #{container_id} .availability-status {{
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        gap: 0.25rem;
-        font-size: 0.75rem;
-    }}
-
-    #{container_id} .health-online {{
-        color: #16a34a;
-    }}
-
-    #{container_id} .health-offline {{
-        color: #ef4444;
-    }}
-
-    #{container_id} .health-timeout {{
-        color: #f59e0b;
-    }}
-
-    #{container_id} .health-unknown {{
-        color: #6b7280;
-    }}
-
-    #{container_id} .pricing {{
-        font-weight: 500;
-        color: #059669;
-    }}
-
-    #{container_id} .pricing.free {{
-        color: #16a34a;
-    }}
-
-    #{container_id} .pricing.paid {{
-        color: #dc2626;
-    }}
-
-    /* Better tags management */
-    #{container_id} .tags-container {{
-        display: flex;
-        flex-wrap: wrap;
-        gap: 0.25rem;
-        max-height: 2.5rem;
-        overflow: hidden;
-    }}
-
-    #{container_id} .tag {{
-        background: #f3f4f6;
-        color: #374151;
-        padding: 0.125rem 0.375rem;
-        border-radius: 0.25rem;
-        font-size: 0.625rem;
-        border: 1px solid #d1d5db;
-    }}
-
-    #{container_id} .tags-more {{
-        background: #e5e7eb;
-        color: #6b7280;
-        padding: 0.125rem 0.375rem;
-        border-radius: 0.25rem;
-        font-size: 0.625rem;
-        border: 1px solid #d1d5db;
-        cursor: pointer;
-        transition: all 0.15s;
-    }}
-
-    #{container_id} .tags-more:hover {{
-        background: #d1d5db;
-        color: #374151;
-    }}
-
-    #{container_id} .summary {{
-        color: #6b7280;
-        font-style: italic;
-        max-width: 200px;
+        max-width: 150px;
     }}
     </style>
 </head>
 <body>
-    <!-- Loading container -->
-    <div id="loading-container-{container_id}" style="height: 100vh; display: flex; flex-direction: column; justify-content: center; align-items: center; background-color: #ffffff;">
-        <!-- SyftBox Logo -->
-        <svg class="syftbox-logo" width="120" height="139" viewBox="0 0 311 360" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <g clip-path="url(#clip0_7523_4240)">
-                <path d="M311.414 89.7878L155.518 179.998L-0.378906 89.7878L155.518 -0.422485L311.414 89.7878Z" fill="url(#paint0_linear_7523_4240)"></path>
-                <path d="M311.414 89.7878V270.208L155.518 360.423V179.998L311.414 89.7878Z" fill="url(#paint1_linear_7523_4240)"></path>
-                <path d="M155.518 179.998V360.423L-0.378906 270.208V89.7878L155.518 179.998Z" fill="url(#paint2_linear_7523_4240)"></path>
-            </g>
-            <defs>
-                <linearGradient id="paint0_linear_7523_4240" x1="-0.378904" y1="89.7878" x2="311.414" y2="89.7878" gradientUnits="userSpaceOnUse">
-                    <stop stop-color="#DC7A6E"></stop>
-                    <stop offset="0.251496" stop-color="#F6A464"></stop>
-                    <stop offset="0.501247" stop-color="#FDC577"></stop>
-                    <stop offset="0.753655" stop-color="#EFC381"></stop>
-                    <stop offset="1" stop-color="#B9D599"></stop>
-                </linearGradient>
-                <linearGradient id="paint1_linear_7523_4240" x1="309.51" y1="89.7878" x2="155.275" y2="360.285" gradientUnits="userSpaceOnUse">
-                    <stop stop-color="#BFCD94"></stop>
-                    <stop offset="0.245025" stop-color="#B2D69E"></stop>
-                    <stop offset="0.504453" stop-color="#8DCCA6"></stop>
-                    <stop offset="0.745734" stop-color="#5CB8B7"></stop>
-                    <stop offset="1" stop-color="#4CA5B8"></stop>
-                </linearGradient>
-                <linearGradient id="paint2_linear_7523_4240" x1="-0.378906" y1="89.7878" 
-                               x2="155.761" y2="360.282" gradientUnits="userSpaceOnUse">
-                    <stop stop-color="#D7686D"></stop>
-                    <stop offset="0.225" stop-color="#C64B77"></stop>
-                    <stop offset="0.485" stop-color="#A2638E"></stop>
-                    <stop offset="0.703194" stop-color="#758AA8"></stop>
-                    <stop offset="1" stop-color="#639EAF"></stop>
-                </linearGradient>
-                <clipPath id="clip0_7523_4240">
-                    <rect width="311" height="360" fill="white"></rect>
-                </clipPath>
-            </defs>
-        </svg>
-
-        <div style="font-size: 20px; font-weight: 600; color: #000000; 
-                    margin-top: 2rem; text-align: center;">
-            loading <br />AI services
+    <div id="{container_id}">
+        <div class="header">
+            <h2>SyftBox Services</h2>
+            <p>Click on any row to see usage examples</p>
         </div>
-
-        <div style="width: 340px; height: 6px; 
-                    background-color: #e5e5e5; 
-                    border-radius: 3px; margin: 1.5rem auto; overflow: hidden;">
-            <div id="loading-bar-{container_id}" class="progress-bar-gradient" 
-                 style="width: 0%; height: 100%;"></div>
-        </div>
-
-        <div id="loading-status-{container_id}" 
-             style="color: #9ca3af; font-size: 0.875rem; margin-top: 0.5rem;">
-            Initializing...
-        </div>
-
-        <div style="margin-top: 3rem; padding: 0 2rem; max-width: 500px; text-align: center;">
-            <div style="color: #6b7280; font-size: 0.875rem; font-style: italic;">
-                💡 Tip: {footer_tip}
-            </div>
-        </div>
-    </div>
-
-    <!-- Main widget container (hidden initially) -->
-    <div id="{container_id}" style="display: none;">
-        <div class="search-controls">
-            <input id="{container_id}-search" placeholder="🔍 Search services..." style="flex: 1;">
-            <input id="{container_id}-datasite-filter" placeholder="Filter by Datasite..." style="flex: 1;">
-            <select id="{container_id}-service-filter" style="flex: 1;">
-                <option value="">All Services</option>
-                <option value="chat">Chat Only</option>
-                <option value="search">Search Only</option>
+        
+        <div class="controls">
+            <input type="text" id="{container_id}-search" placeholder="Search services...">
+            <select id="{container_id}-service-type">
+                <option value="">All Types</option>
+                <option value="chat">Chat</option>
+                <option value="search">Search</option>
             </select>
-            <select id="{container_id}-pricing-filter" style="flex: 1;">
+            <select id="{container_id}-pricing">
                 <option value="">All Pricing</option>
-                <option value="free">Free Only</option>
-                <option value="paid">Paid Only</option>
+                <option value="free">Free</option>
+                <option value="paid">Paid</option>
             </select>
-            <select id="{container_id}-availability-filter" style="flex: 1;">
-                <option value="">All Availability</option>
-                <option value="online">Online Only</option>
-                <option value="offline">Offline Only</option>
-                <option value="timeout">Timeout Only</option>
-                <option value="unknown">Unknown Only</option>
+            <select id="{container_id}-availability">
+                <option value="">All Status</option>
+                <option value="online">Online</option>
+                <option value="offline">Offline</option>
+                <option value="timeout">Timeout</option>
             </select>
         </div>
-
+        
+        <div class="quick-filters">
+            <button class="quick-btn" onclick="quickFilter_{container_id}('free')">Free Only</button>
+            <button class="quick-btn" onclick="quickFilter_{container_id}('online')">Online Only</button>
+            <button class="quick-btn" onclick="quickFilter_{container_id}('chat')">Chat Services</button>
+            <button class="quick-btn" onclick="quickFilter_{container_id}('search')">Search Services</button>
+            <button class="quick-btn" onclick="clearFilters_{container_id}()">Clear All</button>
+        </div>
+        
         <div class="table-container">
             <table>
                 <thead>
                     <tr>
-                        <th>Name</th>
-                        <th>Datasite</th>
-                        <th>Services</th>
-                        <th>Pricing</th>
-                        <th>Status</th>
-                        <th>Availability</th>
-                        <th>Tags</th>
-                        <th>Summary</th>
+                        <th style="width: 15%">Name</th>
+                        <th style="width: 15%">Datasite</th>
+                        <th style="width: 12%">Type</th>
+                        <th style="width: 10%">Pricing</th>
+                        <th style="width: 10%">Availability</th>
+                        <th style="width: 15%">Tags</th>
+                        <th style="width: 18%">Description</th>
+                        <th style="width: 5%">Copy</th>
                     </tr>
                 </thead>
                 <tbody id="{container_id}-tbody">
-                    <!-- Table rows will be populated by JavaScript -->
+                    <tr><td colspan="8" style="text-align: center; padding: 20px;">Loading services...</td></tr>
                 </tbody>
             </table>
         </div>
-
+        
         <div class="pagination">
-            <div>
-                <a href="https://github.com/OpenMined/syft-nsai-sdk/issues" target="_blank" style="color: #6b7280; text-decoration: none; font-size: 0.75rem;">
-                    Report a Bug
-                </a>
-            </div>
-            <span class="status" id="{container_id}-status">Loading...</span>
-            <div class="pagination-controls">
-                <button onclick="changePage_{container_id}(-1)" id="{container_id}-prev-btn" disabled>Previous</button>
-                <span class="page-info" id="{container_id}-page-info">Page 1 of 1</span>
-                <button onclick="changePage_{container_id}(1)" id="{container_id}-next-btn">Next</button>
-            </div>
+            <button onclick="previousPage_{container_id}()" id="{container_id}-prev-btn" disabled>← Previous</button>
+            <span id="{container_id}-page-info">Page 1 of 1</span>
+            <button onclick="nextPage_{container_id}()" id="{container_id}-next-btn">Next →</button>
         </div>
     </div>
 
     <script>
-    (function() {{
-        console.log('Widget initialization starting...');
+    (function() {{  // IIFE to isolate this widget instance
+    const widgetId = '{container_id}';
+    
+    // Widget-specific state
+    let allServices = [];
+    let filteredServices = [];
+    let currentPage = 1;
+    const itemsPerPage = 20;
 
-        // Configuration
-        var CONFIG = {{
-            currentUserEmail: '{current_user_email}'
-        }};
+    // Initialize services data - json.dumps creates a JavaScript array literal
+    const servicesData = {json.dumps(services) if services else '[]'};
+    
+    // Use services data or demo data
+    if (!servicesData || !Array.isArray(servicesData) || servicesData.length === 0) {{
+        allServices = [
+            {{
+                name: "Demo Chat Service",
+                datasite: "demo@example.com",
+                services: [{{type: "chat", enabled: true}}],
+                min_pricing: 0,
+                max_pricing: 0,
+                config_status: "active",
+                health_status: "online",
+                tags: ["demo", "chat"],
+                summary: "A demo chat service",
+                description: "Demo service for testing"
+            }},
+            {{
+                name: "Demo Search Service", 
+                datasite: "demo2@example.com",
+                services: [{{type: "search", enabled: true}}],
+                min_pricing: 0.01,
+                max_pricing: 0.05,
+                config_status: "active",
+                health_status: "offline",
+                tags: ["demo", "search"],
+                summary: "A demo search service",
+                description: "Demo search service"
+            }}
+        ];
+    }} else {{
+        allServices = servicesData;
+    }}
+    
+    filteredServices = allServices.slice();
 
-        // Initialize variables
-        var allServices = [];
-        var filteredServices = [];
-        var currentPage = {page};
-        var itemsPerPage = {items_per_page};
+    // Render table
+    function renderTable() {{
+        const tbody = document.getElementById('{container_id}-tbody');
+        
+        if (!tbody) {{
+            console.error('tbody element not found! Retrying in 100ms...');
+            setTimeout(renderTable, 100);
+            return;
+        }}
+        
+        const totalPages = Math.ceil(filteredServices.length / itemsPerPage);
+        const start = (currentPage - 1) * itemsPerPage;
+        const end = Math.min(start + itemsPerPage, filteredServices.length);
+        
+        if (filteredServices.length === 0) {{
+            tbody.innerHTML = '<tr><td colspan="8" style="text-align: center; padding: 20px;">No services found</td></tr>';
+        }} else {{
+            const rows = filteredServices.slice(start, end).map(service => {{
+                const serviceId = service.datasite + '/' + service.name;
+                
+                // Handle services array properly
+                let serviceTypes = [];
+                if (service.services && Array.isArray(service.services)) {{
+                    serviceTypes = service.services.filter(s => s.enabled);
+                }}
+                
+                const types = serviceTypes.length > 0 ? 
+                    serviceTypes.map(s => `<span class="badge badge-${{s.type}}">${{s.type}}</span>`).join('') : 
+                    '<span class="badge badge-unknown">none</span>';
+                
+                const pricing = (service.min_pricing === 0 || service.min_pricing === undefined) ? 
+                    '<span class="badge badge-free">Free</span>' : 
+                    `<span class="badge badge-paid">$$${{service.min_pricing.toFixed(3)}}</span>`;
+                
+                const status = service.health_status ? 
+                    `<span class="badge badge-${{service.health_status}}">${{service.health_status}}</span>` :
+                    '<span class="badge badge-unknown">unknown</span>';
+                
+                const tags = service.tags && service.tags.length > 0 ? 
+                    service.tags.slice(0, 3).map(tag => `<span class="tag">${{escapeHtml(tag)}}</span>`).join('') : 
+                    '<span class="tag">none</span>';
+                
+                const moreTagsCount = service.tags && service.tags.length > 3 ? service.tags.length - 3 : 0;
+                const tagsDisplay = tags + (moreTagsCount > 0 ? `<span class="tag">+${{moreTagsCount}}</span>` : '');
+                
+                return `<tr onclick="window['showUsageModal_{container_id}']('${{escapeHtml(service.name)}}', '${{escapeHtml(service.datasite)}}', ${{JSON.stringify(service.services || [])}})">
+                    <td><div class="truncate" title="${{escapeHtml(service.name)}}">${{escapeHtml(service.name)}}</div></td>
+                    <td><div class="truncate" title="${{escapeHtml(service.datasite)}}">${{escapeHtml(service.datasite)}}</div></td>
+                    <td>${{types}}</td>
+                    <td>${{pricing}}</td>
+                    <td>${{status}}</td>
+                    <td>${{tagsDisplay}}</td>
+                    <td><div class="truncate" title="${{escapeHtml(service.summary || service.description || '')}}">${{escapeHtml(service.summary || service.description || '')}}</div></td>
+                    <td>
+                        <button class="copy-btn" onclick="event.stopPropagation(); window['copyServiceName_{container_id}']('${{serviceId}}', this)">Name</button>
+                        <button class="copy-btn" onclick="event.stopPropagation(); window['copyServiceExample_{container_id}']('${{serviceId}}', this)">Example</button>
+                    </td>
+                </tr>`;
+            }}).join('');
+            
+            tbody.innerHTML = rows;
+        }}
+        
+        updatePagination();
+    }}
 
-        // Global functions for onclick handlers
-        window.changePage_{container_id} = function(direction) {{
-            var totalPages = Math.max(1, Math.ceil(filteredServices.length / itemsPerPage));
-            currentPage += direction;
-            if (currentPage < 1) currentPage = 1;
-            if (currentPage > totalPages) currentPage = totalPages;
+    // Filter functions
+    function applyFilters() {{
+        const search = document.getElementById('{container_id}-search').value.toLowerCase();
+        const serviceType = document.getElementById('{container_id}-service-type').value;
+        const pricing = document.getElementById('{container_id}-pricing').value;
+        const availability = document.getElementById('{container_id}-availability').value;
+        
+        filteredServices = allServices.filter(service => {{
+            // Search filter
+            if (search && !service.name.toLowerCase().includes(search) && 
+                !service.datasite.toLowerCase().includes(search) &&
+                !service.summary?.toLowerCase().includes(search) &&
+                !(service.tags || []).some(tag => tag.toLowerCase().includes(search))) {{
+                return false;
+            }}
+            
+            // Service type filter
+            if (serviceType && !service.services?.some(s => s.type === serviceType && s.enabled)) {{
+                return false;
+            }}
+            
+            // Pricing filter
+            if (pricing === 'free' && service.min_pricing > 0) return false;
+            if (pricing === 'paid' && service.min_pricing === 0) return false;
+            
+            // Availability filter
+            if (availability && service.health_status !== availability) return false;
+            
+            return true;
+        }});
+        
+        currentPage = 1;
+        renderTable();
+    }}
+
+    // Quick filter functions - attach to window for onclick handlers
+    window['quickFilter_{container_id}'] = function(type) {{
+        clearFilters();
+        if (type === 'free') {{
+            document.getElementById('{container_id}-pricing').value = 'free';
+        }} else if (type === 'online') {{
+            document.getElementById('{container_id}-availability').value = 'online';
+        }} else if (type === 'chat' || type === 'search') {{
+            document.getElementById('{container_id}-service-type').value = type;
+        }}
+        applyFilters();
+    }}
+
+    window['clearFilters_{container_id}'] = function() {{
+        document.getElementById('{container_id}-search').value = '';
+        document.getElementById('{container_id}-service-type').value = '';
+        document.getElementById('{container_id}-pricing').value = '';
+        document.getElementById('{container_id}-availability').value = '';
+        applyFilters();
+    }}
+
+    // Pagination - attach to window for onclick handlers
+    window['previousPage_{container_id}'] = function() {{
+        if (currentPage > 1) {{
+            currentPage--;
             renderTable();
-        }};
-
-        window.copyServiceId_{container_id} = function(name, datasite) {{
-            var serviceId = name + ' by ' + datasite;
-            if (navigator.clipboard) {{
-                navigator.clipboard.writeText(serviceId).then(function() {{
-                    document.getElementById('{container_id}-status').textContent = 'Copied: ' + serviceId;
-                    setTimeout(function() {{
-                        updateStatus();
-                    }}, 2000);
-                }}).catch(function() {{
-                    console.log('Clipboard failed, but service ID is: ' + serviceId);
-                }});
-            }} else {{
-                console.log('Service ID: ' + serviceId);
-            }}
-        }};
-
-        window.showAllTags_{container_id} = function(event, tags) {{
-            event.stopPropagation();
-            
-            var popup = document.createElement('div');
-            popup.style.cssText = `
-                position: fixed;
-                top: 50%;
-                left: 50%;
-                transform: translate(-50%, -50%);
-                background: white;
-                border: 1px solid #d1d5db;
-                border-radius: 0.5rem;
-                padding: 1rem;
-                box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
-                z-index: 1000;
-                max-width: 400px;
-                max-height: 300px;
-                overflow-y: auto;
-            `;
-            
-            popup.innerHTML = `
-                <h3 style="margin: 0 0 0.5rem 0; font-size: 0.875rem;">All Tags (${{tags.length}})</h3>
-                <div style="display: flex; flex-wrap: wrap; gap: 0.25rem;">
-                    ${{tags.map(tag => `<span class="tag">${{escapeHtml(tag)}}</span>`).join('')}}
-                </div>
-                <button onclick="this.parentElement.remove()" style="margin-top: 0.5rem; padding: 0.25rem 0.5rem; border: 1px solid #d1d5db; border-radius: 0.25rem; background: white; cursor: pointer;">Close</button>
-            `;
-            
-            document.body.appendChild(popup);
-            
-            // Close popup when clicking outside
-            setTimeout(() => {{
-                document.addEventListener('click', function closePopup(e) {{
-                    if (!popup.contains(e.target)) {{
-                        popup.remove();
-                        document.removeEventListener('click', closePopup);
-                    }}
-                }});
-            }}, 100);
-        }};
-
-        // Update progress
-        function updateProgress(percent, status) {{
-            try {{
-                var loadingBar = document.getElementById('loading-bar-{container_id}');
-                var loadingStatus = document.getElementById('loading-status-{container_id}');
-
-                if (loadingBar) {{
-                    loadingBar.style.width = percent + '%';
-                }}
-                if (loadingStatus) {{
-                    loadingStatus.innerHTML = status;
-                }}
-            }} catch (error) {{
-                console.error('Error updating progress:', error);
-            }}
         }}
+    }};
 
-        // Load services data
-        async function loadServices() {{
-            try {{
-                console.log('Loading services...');
-                updateProgress(10, 'Initializing...');
-                
-                // Use the actual services data passed from Python
-                var realServices = {json.dumps(services) if services else '[]'};
-                console.log('Services data:', realServices);
-                
-                if (realServices && realServices.length > 0) {{
-                    // Use real services data
-                    allServices = realServices;
-                    updateProgress(100, 'Services loaded successfully!');
-                }} else {{
-                    // No services found - create some demo data for testing
-                    allServices = [
-                        {{
-                            name: "Demo Service 1",
-                            datasite: "demo@example.com",
-                            services: [{{type: "chat", enabled: true}}],
-                            min_pricing: 0,
-                            max_pricing: 0,
-                            config_status: "active",
-                            health_status: "online",
-                            tags: ["demo", "test"],
-                            summary: "This is a demo service for testing",
-                            description: "Demo service"
-                        }},
-                        {{
-                            name: "Demo Service 2", 
-                            datasite: "demo2@example.com",
-                            services: [{{type: "search", enabled: true}}],
-                            min_pricing: 0.01,
-                            max_pricing: 0.05,
-                            config_status: "active",
-                            health_status: "offline",
-                            tags: ["demo", "search"],
-                            summary: "Another demo service",
-                            description: "Demo service 2"
-                        }}
-                    ];
-                    updateProgress(100, 'No services found - showing demo data');
-                }}
-                
-                filteredServices = allServices.slice();
-                
-                // Hide loading screen and show widget
-                document.getElementById('loading-container-{container_id}').style.display = 'none';
-                document.getElementById('{container_id}').style.display = 'flex';
-                
-                // Initial render
-                renderTable();
-                updateStatus();
-                
-            }} catch (error) {{
-                console.error('Error loading services:', error);
-                updateProgress(0, 'Error loading services: ' + error.message);
-            }}
+    window['nextPage_{container_id}'] = function() {{
+        const totalPages = Math.ceil(filteredServices.length / itemsPerPage);
+        if (currentPage < totalPages) {{
+            currentPage++;
+            renderTable();
         }}
+    }};
 
-        // Render table
-        function renderTable() {{
-            try {{
-                var tbody = document.getElementById('{container_id}-tbody');
-                var totalServices = filteredServices.length;
-                var totalPages = Math.max(1, Math.ceil(totalServices / itemsPerPage));
+    // Update pagination
+    function updatePagination() {{
+        const totalPages = Math.ceil(filteredServices.length / itemsPerPage);
+        document.getElementById('{container_id}-prev-btn').disabled = currentPage <= 1;
+        document.getElementById('{container_id}-next-btn').disabled = currentPage >= totalPages;
+        document.getElementById('{container_id}-page-info').textContent = `Page ${{currentPage}} of ${{totalPages || 1}}`;
+    }}
 
-                if (currentPage > totalPages) currentPage = totalPages;
-                if (currentPage < 1) currentPage = 1;
-
-                document.getElementById('{container_id}-prev-btn').disabled = currentPage === 1;
-                document.getElementById('{container_id}-next-btn').disabled = currentPage === totalPages;
-                document.getElementById('{container_id}-page-info').textContent = 'Page ' + currentPage + ' of ' + totalPages;
-
-                if (totalServices === 0) {{
-                    tbody.innerHTML = '<tr><td colspan="8" style="text-align: center; padding: 40px;">No services found</td></tr>';
-                    return;
-                }}
-
-                var start = (currentPage - 1) * itemsPerPage;
-                var end = Math.min(start + itemsPerPage, totalServices);
-
-                var html = '';
-                for (var i = start; i < end; i++) {{
-                    var service = filteredServices[i];
-                    
-                    html += '<tr onclick="copyServiceId_{container_id}(\\'' + escapeHtml(service.name) + '\\', \\'' + escapeHtml(service.datasite) + '\\')">' +
-                        '<td><div class="truncate" data-full-text="' + escapeHtml(service.name) + '" title="' + escapeHtml(service.name) + '">' + escapeHtml(service.name) + '</div></td>' +
-                        '<td><div class="truncate" data-full-text="' + escapeHtml(service.datasite) + '" title="' + escapeHtml(service.datasite) + '">' + escapeHtml(service.datasite) + '</div></td>' +
-                        '<td>' + formatServices(service.services) + '</td>' +
-                        '<td>' + formatPricing(service.min_pricing, service.max_pricing) + '</td>' +
-                        '<td>' + formatStatus(service.config_status) + '</td>' +
-                        '<td>' + formatAvailability(service.health_status) + '</td>' +
-                        '<td>' + formatTags(service.tags) + '</td>' +
-                        '<td><div class="summary truncate" data-full-text="' + escapeHtml(service.summary) + '" title="' + escapeHtml(service.summary) + '">' + escapeHtml(service.summary) + '</div></td>' +
-                    '</tr>';
-                }}
-
-                tbody.innerHTML = html;
-            }} catch (error) {{
-                console.error('Error rendering table:', error);
-            }}
+    // Quick filter functions - attach to window for inline onclick handlers
+    window['quickFilter_{container_id}'] = function(type) {{
+        // Reset to first page
+        currentPage = 1;
+        
+        // Clear existing filters first
+        document.getElementById('{container_id}-search').value = '';
+        document.getElementById('{container_id}-service-type').value = 'all';
+        document.getElementById('{container_id}-pricing').value = 'all';
+        document.getElementById('{container_id}-availability').value = 'all';
+        
+        // Apply new filter based on type
+        switch(type) {{
+            case 'free':
+                document.getElementById('{container_id}-pricing').value = 'free';
+                break;
+            case 'online':
+                document.getElementById('{container_id}-availability').value = 'online';
+                break;
+            case 'chat':
+                document.getElementById('{container_id}-service-type').value = 'chat';
+                break;
+            case 'search':
+                document.getElementById('{container_id}-service-type').value = 'search';
+                break;
         }}
+        
+        applyFilters();
+    }}
+    
+    window['clearFilters_{container_id}'] = function() {{
+        currentPage = 1;
+        document.getElementById('{container_id}-search').value = '';
+        document.getElementById('{container_id}-service-type').value = 'all';
+        document.getElementById('{container_id}-pricing').value = 'all';
+        document.getElementById('{container_id}-availability').value = 'all';
+        applyFilters();
+    }}
 
-        // Format services
-        function formatServices(services) {{
-            if (!services || services.length === 0) return '<span class="type-badge">None</span>';
-            
-            var enabledServices = services.filter(s => s.enabled);
-            if (enabledServices.length === 0) return '<span class="type-badge">Disabled</span>';
-            
-            return enabledServices.map(s => 
-                '<span class="type-badge">' + escapeHtml(s.type) + '</span>'
-            ).join(' ');
-        }}
-
-        // Format pricing
-        function formatPricing(minPrice, maxPrice) {{
-            if (minPrice === 0 && maxPrice === 0) {{
-                return '<span class="pricing free">Free</span>';
-            }} else if (minPrice === maxPrice) {{
-                return '<span class="pricing paid">$' + minPrice.toFixed(3) + '</span>';
-            }} else {{
-                return '<span class="pricing paid">$' + minPrice.toFixed(3) + ' - $' + maxPrice.toFixed(3) + '</span>';
-            }}
-        }}
-
-        // Format status (config status only)
-        function formatStatus(configStatus) {{
-            return '<span class="type-badge">' + escapeHtml(configStatus || 'unknown') + '</span>';
-        }}
-
-        // Format availability (health status only)
-        function formatAvailability(healthStatus) {{
-            if (!healthStatus) {{
-                return '<div class="availability-status health-unknown">❓ Unknown</div>';
-            }}
-            
-            var healthClass = 'health-' + healthStatus;
-            var healthIcon = '';
-            var healthText = '';
-            
-            switch(healthStatus) {{
-                case 'online': 
-                    healthIcon = '✅'; 
-                    healthText = 'Online';
-                    break;
-                case 'offline': 
-                    healthIcon = '❌'; 
-                    healthText = 'Offline';
-                    break;
-                case 'timeout': 
-                    healthIcon = '⏱️'; 
-                    healthText = 'Timeout';
-                    break;
-                default: 
-                    healthIcon = '❓';
-                    healthText = 'Unknown';
-            }}
-            
-            return '<div class="availability-status ' + healthClass + '">' + healthIcon + ' ' + healthText + '</div>';
-        }}
-
-        // Format tags
-        function formatTags(tags) {{
-            if (!tags || tags.length === 0) return '<span style="color: #9ca3af;">None</span>';
-            
-            var visibleTags = tags.slice(0, 2); // Show only 2 tags
-            var remainingCount = tags.length - 2;
-            
-            var html = '<div class="tags-container">';
-            
-            // Add visible tags
-            visibleTags.forEach(tag => {{
-                html += '<span class="tag" title="' + escapeHtml(tag) + '">' + escapeHtml(tag) + '</span>';
+    // Copy functions - attach to window for inline onclick handlers
+    window['copyServiceName_{container_id}'] = function(serviceId, button) {{
+        if (navigator.clipboard) {{
+            navigator.clipboard.writeText(serviceId).then(() => {{
+                const original = button.textContent;
+                button.textContent = 'Copied!';
+                button.classList.add('copied');
+                setTimeout(() => {{
+                    button.textContent = original;
+                    button.classList.remove('copied');
+                }}, 1500);
             }});
-            
-            // Add "more" indicator if there are additional tags
-            if (remainingCount > 0) {{
-                html += '<span class="tags-more" onclick="showAllTags_{container_id}(event, ' + JSON.stringify(tags) + ')" title="Click to see all ' + tags.length + ' tags">+' + remainingCount + '</span>';
-            }}
-            
-            html += '</div>';
-            return html;
         }}
+    }}
 
-        // Update status
-        function updateStatus() {{
-            try {{
-                var serviceCount = filteredServices.length;
-                var chatServices = filteredServices.filter(m => m.services && m.services.some(s => s.type === 'chat' && s.enabled)).length;
-                var searchServices = filteredServices.filter(m => m.services && m.services.some(s => s.type === 'search' && s.enabled)).length;
-                var freeServices = filteredServices.filter(m => m.min_pricing === 0).length;
-                var paidServices = filteredServices.filter(m => m.min_pricing > 0).length;
-                var onlineServices = filteredServices.filter(m => m.health_status === 'online').length;
-                var offlineServices = filteredServices.filter(m => m.health_status === 'offline').length;
-                
-                var statusText = serviceCount + ' services • ' + chatServices + ' chat • ' + searchServices + ' search • ' + freeServices + ' free • ' + paidServices + ' paid • ' + onlineServices + ' online • ' + offlineServices + ' offline';
-                
-                // if ({str(show_footer_tip).lower()}) {{ statusText += ' • 💡 ' + '{footer_tip}'; }}
-                
-                document.getElementById('{container_id}-status').textContent = statusText;
-            }} catch (error) {{
-                console.error('Error updating status:', error);
-            }}
-        }}
-
-        // Search services
-        function searchServices_{container_id}() {{
-            try {{
-                var searchTerm = document.getElementById('{container_id}-search').value.toLowerCase();
-                var datasiteFilter = document.getElementById('{container_id}-datasite-filter').value.toLowerCase();
-                var serviceFilter = document.getElementById('{container_id}-service-filter').value;
-                var pricingFilter = document.getElementById('{container_id}-pricing-filter').value;
-                var availabilityFilter = document.getElementById('{container_id}-availability-filter').value;
-
-                filteredServices = allServices.filter(function(service) {{
-                    // Datasite filter
-                    if (datasiteFilter && !service.datasite.toLowerCase().includes(datasiteFilter)) {{
-                        return false;
-                    }}
-                    
-                    // Service filter
-                    if (serviceFilter) {{
-                        var hasService = service.services && service.services.some(s => s.type === serviceFilter && s.enabled);
-                        if (!hasService) return false;
-                    }}
-                    
-                    // Pricing filter
-                    if (pricingFilter === 'free' && service.min_pricing > 0) {{
-                        return false;
-                    }} else if (pricingFilter === 'paid' && service.min_pricing === 0) {{
-                        return false;
-                    }}
-                    
-                    // Availability filter
-                    if (availabilityFilter) {{
-                        var serviceHealthStatus = service.health_status || 'unknown';
-                        if (availabilityFilter !== serviceHealthStatus) {{
-                            return false;
-                        }}
-                    }}
-                    
-                    // Search filter
-                    if (searchTerm) {{
-                        var searchableContent = [
-                            service.name,
-                            service.datasite,
-                            service.summary,
-                            service.description,
-                            (service.tags || []).join(' ')
-                        ].join(' ').toLowerCase();
-                        
-                        return searchableContent.includes(searchTerm);
-                    }}
-                    
-                    return true;
-                }});
-
-                currentPage = 1;
-                renderTable();
-                updateStatus();
-            }} catch (error) {{
-                console.error('Error searching services:', error);
-            }}
-        }}
-
-        // Utility functions
-        function escapeHtml(text) {{
-            var div = document.createElement('div');
-            div.textContent = text || '';
-            return div.innerHTML;
-        }}
-
-        // Add event listeners
-        function setupEventListeners() {{
-            try {{
-                document.getElementById('{container_id}-search').addEventListener('input', searchServices_{container_id});
-                document.getElementById('{container_id}-datasite-filter').addEventListener('input', searchServices_{container_id});
-                document.getElementById('{container_id}-service-filter').addEventListener('change', searchServices_{container_id});
-                document.getElementById('{container_id}-pricing-filter').addEventListener('change', searchServices_{container_id});
-                document.getElementById('{container_id}-availability-filter').addEventListener('change', searchServices_{container_id});
-                console.log('Event listeners set up successfully');
-            }} catch (error) {{
-                console.error('Error setting up event listeners:', error);
-            }}
-        }}
-
-        // Start loading services when page loads
-        setTimeout(function() {{
-            loadServices().then(function() {{
-                setupEventListeners();
-            }}).catch(function(error) {{
-                console.error('Failed to load services:', error);
-                updateProgress(0, 'Failed to load services: ' + error.message);
+    window['copyServiceExample_{container_id}'] = function(serviceId, button) {{
+        // Simple copy of how to call show_example()
+        const exampleCode = `service = client.load_service("${{serviceId}}")
+service.show_example()`;
+        
+        if (navigator.clipboard) {{
+            navigator.clipboard.writeText(exampleCode).then(() => {{
+                const original = button.textContent;
+                button.textContent = 'Copied!';
+                button.classList.add('copied');
+                setTimeout(() => {{
+                    button.textContent = original;
+                    button.classList.remove('copied');
+                }}, 1500);
             }});
-        }}, 100);
-    }})();
+        }}
+    }}
+
+    // Usage modal - attach to window for inline onclick handlers
+    window['showUsageModal_{container_id}'] = function(name, datasite, services) {{
+        const serviceId = datasite + '/' + name;
+        const hasChat = services.some(s => s.type === 'chat' && s.enabled);
+        const hasSearch = services.some(s => s.type === 'search' && s.enabled);
+        
+        let examples = [];
+        if (hasChat) {{
+            examples.push(`# Chat with service\\nresponse = client.chat("${{serviceId}}", "Your message here")`);
+        }}
+        if (hasSearch) {{
+            examples.push(`# Search with service\\nresults = client.search("${{serviceId}}", "search query")`);
+        }}
+        if (examples.length === 0) {{
+            examples.push(`# Load service\\nservice = client.load_service("${{serviceId}}")\\nservice.show_example()`);
+        }}
+        
+        alert(`Service: ${{name}}\\nDatasite: ${{datasite}}\\n\\nUsage Examples:\\n${{examples.join('\\n\\n')}}`);
+    }}
+
+    // Utility functions
+    function escapeHtml(text) {{
+        const div = document.createElement('div');
+        div.textContent = text || '';
+        return div.innerHTML;
+    }}
+
+    // Event listeners
+    document.getElementById('{container_id}-search').addEventListener('input', applyFilters);
+    document.getElementById('{container_id}-service-type').addEventListener('change', applyFilters);
+    document.getElementById('{container_id}-pricing').addEventListener('change', applyFilters);
+    document.getElementById('{container_id}-availability').addEventListener('change', applyFilters);
+
+    // Initialize and render when DOM is ready
+    function initialize() {{
+        // Force initial render
+        renderTable();
+        updatePagination();
+    }}
+    
+    // Call initialize immediately since we're at the end of the body
+    initialize();
+    
+    }})();  // End IIFE
     </script>
 </body>
 </html>

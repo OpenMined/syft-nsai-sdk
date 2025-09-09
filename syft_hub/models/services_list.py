@@ -112,6 +112,10 @@ class ServicesList:
         
         return str(file_path)
     
+    def show_services(self, **kwargs) -> None:
+        """Display services using the enhanced widget (alias for show method)."""
+        self.show(**kwargs)
+    
     def show(self, 
              page: int = 1,
              items_per_page: int = 50,
@@ -334,14 +338,33 @@ class ServicesList:
         return ServicesList([_service for _service in self._services if _service.min_pricing > 0], self._client)
 
     def summary(self):
-        """Print a summary of the services."""
+        """Print a summary of the services in a clean, client-repr style."""
         if not self._services:
             print("No services found.")
             return
 
-        print(f"Found {len(self._services)} services:")
-        print("-" * 50)
-        
+        total = len(self._services)
+        chat_count = len([s for s in self._services if s.supports_service('chat')])
+        search_count = len([s for s in self._services if s.supports_service('search')])
+        free_count = len([s for s in self._services if s.min_pricing == 0])
+        paid_count = len([s for s in self._services if s.min_pricing > 0])
+        online_count = len([s for s in self._services if hasattr(s, 'health_status') and s.health_status and s.health_status.value == 'online'])
+
+        print(f"SyftBox Services Summary")
+        print(f"")
+        print(f"Services:         {total} services found")
+        if chat_count > 0:
+            print(f"Chat services:    {chat_count}")
+        if search_count > 0:
+            print(f"Search services:  {search_count}")
+        if free_count > 0:
+            print(f"Free services:    {free_count}")
+        if paid_count > 0:
+            print(f"Paid services:    {paid_count}")
+        if online_count > 0:
+            print(f"Online services:  {online_count}")
+        print(f"")
+
         # Group by datasite
         by_datasite = {}
         for _service in self._services:
@@ -349,8 +372,9 @@ class ServicesList:
                 by_datasite[_service.datasite] = []
             by_datasite[_service.datasite].append(_service)
 
+        print("Available services:")
         for datasite, _services in sorted(by_datasite.items()):
-            print(f"\n📧 {datasite} ({len(_services)} services):")
+            print(f"  📧 {datasite} ({len(_services)} services)")
             for _service in sorted(_services, key=lambda s: s.name):
                 services = ", ".join([s.type.value for s in _service.services if s.enabled])
                 pricing = f"${_service.min_pricing}" if _service.min_pricing > 0 else "Free"
@@ -363,7 +387,13 @@ class ServicesList:
                     elif _service.health_status.value == 'timeout':
                         health = " ⏱️"
 
-                print(f"  • {_service.name} ({services}) - {pricing}{health}")
+                print(f"    • {_service.name} ({services}) - {pricing}{health}")
+        
+        print(f"")
+        print("Common operations:")
+        print(f"  services.show()                           — Show interactive widget")
+        print(f"  client.chat('datasite/service', 'msg')   — Chat with a service")
+        print(f"  client.search('datasite/service', 'msg') — Search with a service")
     
     def to_dict(self):
         """Convert services to list of dictionaries."""
