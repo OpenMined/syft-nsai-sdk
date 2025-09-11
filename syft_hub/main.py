@@ -393,10 +393,49 @@ class Client:
             Chat response from the specified service
         """
         
-        # A thread-safe synchronous wrapper around chat_async.
-        return run_async_in_thread(
-            self.chat_async(service_name, messages, temperature, max_tokens, **kwargs)
-        )
+        # Use thread-based execution with its own event loop
+        # This ensures the chat runs in a fresh event loop context
+        async def _chat():
+            # Find the specific service
+            service = self.get_service(service_name)
+            logger.info(f"Using service: {service.name} from datasite: {service.datasite}")
+            
+            # Validate service supports chat
+            if not service.supports_service(ServiceType.CHAT):
+                raise ServiceNotSupportedError(service.name, "chat", service)
+            
+            # Format messages if string provided
+            formatted_messages = messages
+            if isinstance(messages, str):
+                formatted_messages = [{"role": "user", "content": messages}]
+            
+            # Build chat parameters
+            chat_params = {
+                "messages": formatted_messages,
+                "temperature": temperature,
+                "max_tokens": max_tokens,
+                **kwargs
+            }
+            
+            # Remove None values
+            chat_params = {k: v for k, v in chat_params.items() if v is not None}
+            
+            # Create a new ChatService with a fresh HTTP client for this event loop
+            from .clients.request_client import HTTPClient
+            from .services.chat import ChatService
+            http_client = HTTPClient()
+            try:
+                rpc_client = SyftBoxRPCClient(
+                    cache_server_url=self.rpc_client.base_url,
+                    accounting_client=self.accounting_client,
+                    http_client=http_client
+                )
+                chat_service = ChatService(service, rpc_client)
+                return await chat_service.chat_with_params(chat_params)
+            finally:
+                await http_client.close()
+        
+        return run_async_in_thread(_chat())
     
     def chat(
             self,
@@ -460,28 +499,43 @@ class Client:
             Search response from the specified service
         """
 
-        # Find the specific service
-        service = self.get_service(service_name)
-        logger.info(f"Using service: {service.name} from datasite: {service.datasite}") 
+        # Use thread-based execution with its own event loop
+        # This ensures the search runs in a fresh event loop context
+        async def _search():
+            # Find the specific service
+            service = self.get_service(service_name)
+            logger.info(f"Using service: {service.name} from datasite: {service.datasite}") 
+            
+            # Validate service supports search
+            if not service.supports_service(ServiceType.SEARCH):
+                raise ServiceNotSupportedError(service.name, "search", service)
+            
+            # Build request parameters
+            search_params = {
+                "message": message,
+                "topK": topK,
+                "similarity_threshold": similarity_threshold,
+                **kwargs
+            }
+            
+            # Remove None values
+            search_params = {k: v for k, v in search_params.items() if v is not None}
+            
+            # Create a new SearchService with a fresh HTTP client for this event loop
+            from .clients.request_client import HTTPClient
+            http_client = HTTPClient()
+            try:
+                rpc_client = SyftBoxRPCClient(
+                    cache_server_url=self.rpc_client.base_url,
+                    accounting_client=self.accounting_client,
+                    http_client=http_client
+                )
+                search_service = SearchService(service, rpc_client)
+                return await search_service.search_with_params(search_params)
+            finally:
+                await http_client.close()
         
-        # Validate service supports search
-        if not service.supports_service(ServiceType.SEARCH):
-            raise ServiceNotSupportedError(service.name, "search", service)
-        
-        # Build request parameters
-        search_params = {
-            "message": message,
-            "topK": topK,
-            "similarity_threshold": similarity_threshold,
-            **kwargs
-        }
-        
-        # Remove None values
-        search_params = {k: v for k, v in search_params.items() if v is not None}
-        
-        # Create service and make request  
-        search_service = SearchService(service, self.rpc_client)
-        return run_async_in_thread(search_service.search_with_params(search_params))
+        return run_async_in_thread(_search())
     
     async def search_async(
             self,

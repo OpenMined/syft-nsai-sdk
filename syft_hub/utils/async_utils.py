@@ -55,7 +55,10 @@ def run_async_in_thread(coro: Coroutine) -> Any:
             except Exception as e:
                 logger.debug(f"Error during loop cleanup: {e}")
             finally:
-                loop.close()
+                try:
+                    loop.close()
+                except Exception as e:
+                    logger.debug(f"Error closing loop: {e}")
     
     # Use ThreadPoolExecutor for better resource management
     with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:

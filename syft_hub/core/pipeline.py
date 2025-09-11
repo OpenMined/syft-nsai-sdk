@@ -8,8 +8,6 @@ from typing import List, Dict, Optional, Union, TYPE_CHECKING
 
 from .types import ServiceType, ServiceSpec
 from .exceptions import ValidationError, ServiceNotFoundError, ServiceNotSupportedError
-from ..services.chat import ChatService
-from ..services.search import SearchService
 from ..models.pipeline import PipelineResult
 from ..utils.estimator import CostEstimator
 
@@ -415,17 +413,17 @@ pipeline = client.pipeline(
         # Validate data sources
         for source_spec in self.data_sources:
             try:
-                service = self.client.get_service(source_spec.name)
-                if not service.supports_service(ServiceType.SEARCH):
-                    raise ServiceNotSupportedError(service.name, "search", service)
+                service = self.client.load_service(source_spec.name)
+                if not service.supports_search:
+                    raise ServiceNotSupportedError(service.name, "search", service._service_info)
             except ServiceNotFoundError:
                 raise ValidationError(f"Data source service '{source_spec.name}' not found")
         
         # Validate synthesizer
         try:
-            service = self.client.get_service(self.synthesizer.name)
-            if not service.supports_service(ServiceType.CHAT):
-                raise ServiceNotSupportedError(service.name, "chat", service)
+            service = self.client.load_service(self.synthesizer.name)
+            if not service.supports_chat:
+                raise ServiceNotSupportedError(service.name, "chat", service._service_info)
         except ServiceNotFoundError:
             raise ValidationError(f"Synthesizer service '{self.synthesizer.name}' not found")
         
@@ -438,8 +436,8 @@ pipeline = client.pipeline(
         data_sources = []
         for source_spec in self.data_sources:
             try:
-                service = self.client.get_service(source_spec.name)
-                data_sources.append((service, source_spec.params))
+                service = self.client.load_service(source_spec.name)
+                data_sources.append((service._service_info, source_spec.params))
             except ServiceNotFoundError:
                 logger.warning(f"Service '{source_spec.name}' not found during cost estimation")
                 continue
@@ -448,7 +446,8 @@ pipeline = client.pipeline(
         synthesizer_service = None
         if self.synthesizer:
             try:
-                synthesizer_service = self.client.get_service(self.synthesizer.name)
+                service = self.client.load_service(self.synthesizer.name)
+                synthesizer_service = service._service_info
             except ServiceNotFoundError:
                 logger.warning(f"Synthesizer service '{self.synthesizer.name}' not found during cost estimation")
         
@@ -517,13 +516,30 @@ pipeline = client.pipeline(
         all_search_results = []
         total_cost = 0.0
         
+        # Print search progress header
+        print(f"\n📊 Searching {len(self.data_sources)} data source(s)...")
+        
         for i, result in enumerate(search_results_list):
+            source_name = self.data_sources[i].name
+            
             if isinstance(result, Exception):
-                logger.warning(f"Search failed for source {self.data_sources[i].name}: {result}")
-                print(f"Search failed for source {self.data_sources[i].name}: {result}")
+                logger.warning(f"Search failed for source {source_name}: {result}")
+                print(f"❌ {source_name}: Search failed - {result}")
                 continue
             
             search_response, cost = result
+            num_results = len(search_response.results)
+            
+            # Print summary for this source
+            if num_results > 0:
+                print(f"✅ {source_name}: Found {num_results} result(s)")
+                # Show top result preview
+                if search_response.results:
+                    top_result = search_response.results[0]
+                    preview = top_result.content[:100] + "..." if len(top_result.content) > 100 else top_result.content
+            else:
+                print(f"⚠️  {source_name}: No results found")
+            
             all_search_results.extend(search_response.results)
             total_cost += cost
         
@@ -536,10 +552,7 @@ pipeline = client.pipeline(
                 try:
                     response = input("Continue without search results? (y/n): ").lower().strip()
                     if response not in ['y', 'yes']:
-                        print("Pipeline cancelled. Consider:")
-                        print("  • Adjusting your query")
-                        print("  • Checking data source availability")
-                        print("  • Using different data sources")
+                        print("Pipeline cancelled.")
                         raise ValidationError("Pipeline cancelled by user - no search results available")
                 except (EOFError, KeyboardInterrupt):
                     print("\nPipeline cancelled.")
@@ -551,17 +564,35 @@ pipeline = client.pipeline(
         # Remove duplicate results
         unique_results = self.client.remove_duplicate_results(all_search_results)
         
+        # Print search summary
+        print(f"📋 Search Summary: {len(unique_results)} result(s)")
+        
         # Format search context for synthesizer
         context = self.client.format_search_context(unique_results, self.context_format)
         
         # Prepare messages with context
         enhanced_messages = self._prepare_enhanced_messages(messages, context)
         
+        # Print synthesis start
+        print(f"\n🤖 Synthesizing response with {self.synthesizer.name}...")
+        
         # Execute synthesis
         synthesizer_cost, chat_response = await self._execute_synthesis(enhanced_messages)
         total_cost += synthesizer_cost
         
+        # Print synthesis result
+        if chat_response and chat_response.message:
+            # Show preview of the response
+            content = chat_response.message.content
+            preview = content[:200] + "..." if len(content) > 200 else content
+            print(f"✅ Response generated ({len(content)} chars)")
+        else:
+            print(f"⚠️  No response generated")
+        
+        # Print cost summary
+        
         return PipelineResult(
+            query=search_query,
             response=chat_response,
             search_results=unique_results,
             cost=total_cost
@@ -570,21 +601,20 @@ pipeline = client.pipeline(
     async def _execute_search(self, source_spec: ServiceSpec, query: str):
         """Execute search on a single data source"""
         try:
-            service = self.client.get_service(source_spec.name)
-            search_service = SearchService(service, self.client.rpc_client)
+            # Get service info but use the service's own search method
+            # This ensures the service uses its own properly initialized context
+            service = self.client.load_service(source_spec.name)
             
-            # Build search parameters
-            search_params = {
-                "message": query,
+            # Use the service's search_async method directly
+            # This avoids creating a new SearchService with potentially mismatched event loop
+            response = await service.search_async(
+                message=query,
                 **source_spec.params
-            }
-            
-            # Execute search
-            response = await search_service.search_with_params(search_params)
+            )
 
             # Estimate cost
             topK = source_spec.params.get('topK', len(response.results))
-            cost = CostEstimator.estimate_search_cost(service, query_count=1, result_limit=topK)
+            cost = CostEstimator.estimate_search_cost(service._service_info, query_count=1, result_limit=topK)
             
             return response, cost
             
@@ -595,20 +625,28 @@ pipeline = client.pipeline(
     async def _execute_synthesis(self, messages: List[Dict[str, str]]):
         """Execute synthesis with the enhanced messages"""
         try:
-            service = self.client.get_service(self.synthesizer.name)
-            chat_service = ChatService(service, self.client.rpc_client)
+            # Load service and use its chat_async method directly
+            service = self.client.load_service(self.synthesizer.name)
             
-            # Build chat parameters
-            chat_params = {
-                "messages": messages,
+            # Debug: Log what we're sending
+            logger.debug(f"Sending {len(messages)} messages to synthesizer")
+            logger.debug(f"Synthesizer params: {self.synthesizer.params}")
+            
+            # Execute chat using the service's method
+            response = await service.chat_async(
+                messages=messages,
                 **self.synthesizer.params
-            }
+            )
             
-            # Execute chat
-            response = await chat_service.chat_with_params(chat_params)
+            # Debug: Log what we received
+            logger.debug(f"Received response type: {type(response)}")
+            if response:
+                logger.debug(f"Response has message: {hasattr(response, 'message')}")
+                if hasattr(response, 'message') and response.message:
+                    logger.debug(f"Message content length: {len(response.message.content) if response.message.content else 0}")
             
             # Estimate cost
-            cost = CostEstimator.estimate_chat_cost(service, message_count=len(messages))
+            cost = CostEstimator.estimate_chat_cost(service._service_info, message_count=len(messages))
             
             return cost, response
             

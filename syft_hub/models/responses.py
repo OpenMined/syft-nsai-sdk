@@ -343,6 +343,214 @@ class SearchResponse(BaseResponse):
         
         return "\n".join(parts)
 
+    def __repr__(self) -> str:
+        """Return user-friendly search response display similar to pipeline result."""
+        try:
+            from IPython.display import display, HTML
+            # In notebook environment, show rich display
+            self._display_rich()
+            return ""  # Return empty string to avoid double output
+        except ImportError:
+            # Not in notebook - provide comprehensive text representation
+            lines = [
+                f"Search Response [{self.status.value.title()}]",
+                "",
+            ]
+            
+            # Show query
+            lines.append(f"Query:           {self.query}")
+            lines.append("")
+            
+            # Show results count and top results
+            if self.results:
+                lines.append(f"Results Found:   {len(self.results)} documents")
+                
+                # Show top 3 results with scores
+                lines.append(f"Top Results:")
+                for i, result in enumerate(self.results[:3], 1):
+                    content_preview = result.content[:100] + "..." if len(result.content) > 100 else result.content
+                    lines.append(f"  {i}. Score {result.score:.3f}: {content_preview}")
+                
+                if len(self.results) > 3:
+                    lines.append(f"  ... and {len(self.results) - 3} more results")
+                    
+            else:
+                lines.append(f"Results Found:   No documents found")
+            
+            lines.append("")
+            
+            # Show cost if available
+            if self.cost is not None:
+                lines.append(f"Total Cost:      ${self.cost:.4f}")
+            
+            # Show timestamp
+            lines.append(f"Timestamp:       {self.timestamp.strftime('%Y-%m-%d %H:%M:%S')}")
+            
+            return "\n".join(lines)
+    
+    def _display_rich(self) -> None:
+        """Display rich HTML representation in Jupyter notebooks."""
+        from IPython.display import display, HTML
+        
+        # Status badge styling
+        status_class = "badge-ready" if self.status.value == "success" else "badge-not-ready"
+        
+        # Results preview
+        results_preview = ""
+        if self.results:
+            results_preview = f"<div class='results-list'>"
+            for i, result in enumerate(self.results[:3], 1):
+                content = result.content[:150] + "..." if len(result.content) > 150 else result.content
+                results_preview += f"""
+                <div class='result-item'>
+                    <div class='result-header'>
+                        <span class='result-rank'>{i}.</span>
+                        <span class='result-score'>Score: {result.score:.3f}</span>
+                    </div>
+                    <div class='result-content'>{content}</div>
+                </div>
+                """
+            if len(self.results) > 3:
+                results_preview += f"<div class='more-results'>... and {len(self.results) - 3} more results</div>"
+            results_preview += "</div>"
+        else:
+            results_preview = "<div class='no-results'>No documents found</div>"
+        
+        # Cost info
+        cost_text = f"${self.cost:.4f}" if self.cost is not None else "Free"
+        
+        html = f"""
+        <style>
+            .search-response-widget {{
+                font-family: system-ui, -apple-system, sans-serif;
+                padding: 12px 0;
+                color: #333;
+                line-height: 1.5;
+                border: 1px solid #e0e0e0;
+                border-radius: 6px;
+                background: #fafafa;
+                padding: 16px;
+                margin: 8px 0;
+            }}
+            .widget-title {{
+                font-size: 14px;
+                font-weight: 600;
+                margin-bottom: 12px;
+                color: #333;
+            }}
+            .status-line {{
+                display: flex;
+                align-items: flex-start;
+                margin: 6px 0;
+                font-size: 13px;
+            }}
+            .status-label {{
+                color: #666;
+                min-width: 100px;
+                margin-right: 12px;
+                flex-shrink: 0;
+            }}
+            .status-value {{
+                font-family: monospace;
+                color: #333;
+                word-break: break-word;
+            }}
+            .status-badge {{
+                display: inline-block;
+                padding: 2px 8px;
+                border-radius: 3px;
+                font-size: 11px;
+                margin-left: 8px;
+            }}
+            .badge-ready {{
+                background: #d4edda;
+                color: #155724;
+            }}
+            .badge-not-ready {{
+                background: #f8d7da;
+                color: #721c24;
+            }}
+            .results-list {{
+                margin-top: 8px;
+            }}
+            .result-item {{
+                background: #f8f9fa;
+                border: 1px solid #e9ecef;
+                border-radius: 4px;
+                padding: 8px;
+                margin: 4px 0;
+            }}
+            .result-header {{
+                display: flex;
+                justify-content: space-between;
+                margin-bottom: 4px;
+                font-size: 12px;
+            }}
+            .result-rank {{
+                font-weight: 600;
+                color: #495057;
+            }}
+            .result-score {{
+                color: #6c757d;
+                font-family: monospace;
+            }}
+            .result-content {{
+                font-size: 12px;
+                color: #495057;
+                white-space: pre-wrap;
+                max-height: 60px;
+                overflow: hidden;
+            }}
+            .more-results {{
+                font-size: 12px;
+                color: #6c757d;
+                font-style: italic;
+                text-align: center;
+                padding: 4px;
+            }}
+            .no-results {{
+                font-size: 12px;
+                color: #6c757d;
+                font-style: italic;
+                text-align: center;
+                padding: 8px;
+                background: #f8f9fa;
+                border: 1px solid #e9ecef;
+                border-radius: 4px;
+            }}
+        </style>
+        
+        <div class="search-response-widget">
+            <div class="widget-title">
+                Search Response <span class="status-badge {status_class}">{self.status.value.title()}</span>
+            </div>
+            
+            <div class="status-line">
+                <span class="status-label">Query:</span>
+                <span class="status-value">{self.query}</span>
+            </div>
+            
+            <div class="status-line">
+                <span class="status-label">Results:</span>
+                <span class="status-value">{len(self.results)} documents found</span>
+            </div>
+            
+            <div class="status-line">
+                <span class="status-label">Cost:</span>
+                <span class="status-value">{cost_text}</span>
+            </div>
+            
+            <div class="status-line">
+                <span class="status-label">Timestamp:</span>
+                <span class="status-value">{self.timestamp.strftime('%Y-%m-%d %H:%M:%S')}</span>
+            </div>
+            
+            {results_preview}
+        </div>
+        """
+        
+        display(HTML(html))
+
 @dataclass
 class HealthResponse(BaseResponse):
     """Health check response data class."""
