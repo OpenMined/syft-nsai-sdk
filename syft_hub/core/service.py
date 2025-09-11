@@ -493,6 +493,13 @@ results = service.search(
         Raises:
             ServiceNotSupportedError: If service doesn't support chat
         """
+        from ..core.types import HealthStatus
+        from ..core.exceptions import ServiceNotFoundError
+        
+        # Check if service is online
+        if self._service_info.health_status == HealthStatus.OFFLINE:
+            raise ServiceNotFoundError("The node is offline. Please retry or find a different service to use")
+        
         if not self.supports_chat:
             raise ServiceNotSupportedError(f"Service '{self.name}' doesn't support chat")
         return self._client.chat(self.full_name, messages, **kwargs)
@@ -510,6 +517,13 @@ results = service.search(
         Raises:
             ServiceNotSupportedError: If service doesn't support chat
         """
+        from ..core.types import HealthStatus
+        from ..core.exceptions import ServiceNotFoundError
+        
+        # Check if service is online
+        if self._service_info.health_status == HealthStatus.OFFLINE:
+            raise ServiceNotFoundError("The node is offline. Please retry or find a different service to use")
+        
         if not self.supports_chat:
             raise ServiceNotSupportedError(f"Service '{self.name}' doesn't support chat")
         return await self._client.chat_async(self.full_name, messages, **kwargs)
@@ -527,6 +541,13 @@ results = service.search(
         Raises:
             ServiceNotSupportedError: If service doesn't support search
         """
+        from ..core.types import HealthStatus
+        from ..core.exceptions import ServiceNotFoundError
+        
+        # Check if service is online
+        if self._service_info.health_status == HealthStatus.OFFLINE:
+            raise ServiceNotFoundError("The node is offline. Please retry or find a different service to use")
+        
         if not self.supports_search:
             raise ServiceNotSupportedError(f"Service '{self.name}' doesn't support search")
         return self._client.search(self.full_name, message, **kwargs)
@@ -544,6 +565,13 @@ results = service.search(
         Raises:
             ServiceNotSupportedError: If service doesn't support search
         """
+        from ..core.types import HealthStatus
+        from ..core.exceptions import ServiceNotFoundError
+        
+        # Check if service is online
+        if self._service_info.health_status == HealthStatus.OFFLINE:
+            raise ServiceNotFoundError("The node is offline. Please retry or find a different service to use")
+        
         if not self.supports_search:
             raise ServiceNotSupportedError(f"Service '{self.name}' doesn't support search")
         return await self._client.search_async(self.full_name, message, **kwargs)

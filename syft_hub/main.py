@@ -353,6 +353,11 @@ class Client:
         service = self.get_service(service_name)
         logger.info(f"Using service: {service.name} from datasite: {service.datasite}") 
         
+        # Check if service is online by pinging it
+        health_status = await check_service_health(service, self.rpc_client, timeout=3.0)
+        if health_status == HealthStatus.OFFLINE:
+            raise ServiceNotFoundError("The node is offline. Please retry or find a different service to use")
+        
         # Validate service supports chat
         if not service.supports_service(ServiceType.CHAT):
             raise ServiceNotSupportedError(service.name, "chat", service)
@@ -399,6 +404,11 @@ class Client:
             # Find the specific service
             service = self.get_service(service_name)
             logger.info(f"Using service: {service.name} from datasite: {service.datasite}")
+            
+            # Check if service is online by pinging it
+            health_status = await check_service_health(service, self.rpc_client, timeout=3.0)
+            if health_status == HealthStatus.OFFLINE:
+                raise ServiceNotFoundError("The node is offline. Please retry or find a different service to use")
             
             # Validate service supports chat
             if not service.supports_service(ServiceType.CHAT):
@@ -506,6 +516,11 @@ class Client:
             service = self.get_service(service_name)
             logger.info(f"Using service: {service.name} from datasite: {service.datasite}") 
             
+            # Check if service is online by pinging it
+            health_status = await check_service_health(service, self.rpc_client, timeout=3.0)
+            if health_status == HealthStatus.OFFLINE:
+                raise ServiceNotFoundError("The node is offline. Please retry or find a different service to use")
+            
             # Validate service supports search
             if not service.supports_service(ServiceType.SEARCH):
                 raise ServiceNotSupportedError(service.name, "search", service)
@@ -576,6 +591,11 @@ class Client:
         # Find the specific service
         service = self.get_service(service_name)
         logger.info(f"Using service: {service.name} from datasite: {service.datasite}") 
+        
+        # Check if service is online by pinging it
+        health_status = await check_service_health(service, self.rpc_client, timeout=3.0)
+        if health_status == HealthStatus.OFFLINE:
+            raise ServiceNotFoundError("The node is offline. Please retry or find a different service to use")
         
         # Validate service supports search
         if not service.supports_service(ServiceType.SEARCH):
