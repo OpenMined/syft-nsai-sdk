@@ -5,6 +5,7 @@ import json
 import logging
 from pathlib import Path
 from typing import Dict, Any, List, Optional
+from datetime import datetime
 
 from ..core.types import ServiceItem, ServiceType, PricingChargeType, ServiceStatus
 from ..core.exceptions import MetadataParsingError
@@ -178,6 +179,25 @@ class MetadataParser:
         delegate_email = metadata.get("delegate_email")
         endpoints = metadata.get("documented_endpoints", {})
         
+        # Extract or derive publish date
+        publish_date = None
+        if "publish_date" in metadata:
+            # If publish_date is provided in metadata, use it
+            try:
+                if isinstance(metadata["publish_date"], str):
+                    publish_date = datetime.fromisoformat(metadata["publish_date"].replace('Z', '+00:00'))
+                else:
+                    publish_date = metadata["publish_date"]
+            except (ValueError, TypeError):
+                publish_date = None
+        
+        # If no publish_date in metadata, use file modification time as fallback
+        if publish_date is None and metadata_path.exists():
+            try:
+                publish_date = datetime.fromtimestamp(metadata_path.stat().st_mtime)
+            except (OSError, ValueError):
+                publish_date = None
+        
         # Find RPC schema path using centralized path builder
         rpc_schema_path = None
         service_info = cls.extract_service_info_from_metadata_path(metadata_path)
@@ -207,7 +227,8 @@ class MetadataParser:
             endpoints=endpoints,
             rpc_schema=rpc_schema or {},
             metadata_path=metadata_path,
-            rpc_schema_path=rpc_schema_path
+            rpc_schema_path=rpc_schema_path,
+            publish_date=publish_date
         )
     
     @classmethod

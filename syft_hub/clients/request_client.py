@@ -44,18 +44,51 @@ class HTTPClient:
         self.timeout = timeout
         self.max_retries = max_retries
         self.retry_delay = retry_delay
+        self.user_agent = user_agent
         
-        # Configure httpx client
-        self.client = httpx.AsyncClient(
-            timeout=httpx.Timeout(timeout),
-            follow_redirects=True,
-            limits=httpx.Limits(max_connections=10, max_keepalive_connections=5),
-            headers={"User-Agent": user_agent}
-        )
+        # Track event loop for automatic client recreation
+        self._current_loop = None
+        self._client = None
+    
+    @property
+    def client(self):
+        """Get the httpx client, recreating if event loop has changed."""
+        import asyncio
+        
+        try:
+            current_loop = asyncio.get_running_loop()
+        except RuntimeError:
+            # No running event loop
+            current_loop = None
+        
+        # Check if we need to recreate the client
+        if self._client is None or self._current_loop != current_loop:
+            # Clean up old client if it exists and is from a different loop
+            if self._client is not None and self._current_loop != current_loop:
+                try:
+                    # Schedule cleanup of old client
+                    if self._current_loop is not None and not self._current_loop.is_closed():
+                        self._current_loop.create_task(self._client.aclose())
+                except Exception:
+                    pass  # Old loop might be closed, ignore
+            
+            # Create new client for current event loop
+            self._client = httpx.AsyncClient(
+                timeout=httpx.Timeout(self.timeout),
+                follow_redirects=True,
+                limits=httpx.Limits(max_connections=10, max_keepalive_connections=5),
+                headers={"User-Agent": self.user_agent}
+            )
+            self._current_loop = current_loop
+            
+        return self._client
     
     async def close(self):
         """Close the HTTP client."""
-        await self.client.aclose()
+        if self._client is not None:
+            await self._client.aclose()
+            self._client = None
+            self._current_loop = None
     
     async def __aenter__(self):
         return self

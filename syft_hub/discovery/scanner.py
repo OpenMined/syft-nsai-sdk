@@ -5,18 +5,20 @@ import os
 import logging
 
 from pathlib import Path
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, TYPE_CHECKING
 
-from ..core.config import SyftBoxConfig
 # from ..core.exceptions import ConfigurationError
 from .filesystem import SyftURLBuilder
+
+if TYPE_CHECKING:
+    from ..core.config import SyftBoxConfig
 
 logger = logging.getLogger(__name__)
 
 class ServiceScanner:
     """Scanner for discovering services across SyftBox datasites."""
     
-    def __init__(self, syftbox_config: SyftBoxConfig):
+    def __init__(self, syftbox_config: 'SyftBoxConfig'):
         self.config = syftbox_config
         self.datasites_path = syftbox_config.datasites_path
 
@@ -254,7 +256,7 @@ class ServiceScanner:
 class FastScanner:
     """Optimized scanner for large numbers of services."""
     
-    def __init__(self, syftbox_config: SyftBoxConfig):
+    def __init__(self, syftbox_config: 'SyftBoxConfig'):
         self.config = syftbox_config
         self.datasites_path = syftbox_config.datasites_path
         self._cache: Optional[Dict[str, List[Path]]] = None

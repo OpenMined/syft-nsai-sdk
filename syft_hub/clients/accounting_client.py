@@ -34,8 +34,33 @@ class AccountingClient:
         self.accounting_url = accounting_url
         self._credentials = credentials
         self._client = None
+    
+    def __dir__(self):
+        """Control what appears in autocomplete suggestions.
+        
+        Returns only the main public methods that users should interact with.
+        """
+        return [
+            # Display methods
+            'show',
+            
+            # Account management
+            'register_accounting',
+            'connect_accounting',
+            'get_account_balance',
+            
+            # Status and info
+            'is_configured',
+            'get_email',
+            
+            # Transactions
+            'create_transaction',
+            
+            # Properties
+            'accounting_url',
+        ]
 
-    def create_accounting_user(
+    def _create_accounting_user(
         self,
         email: str,
         password: Optional[str] = None,
@@ -124,7 +149,30 @@ class AccountingClient:
     #         password=credentials.password,
     #     )
 
-    def configure(self, accounting_url: str, email: str, password: str):
+    def register_accounting(self, email: str, password: Optional[str] = None, organization: Optional[str] = None) -> UserAccountModel:
+        """Register a new accounting user account.
+        
+        Args:
+            email: User email
+            password: User password (optional, will be generated if not provided)
+            organization: Organization name (optional)
+            
+        Returns:
+            UserAccountModel with account details
+        """
+        return self._create_accounting_user(email, password, organization)
+    
+    def connect_accounting(self, accounting_url: str, email: str, password: str):
+        """Connect to accounting service with credentials.
+        
+        Args:
+            accounting_url: Accounting service URL
+            email: User email
+            password: User password
+        """
+        self._configure(accounting_url, email, password)
+    
+    def _configure(self, accounting_url: str, email: str, password: str):
         """Configure accounting client.
         
         Args:
@@ -176,6 +224,250 @@ class AccountingClient:
         
         return self._client
     
+    def show(self) -> None:
+        """Display service status as an HTML widget."""
+        from IPython.display import display, HTML
+        
+        # Build HTML widget with minimal notebook-like styling
+        html = '''
+        <style>
+            .accounting-widget {
+                font-family: system-ui, -apple-system, sans-serif;
+                padding: 12px 0;
+                color: #333;
+                line-height: 1.5;
+            }
+            .widget-title {
+                font-size: 14px;
+                font-weight: 600;
+                margin-bottom: 12px;
+                color: #333;
+            }
+            .status-line {
+                display: flex;
+                align-items: center;
+                margin: 6px 0;
+                font-size: 13px;
+            }
+            .status-label {
+                color: #666;
+                min-width: 100px;
+                margin-right: 12px;
+            }
+            .status-value {
+                font-family: monospace;
+                color: #333;
+            }
+            .status-badge {
+                display: inline-block;
+                padding: 2px 8px;
+                border-radius: 3px;
+                font-size: 11px;
+                margin-left: 8px;
+            }
+            .badge-ready {
+                background: #d4edda;
+                color: #155724;
+            }
+            .badge-not-ready {
+                background: #f8d7da;
+                color: #721c24;
+            }
+            .docs-section {
+                margin-top: 16px;
+                padding-top: 12px;
+                border-top: 1px solid #e0e0e0;
+                font-size: 12px;
+                color: #666;
+            }
+            .command-code {
+                font-family: monospace;
+                background: #f5f5f5;
+                padding: 1px 4px;
+                border-radius: 2px;
+                color: #333;
+            }
+        </style>
+        '''
+        
+        # Check current status
+        is_configured = self.is_configured()
+        email = self.get_email() if is_configured else None
+        
+        # Determine overall status
+        if is_configured:
+            overall_badge = '<span class="status-badge badge-ready">Configured</span>'
+        else:
+            overall_badge = '<span class="status-badge badge-not-ready">Not Configured</span>'
+        
+        html += f'''
+        <div class="accounting-widget">
+            <div class="widget-title">
+                AccountingClient {overall_badge}
+            </div>
+            
+            <div class="status-line">
+                <span class="status-label">Service:</span>
+                <span class="status-value">{self.accounting_url or "Not configured"}</span>
+            </div>
+            
+            <div class="status-line">
+                <span class="status-label">User:</span>
+                <span class="status-value">{email or "Not configured"}</span>
+            </div>
+            
+            <div class="status-line">
+                <span class="status-label">Password:</span>
+                <span class="status-value">{'••••••••' if is_configured else 'Not set'}</span>
+            </div>
+            
+            <div class="docs-section">
+                <div style="margin-bottom: 8px; font-weight: 500;">Common operations:</div>
+                <div style="line-height: 1.8;">
+                    <span class="command-code">client.connect_accounting(url, email, password)</span> — Connect with credentials<br>
+                    <span class="command-code">client.register_accounting(email)</span> — Register new account<br>
+                    <span class="command-code">client.get_account_balance()</span> — Check balance<br>
+                </div>
+            </div>
+        </div>
+        '''
+        
+        display(HTML(html))
+    
+    def __repr__(self) -> str:
+        """Return a text representation of the client's status."""
+        is_configured = self.is_configured()
+        email = self.get_email() if is_configured else None
+        
+        # Determine overall status
+        if is_configured:
+            status = "[Configured]"
+        else:
+            status = "[Not Configured]"
+        
+        # Build text output similar to show()
+        lines = [
+            f"AccountingClient {status}",
+            f"",
+            f"Service:     {self.accounting_url or 'Not configured'}",
+            f"User:        {email or 'Not configured'}",
+            f"Password:    {'••••••••' if is_configured else 'Not set'}",
+            f"",
+            f"Common operations:",
+            f"  client.connect_accounting(url, email, password)  — Connect with credentials",
+            f"  client.register_accounting(email)               — Register new account",
+            f"  client.get_account_balance()                    — Check balance"
+        ]
+        
+        return "\n".join(lines)
+    
+    def _repr_html_(self) -> str:
+        """Display HTML widget in Jupyter environments - same as show()."""
+        is_configured = self.is_configured()
+        email = self.get_email() if is_configured else None
+        
+        # Determine overall status
+        if is_configured:
+            overall_badge = '<span class="status-badge badge-ready">Configured</span>'
+        else:
+            overall_badge = '<span class="status-badge badge-not-ready">Not Configured</span>'
+        
+        # Build HTML widget with minimal notebook-like styling (same as show())
+        html = '''
+        <style>
+            .accounting-widget {
+                font-family: system-ui, -apple-system, sans-serif;
+                padding: 12px 0;
+                color: #333;
+                line-height: 1.5;
+            }
+            .widget-title {
+                font-size: 14px;
+                font-weight: 600;
+                margin-bottom: 12px;
+                color: #333;
+            }
+            .status-line {
+                display: flex;
+                align-items: center;
+                margin: 6px 0;
+                font-size: 13px;
+            }
+            .status-label {
+                color: #666;
+                min-width: 100px;
+                margin-right: 12px;
+            }
+            .status-value {
+                font-family: monospace;
+                color: #333;
+            }
+            .status-badge {
+                display: inline-block;
+                padding: 2px 8px;
+                border-radius: 3px;
+                font-size: 11px;
+                margin-left: 8px;
+            }
+            .badge-ready {
+                background: #d4edda;
+                color: #155724;
+            }
+            .badge-not-ready {
+                background: #f8d7da;
+                color: #721c24;
+            }
+            .docs-section {
+                margin-top: 16px;
+                padding-top: 12px;
+                border-top: 1px solid #e0e0e0;
+                font-size: 12px;
+                color: #666;
+            }
+            .command-code {
+                font-family: monospace;
+                background: #f5f5f5;
+                padding: 1px 4px;
+                border-radius: 2px;
+                color: #333;
+            }
+        </style>
+        '''
+        
+        html += f'''
+        <div class="accounting-widget">
+            <div class="widget-title">
+                AccountingClient {overall_badge}
+            </div>
+            
+            <div class="status-line">
+                <span class="status-label">Service:</span>
+                <span class="status-value">{self.accounting_url or "Not configured"}</span>
+            </div>
+            
+            <div class="status-line">
+                <span class="status-label">User:</span>
+                <span class="status-value">{email or "Not configured"}</span>
+            </div>
+            
+            <div class="status-line">
+                <span class="status-label">Password:</span>
+                <span class="status-value">{'••••••••' if is_configured else 'Not set'}</span>
+            </div>
+            
+            <div class="docs-section">
+                <div style="margin-bottom: 8px; font-weight: 500;">Common operations:</div>
+                <div style="line-height: 1.8;">
+                    <span class="command-code">client.connect_accounting(url, email, password)</span> — Connect with credentials<br>
+                    <span class="command-code">client.register_accounting(email)</span> — Register new account<br>
+                    <span class="command-code">client.get_account_balance()</span> — Check balance<br>
+                </div>
+            </div>
+        </div>
+        '''
+        
+        return html
+    
     async def create_transaction_token(self, recipient_email: str) -> str:
         """Create a transaction token for paying a service datasite.
         
@@ -193,8 +485,20 @@ class AccountingClient:
         except ServiceException as e:
             raise PaymentError(f"Failed to create transaction token: {e}")
     
-    async def get_account_balance(self) -> float:
-        """Get current account balance.
+    def get_account_balance(self) -> float:
+        """Get current account balance (synchronous).
+        
+        Returns:
+            Account balance
+        """
+        try:
+            user_info = self.client.get_user_info()
+            return user_info.balance
+        except ServiceException as e:
+            raise PaymentError(f"Failed to get account balance: {e}")
+    
+    async def _get_account_balance_async(self) -> float:
+        """Get current account balance (asynchronous).
         
         Returns:
             Account balance
@@ -235,7 +539,7 @@ class AccountingClient:
         except ServiceException:
             return False
     
-    def save_credentials(self, config_path: Optional[str] = None):
+    def _save_credentials(self, config_path: Optional[str] = None):
         """Save credentials to a config file.
         
         WARNING: This saves sensitive credentials to disk. Only call this method
@@ -313,7 +617,7 @@ class AccountingClient:
                 config = json.load(f)
             
             client = cls()
-            client.configure(
+            client._configure(
                 accounting_url=config["service_url"],
                 email=config["email"],
                 password=config["password"]
@@ -352,5 +656,5 @@ class AccountingClient:
             raise AuthenticationError(f"Missing environment variables: {', '.join(missing)}")
         
         client = cls()
-        client.configure(accounting_url, email, password)
+        client._configure(accounting_url, email, password)
         return client

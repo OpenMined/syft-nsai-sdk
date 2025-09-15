@@ -43,8 +43,8 @@ class Client:
             syftbox_config_path: Optional[Path] = None,
             cache_server_url: Optional[str] = None,
             accounting_client: Optional[AccountingClient] = None,
-            auto_setup_accounting: bool = True,
-            auto_health_check_threshold: int = 10
+            _auto_setup_accounting: bool = True,
+            _auto_health_check_threshold: int = 10
         ):
         """Initialize SyftBox client.
         
@@ -52,8 +52,8 @@ class Client:
             syftbox_config_path: Custom path to SyftBox config file
             cache_server_url: Override cache server URL
             accounting_client: Pre-configured AccountingClient instance
-            auto_setup_accounting: Whether to prompt for accounting setup when needed
-            auto_health_check_threshold: Max services for auto health checking
+            _auto_setup_accounting: Whether to prompt for accounting setup when needed
+            _auto_health_check_threshold: Max services for auto health checking
         """
         # Check SyftBox availability and config manager with custom path if provided
         self.config_manager = ConfigManager(syftbox_config_path)
@@ -86,22 +86,22 @@ class Client:
                 logger.info(f"Found existing accounting credentials for {client.get_email()}")
             else:
                 """Display account setup instructions to user."""
-                print("\n" + "="*60)
-                print("NO ACTIVE ACCOUNT FOUND!")
-                print("="*60)
-                print("You are currently limited to SyftBox free services.")
-                print("New users receive $20 in free credits upon first connection to the accounting service.")
-                print("To use SyftBox paid services, you need to set up an account.")
+                print("SyftBox Account Setup:")
+                print("═" * 60)
+                print("⚠️  No Active Accounting Account Found")
                 print("")
-                print("Please run:")
-                print("  await client.register_accounting(email, password) to create an account.")
-                print("  await client.connect_accounting(email, password) to connect to an existing account.")
+                print("You are currently on the SyftBox Free tier. As a new user, you receive:")
+                print("   → $20 in free credits to explore the network")
+                print("   → Credits are for trial use only (not a payment method)")
                 print("")
-                print("Or set environment variables:")
-                print("  SYFTBOX_ACCOUNTING_EMAIL=your_email@example.com")
-                print("  SYFTBOX_ACCOUNTING_PASSWORD=your_password")
-                print("  SYFTBOX_ACCOUNTING_URL=https://service.url")
-                print("="*60)
+                print("To continue, choose one of the options below:")
+                print("")
+                print("  🆕 Create a new account:")
+                print("      await client.register_accounting(email, password)")
+                print("")
+                print("  🔑 Connect an existing account:")
+                print("      await client.connect_accounting(email, password)")
+                print("")
 
             self.accounting_client = client
         
@@ -114,18 +114,70 @@ class Client:
         )
         
         # Set up service scanner
-        self.scanner = FastScanner(self.config)
-        self.parser = MetadataParser()
+        self._scanner = FastScanner(self.config)
+        self._parser = MetadataParser()
         
         # Configuration
-        self.auto_health_check_threshold = auto_health_check_threshold
-        self.auto_setup_accounting = auto_setup_accounting
+        self._auto_health_check_threshold = _auto_health_check_threshold
+        self._auto_setup_accounting = _auto_setup_accounting
         
         # Optional health monitor
         self._health_monitor: Optional[HealthMonitor] = None
 
         # Load user email from config if not provided (from_email and self._account_configured)
         logger.info(f"Client initialized for {self.config.email}")
+    
+    def __dir__(self):
+        """Control what appears in autocomplete suggestions.
+        
+        Returns only the main public methods that users should interact with.
+        """
+        return [
+            # Display methods
+            'show',
+            'show_services',
+            
+            # Service discovery and usage
+            'list_services',
+            'load_service',
+            'get_service',
+            'chat',
+            'chat_async',
+            'search',
+            'search_async',
+            'get_service_params',
+            'show_service',
+            
+            # RAG/Pipeline
+            'pipeline',
+            
+            # Accounting
+            'accounting_client',
+            'register_accounting',
+            'connect_accounting',
+            'get_accounting_status',
+            'is_accounting_configured',
+            'get_account_info',
+            
+            # Health monitoring
+            'check_service_health',
+            'check_all_services_health',
+            'start_health_monitoring',
+            'stop_health_monitoring',
+            
+            # Properties
+            'config',
+            'config_manager',
+            'rpc_client',
+            
+            # Helper methods
+            'remove_duplicate_results',
+            'format_search_context',
+            
+            # Maintenance
+            'clear_cache',
+            'close',
+        ]
     
     async def close(self):
         """Close client and cleanup resources."""
@@ -163,13 +215,13 @@ class Client:
             List of discovered and filtered services
         """
         # Scan for metadata files
-        metadata_paths = self.scanner.scan_with_cache()
+        metadata_paths = self._scanner.scan_with_cache()
         
         # Parse services from metadata
         services = []
         for metadata_path in metadata_paths:
             try:
-                service_info = self.parser.parse_service_from_files(metadata_path)
+                service_info = self._parser.parse_service_from_files(metadata_path)
                 services.append(service_info)
             except Exception as e:
                 logger.debug(f"Failed to parse {metadata_path}: {e}")
@@ -219,12 +271,12 @@ class Client:
         if not service_name:
             raise ValidationError("Valid service name (datasite/service_name) must be provided")
         datasite, name = service_name.split("/", 1)
-        metadata_path = self.scanner.get_service_path(datasite, name)
+        metadata_path = self._scanner.get_service_path(datasite, name)
         
         if not metadata_path:
             raise ServiceNotFoundError(f"'{service_name}'")
         
-        return self.parser.parse_service_from_files(metadata_path)
+        return self._parser.parse_service_from_files(metadata_path)
     
     def load_service(self, service_name: str) -> Service:
         """Load a service by name and return Service object for interaction.
@@ -235,11 +287,30 @@ class Client:
         Returns:
             Service object for object-oriented interaction
             
-        Example:
+        Examples:
+            # Load a chat service
             service = client.load_service("alice@example.com/gpt-assistant")
             response = service.chat(messages=[{"role": "user", "content": "Hello"}])
+            
+            # Load a search service
+            search_service = client.load_service("bob@example.com/document-search")
+            results = search_service.search(message="Python tutorial")
         """
         service_info = self.get_service(service_name)
+        
+        # Check health status if not already checked
+        if service_info.health_status is None:
+            try:
+                from .services.health import check_service_health
+                from .utils.async_utils import run_async_in_thread
+                health_status = run_async_in_thread(
+                    check_service_health(service_info, self.rpc_client, timeout=2.0)
+                )
+                service_info.health_status = health_status
+            except Exception as e:
+                logger.debug(f"Health check failed for {service_name}: {e}")
+                # Leave health_status as None if check fails
+        
         return Service(service_info, self)
 
     # Service Usage Methods 
@@ -254,7 +325,7 @@ class Client:
         """Chat with a specific service  (async version).
         
         Args:
-            service_name: Datasite/Name of the service to use
+            service_name: Full service name in format 'datasite/service_name'
             messages: Message to send
             temperature: Sampling temperature (0.0-1.0)
             max_tokens: Maximum tokens to generate
@@ -262,10 +333,30 @@ class Client:
             
         Returns:
             Chat response from the specified service
+        
+        Examples:
+            # Basic chat
+            response = await client.chat_async(
+                "alice@example.com/gpt-assistant",
+                "What is machine learning?"
+            )
+            
+            # Chat with parameters
+            response = await client.chat_async(
+                "bob@example.com/creative-writer",
+                "Write a poem about clouds",
+                temperature=0.8,
+                max_tokens=200
+            )
         """
         # Find the specific service
         service = self.get_service(service_name)
         logger.info(f"Using service: {service.name} from datasite: {service.datasite}") 
+        
+        # Check if service is online by pinging it
+        health_status = await check_service_health(service, self.rpc_client, timeout=3.0)
+        if health_status == HealthStatus.OFFLINE:
+            raise ServiceNotFoundError("The node is offline. Please retry or find a different service to use")
         
         # Validate service supports chat
         if not service.supports_service(ServiceType.CHAT):
@@ -297,7 +388,7 @@ class Client:
         """Chat with a specific service.
         
         Args:
-            service_name: Datasite/Name of the service to use
+            service_name: Full service name in format 'datasite/service_name'
             messages: Message to send
             temperature: Sampling temperature (0.0-1.0)
             max_tokens: Maximum tokens to generate
@@ -307,10 +398,54 @@ class Client:
             Chat response from the specified service
         """
         
-        # A thread-safe synchronous wrapper around chat_async.
-        return run_async_in_thread(
-            self.chat_async(service_name, messages, temperature, max_tokens, **kwargs)
-        )
+        # Use thread-based execution with its own event loop
+        # This ensures the chat runs in a fresh event loop context
+        async def _chat():
+            # Find the specific service
+            service = self.get_service(service_name)
+            logger.info(f"Using service: {service.name} from datasite: {service.datasite}")
+            
+            # Check if service is online by pinging it
+            health_status = await check_service_health(service, self.rpc_client, timeout=3.0)
+            if health_status == HealthStatus.OFFLINE:
+                raise ServiceNotFoundError("The node is offline. Please retry or find a different service to use")
+            
+            # Validate service supports chat
+            if not service.supports_service(ServiceType.CHAT):
+                raise ServiceNotSupportedError(service.name, "chat", service)
+            
+            # Format messages if string provided
+            formatted_messages = messages
+            if isinstance(messages, str):
+                formatted_messages = [{"role": "user", "content": messages}]
+            
+            # Build chat parameters
+            chat_params = {
+                "messages": formatted_messages,
+                "temperature": temperature,
+                "max_tokens": max_tokens,
+                **kwargs
+            }
+            
+            # Remove None values
+            chat_params = {k: v for k, v in chat_params.items() if v is not None}
+            
+            # Create a new ChatService with a fresh HTTP client for this event loop
+            from .clients.request_client import HTTPClient
+            from .services.chat import ChatService
+            http_client = HTTPClient()
+            try:
+                rpc_client = SyftBoxRPCClient(
+                    cache_server_url=self.rpc_client.base_url,
+                    accounting_client=self.accounting_client,
+                    http_client=http_client
+                )
+                chat_service = ChatService(service, rpc_client)
+                return await chat_service.chat_with_params(chat_params)
+            finally:
+                await http_client.close()
+        
+        return run_async_in_thread(_chat())
     
     def chat(
             self,
@@ -323,7 +458,7 @@ class Client:
         """Smart chat method that adapts to the execution context.
         
         Args:
-            service_name: Datasite/Name of the service to use
+            service_name: Full service name in format 'datasite/service_name'
             messages: Message to send
             temperature: Sampling temperature (0.0-1.0)
             max_tokens: Maximum tokens to generate
@@ -334,10 +469,17 @@ class Client:
             
         Examples:
             # In async context (Jupyter, async function):
-            response = await client.chat("service", "Hello")
+            response = await client.chat("alice@example.com/gpt-assistant", "Hello")
             
             # In sync context:
-            response = client.chat("service", "Hello")
+            response = client.chat("bob@example.com/creative-writer", "Write a story")
+            
+            # With parameters:
+            response = client.chat(
+                "charlie@example.com/code-assistant",
+                "Explain this Python function",
+                temperature=0.3
+            )
         """
         if detect_async_context():
             # Return coroutine - caller must await it
@@ -346,7 +488,71 @@ class Client:
             # Safe to use thread-based sync version
             return self.chat_sync(service_name, messages, temperature, max_tokens, **kwargs)
 
-    def search_async(
+    def search_sync(
+            self,
+            service_name: str, 
+            message: str,
+            topK: Optional[int] = None,
+            similarity_threshold: Optional[float] = None,
+            **kwargs
+        ) -> SearchResponse:
+        """Search with a specific service (sync version).
+        
+        Args:
+            service_name: Full service name in format 'datasite/service_name'
+            message: Search message
+            topK: Maximum number of results
+            similarity_threshold: Minimum similarity score
+            **kwargs: Additional service-specific parameters
+            
+        Returns:
+            Search response from the specified service
+        """
+
+        # Use thread-based execution with its own event loop
+        # This ensures the search runs in a fresh event loop context
+        async def _search():
+            # Find the specific service
+            service = self.get_service(service_name)
+            logger.info(f"Using service: {service.name} from datasite: {service.datasite}") 
+            
+            # Check if service is online by pinging it
+            health_status = await check_service_health(service, self.rpc_client, timeout=3.0)
+            if health_status == HealthStatus.OFFLINE:
+                raise ServiceNotFoundError("The node is offline. Please retry or find a different service to use")
+            
+            # Validate service supports search
+            if not service.supports_service(ServiceType.SEARCH):
+                raise ServiceNotSupportedError(service.name, "search", service)
+            
+            # Build request parameters
+            search_params = {
+                "message": message,
+                "topK": topK,
+                "similarity_threshold": similarity_threshold,
+                **kwargs
+            }
+            
+            # Remove None values
+            search_params = {k: v for k, v in search_params.items() if v is not None}
+            
+            # Create a new SearchService with a fresh HTTP client for this event loop
+            from .clients.request_client import HTTPClient
+            http_client = HTTPClient()
+            try:
+                rpc_client = SyftBoxRPCClient(
+                    cache_server_url=self.rpc_client.base_url,
+                    accounting_client=self.accounting_client,
+                    http_client=http_client
+                )
+                search_service = SearchService(service, rpc_client)
+                return await search_service.search_with_params(search_params)
+            finally:
+                await http_client.close()
+        
+        return run_async_in_thread(_search())
+    
+    async def search_async(
             self,
             service_name: str, 
             message: str,
@@ -357,7 +563,7 @@ class Client:
         """Search with a specific service.
         
         Args:
-            service_name: Datasite/Name of the service to use
+            service_name: Full service name in format 'datasite/service_name'
             message: Search message
             topK: Maximum number of results
             similarity_threshold: Minimum similarity score
@@ -365,11 +571,31 @@ class Client:
             
         Returns:
             Search response from the specified service
+        
+        Examples:
+            # Basic search
+            results = await client.search_async(
+                "alice@example.com/document-search",
+                "Python tutorial"
+            )
+            
+            # Search with limits
+            results = await client.search_async(
+                "bob@example.com/code-search", 
+                "machine learning algorithms",
+                topK=5,
+                similarity_threshold=0.7
+            )
         """
 
         # Find the specific service
         service = self.get_service(service_name)
         logger.info(f"Using service: {service.name} from datasite: {service.datasite}") 
+        
+        # Check if service is online by pinging it
+        health_status = await check_service_health(service, self.rpc_client, timeout=3.0)
+        if health_status == HealthStatus.OFFLINE:
+            raise ServiceNotFoundError("The node is offline. Please retry or find a different service to use")
         
         # Validate service supports search
         if not service.supports_service(ServiceType.SEARCH):
@@ -388,34 +614,7 @@ class Client:
         
         # Create service and make request
         search_service = SearchService(service, self.rpc_client)
-        return asyncio.run(search_service.search_with_params(search_params))
-    
-    async def search_sync(
-            self,
-            service_name: str, 
-            message: str,
-            topK: Optional[int] = None,
-            similarity_threshold: Optional[float] = None,
-            **kwargs
-        ) -> SearchResponse:
-        """Search with a specific service.
-        
-        Args:
-            service_name: Name of the service to use (REQUIRED)
-            query: Search query
-            datasite: Datasite email (required if service name is ambiguous)
-            limit: Maximum number of results
-            similarity_threshold: Minimum similarity score
-            **kwargs: Additional service-specific parameters
-            
-        Returns:
-            Search response from the specified service
-        """
-
-        # A thread-safe synchronous wrapper around search_async.
-        return run_async_in_thread(
-            self.search_async(service_name, message, topK, similarity_threshold, **kwargs)
-        )
+        return await search_service.search_with_params(search_params)
 
     def search(
             self,
@@ -428,7 +627,7 @@ class Client:
         """Smart search method that adapts to the execution context.
 
         Args:
-            service_name: Datasite/Name of the service to use
+            service_name: Full service name in format 'datasite/service_name'
             message: Search message
             topK: Maximum number of results
             similarity_threshold: Minimum similarity score
@@ -436,6 +635,21 @@ class Client:
             
         Returns:
             SearchResponse (sync) or Awaitable[SearchResponse] (async)
+        
+        Examples:
+            # In async context (Jupyter, async function):
+            results = await client.search("alice@example.com/document-search", "Python")
+            
+            # In sync context:
+            results = client.search("bob@example.com/code-search", "algorithms")
+            
+            # With parameters:
+            results = client.search(
+                "charlie@example.com/wiki-search",
+                "machine learning",
+                topK=10,
+                similarity_threshold=0.8
+            )
         """
         if detect_async_context():
             # Return coroutine - caller must await it
@@ -445,9 +659,22 @@ class Client:
             return self.search_sync(service_name, message, topK, similarity_threshold, **kwargs)
 
     # Service Parameters
-    def get_parameters(self, service_name: str, datasite: Optional[str] = None) -> Dict[str, Any]:
-        """Get available parameters for a specific service."""
-        service = self.get_service(service_name, datasite)
+    def get_service_params(self, service_name: str) -> Dict[str, Any]:
+        """Get available parameters for a specific service.
+        
+        Args:
+            service_name: Full service name in format 'datasite/service_name'
+        
+        Returns:
+            Dictionary of available parameters for chat and search operations
+        
+        Examples:
+            # Get parameters for a specific service
+            params = client.get_service_params("alice@example.com/gpt-assistant")
+            print(params["chat"])  # Shows available chat parameters
+            print(params["search"])  # Shows available search parameters
+        """
+        service = self.get_service(service_name)
         if not service:
             raise ServiceNotFoundError(f"Service '{service_name}' not found")
         
@@ -468,75 +695,8 @@ class Client:
         
         return parameters
 
-    def show_service_usage(self, service_name: str, datasite: Optional[str] = None) -> str:
-        """Show usage examples for a specific service.
-        
-        Args:
-            service_name: Name of the service
-            datasite: Datasite email if needed
-            
-        Returns:
-            Formatted usage examples
-        """
-        service = self.get_service(service_name, datasite)
-        if not service:
-            raise ServiceNotFoundError(f"Service '{service_name}' not found")
-        
-        examples = []
-        examples.append(f"# Usage examples for {service.name}")
-        examples.append(f"# Datasite: {service.datasite}")
-        examples.append("")
-        
-        if service.supports_service(ServiceType.CHAT):
-            examples.extend([
-                "# Basic chat",
-                f'response = await client.chat(',
-                f'    service_name="{service.name}",',
-                f'    datasite="{service.datasite}",',
-                f'    prompt="Hello! How are you?"',
-                f')',
-                "",
-                "# Chat with parameters",
-                f'response = await client.chat(',
-                f'    service_name="{service.name}",',
-                f'    datasite="{service.datasite}",',
-                f'    prompt="Write a story",',
-                f'    temperature=0.7,',
-                f'    max_tokens=200',
-                f')',
-                ""
-            ])
-        
-        if service.supports_service(ServiceType.SEARCH):
-            examples.extend([
-                "# Basic search",
-                f'results = await client.search(',
-                f'    service_name="{service.name}",',
-                f'    datasite="{service.datasite}",',
-                f'    query="machine learning"',
-                f')',
-                "",
-                "# Search with parameters", 
-                f'results = await client.search(',
-                f'    service_name="{service.name}",',
-                f'    datasite="{service.datasite}",',
-                f'    query="latest AI research",',
-                f'    limit=10,',
-                f'    similarity_threshold=0.8',
-                f')',
-                ""
-            ])
-        
-        # Add pricing info
-        if service.min_pricing > 0:
-            examples.append(f"# Cost: ${service.min_pricing} per request")
-        else:
-            examples.append("# Cost: Free")
-        
-        return "\n".join(examples)
-    
     # Display Methods 
-    def format_services(self, 
+    def _format_services(self, 
                    service_type: Optional[ServiceType] = None,
                    health_check: str = "auto",
                    format: str = "table") -> str:
@@ -565,32 +725,47 @@ class Client:
         else:
             return [self._service_to_dict(service) for service in services]
     
-    def show_service_details(self, service_name: str, datasite: Optional[str] = None) -> str:
-        """Show detailed information about a specific service.
+    def show_service(self, service_name: str) -> None:
+        """Show service information using an HTML widget (similar to client.show()).
         
         Args:
-            service_name: Name of the service
-            datasite: Optional datasite to narrow search
+            service_name: Full service name in format 'datasite/service_name'
+        
+        Examples:
+            # Display information for a specific service
+            client.show_service("alice@example.com/gpt-assistant")
             
-        Returns:
-            Formatted service details
+            # Shows service details, parameters, and usage examples
+            client.show_service("bob@example.com/document-search")
         """
-        service = self.get_service(service_name, datasite)
+        service = self.get_service(service_name)
         if not service:
             raise ServiceNotFoundError(f"Service '{service_name}' not found")
         
-        return format_service_details(service)
+        service.show()
     
     # Health Monitoring Methods
     async def check_service_health(self, service_name: str, timeout: float = 2.0) -> HealthStatus:
         """Check health of a specific service.
         
         Args:
-            service_name: Name of the service to check
+            service_name: Full service name in format 'datasite/service_name'
             timeout: Timeout for health check
             
         Returns:
             Health status of the service
+        
+        Examples:
+            # Check if a service is online
+            status = await client.check_service_health("alice@example.com/gpt-assistant")
+            if status == HealthStatus.ONLINE:
+                print("Service is ready to use")
+            
+            # Quick health check with short timeout
+            status = await client.check_service_health(
+                "bob@example.com/slow-service", 
+                timeout=1.0
+            )
         """
         service = self.get_service(service_name)
         if not service:
@@ -661,27 +836,62 @@ class Client:
 
     # RAG pipeline methods
     def create_pipeline(self) -> Pipeline:
-        """Create a new pipeline for RAG workflows"""
-        return Pipeline(client=self)
-
-    def pipeline(self, data_sources: Optional[List[Union[str, Dict]]] = None, 
-                synthesizer: Optional[Union[str, Dict]] = None, 
-                context_format: Optional[str] = None) -> Pipeline:
-        """Create and configure a pipeline in one call (inline approach)
+        """Create a new pipeline for RAG workflows.
         
-        Args:
-            data_sources: List of search services to use as data sources
-            synthesizer: Chat service to use for synthesis
-            context_format: Format for search context ("simple" or "frontend")
+        .. deprecated:: 1.0.0
+            Use :func:`pipeline` instead for more convenient inline configuration.
         
         Returns:
-            Configured Pipeline ready for execution
+            Empty Pipeline that requires further configuration
+            
+        Note:
+            This method is deprecated. Use ``client.pipeline()`` with parameters
+            for a more convenient experience.
+        """
+        import warnings
+        warnings.warn(
+            "create_pipeline() is deprecated and will be removed in v2.0. "
+            "Use client.pipeline(data_sources=..., synthesizer=...) instead.",
+            DeprecationWarning,
+            stacklevel=2
+        )
+        return Pipeline(client=self)
+
+    def pipeline(self, data_sources: Optional[List[Union[str, Dict, 'Service']]] = None, 
+                synthesizer: Optional[Union[str, Dict, 'Service']] = None, 
+                context_format: Optional[str] = None) -> Pipeline:
+        """Create and configure a pipeline for RAG/FedRAG workflows.
         
-        Example:
+        Args:
+            data_sources: List of search services to use as data sources. Each item can be:
+                - str: Service name like "alice@example.com/docs"
+                - dict: Service with params like {"name": "service", "topK": 10}
+                - Service: Loaded service object from client.load_service()
+            synthesizer: Chat service to use for synthesis. Can be:
+                - str: Service name like "ai@openai.com/gpt-4"
+                - dict: Service with params like {"name": "service", "temperature": 0.7}
+                - Service: Loaded service object
+            context_format: Format for search context injection (default: "simple")
+                - "simple": Clean format with ## headers for each source
+                - "frontend": Matches web app format with [filename] headers
+        
+        Returns:
+            Configured Pipeline ready for execution with .run() or .run_async()
+        
+        Examples:
+            # Simple usage
             result = client.pipeline(
                 data_sources=["alice@example.com/docs", "bob@example.com/wiki"],
                 synthesizer="ai@openai.com/gpt-4"
             ).run(messages=[{"role": "user", "content": "What is Python?"}])
+            
+            # With parameters and Service objects
+            service = client.load_service("alice@example.com/docs")
+            result = client.pipeline(
+                data_sources=[service, {"name": "bob@example.com/wiki", "topK": 5}],
+                synthesizer={"name": "ai@openai.com/gpt-4", "temperature": 0.7},
+                context_format="frontend"
+            ).run(messages=[{"role": "user", "content": "Compare these docs"}])
         """
         return Pipeline(
             client=self, 
@@ -691,12 +901,12 @@ class Client:
         )
 
     # Accounting Integration Methods
-    async def register_accounting_async(self, email: str, password: str, organization: Optional[str] = None):
+    async def _register_accounting_async(self, email: str, password: str, organization: Optional[str] = None):
         """Register a new accounting user (async)."""
         try:
             await self.accounting_client.create_accounting_user(email, password, organization)
             self.accounting_client.save_credentials()
-            await self.connect_accounting_async(email, password, self.accounting_client.accounting_url)
+            await self._connect_accounting_async(email, password, self.accounting_client.accounting_url)
             logger.info("Accounting setup completed and connected successfully")
         except Exception as e:
             raise AuthenticationError(f"Accounting setup failed: {e}")
@@ -704,10 +914,10 @@ class Client:
     def register_accounting(self, email: str, password: str, organization: Optional[str] = None):
         """Register a new accounting user (sync wrapper)."""
         return run_async_in_thread(
-            self.register_accounting_async(email, password, organization)
+            self._register_accounting_async(email, password, organization)
         )
 
-    async def connect_accounting_async(self, email: str, password: str, accounting_url: Optional[str] = None, save_config: bool = True):
+    async def _connect_accounting_async(self, email: str, password: str, accounting_url: Optional[str] = None, save_config: bool = True):
         """Setup accounting credentials (async)."""
         # Get service URL from environment if not provided
         if not accounting_url:
@@ -739,14 +949,14 @@ class Client:
     def connect_accounting(self, email: str, password: str, accounting_url: Optional[str] = None, save_config: bool = True):
         """Setup accounting credentials (sync wrapper)."""
         return run_async_in_thread(
-            self.connect_accounting_async(email, password, accounting_url, save_config)
+            self._connect_accounting_async(email, password, accounting_url, save_config)
         )
 
     def is_accounting_configured(self) -> bool:
         """Check if accounting is properly configured."""
         return self.accounting_client.is_configured()
 
-    async def get_account_info_async(self) -> Dict[str, Any]:
+    async def _get_account_info_async(self) -> Dict[str, Any]:
         """Get account information and balance (async)."""
         if not self.is_accounting_configured():
             return {"error": "Accounting not configured"}
@@ -763,12 +973,12 @@ class Client:
             return {"error": "Accounting not configured"}
         
         try:
-            return run_async_in_thread(self.get_account_info_async())
+            return run_async_in_thread(self._get_account_info_async())
         except Exception as e:
             logger.error(f"Failed to get account info: {e}")
             return {"error": str(e)}
 
-    async def show_accounting_status_async(self) -> str:
+    async def _get_accounting_status_async(self) -> str:
         """Show current accounting configuration status (async)."""
         if not self.is_accounting_configured():
             return (
@@ -778,7 +988,7 @@ class Client:
             )
         
         try:
-            account_info = await self.get_account_info_async()
+            account_info = await self._get_account_info_async()
 
             if "error" in account_info:
                 return (
@@ -800,14 +1010,331 @@ class Client:
                 f"   May need to reconfigure credentials"
             )
 
-    def show_accounting_status(self) -> str:
+    def get_accounting_status(self) -> str:
         """Show current accounting configuration status (sync wrapper)."""
-        return run_async_in_thread(self.show_accounting_status_async())
+        return run_async_in_thread(self._get_accounting_status_async())
+    
+    # Display Methods
+    def show_services(self, health_check: str = "always", **kwargs) -> None:
+        """Display available services using ServicesList's show_services method.
+        
+        Args:
+            health_check: Health checking mode ("auto", "always", "never")
+                - "always": Always check health status (shows real availability)
+                - "never": Skip health checks (faster, shows Unknown)
+                - "auto": Check only if ≤10 services (default threshold)
+            **kwargs: Arguments to pass to ServicesList.show_services()
+                page: Starting page number
+                items_per_page: Services per page
+                current_user_email: Current user's email for context
+                save_to_file: Force save to file even in notebooks
+                output_path: Custom output path for HTML file
+                open_in_browser: Force open in browser even in Jupyter notebooks
+        """
+        try:
+            services_list = self.list_services(health_check=health_check)
+            # ServicesList has its own show_services method
+            services_list.show_services(**kwargs)
+        except Exception as e:
+            logger.error(f"Failed to show services: {e}")
+            # Fallback display
+            from IPython.display import display, HTML
+            html = '''
+            <div style="font-family: system-ui, -apple-system, sans-serif; padding: 12px 0; color: #333;">
+                <div style="font-size: 14px; font-weight: 600; margin-bottom: 12px;">Available Services</div>
+                <div style="color: #999; font-style: italic; font-size: 13px;">
+                    Error loading services. Make sure SyftBox is running.
+                </div>
+            </div>
+            '''
+            display(HTML(html))
+    
+    def show(self) -> None:
+        """Display client status as an HTML widget."""
+        from IPython.display import display, HTML
+        
+        # Get status information
+        syftbox_status = "Running" if self.config_manager.is_syftbox_running() else "Not Running"
+        syftbox_path = str(self.config.data_dir)
+        cache_server = self.config.cache_server_url
+        account_email = self.accounting_client.get_email() if self._account_configured else None
+        
+        # Count available services
+        try:
+            services = self.list_services()
+            service_count = len(services) if services else 0
+        except:
+            service_count = 0
+        
+        # Build HTML widget with minimal notebook-like styling
+        html = '''
+        <style>
+            .syfthub-widget {
+                font-family: system-ui, -apple-system, sans-serif;
+                padding: 12px 0;
+                color: #333;
+                line-height: 1.5;
+            }
+            .widget-title {
+                font-size: 14px;
+                font-weight: 600;
+                margin-bottom: 12px;
+                color: #333;
+            }
+            .status-line {
+                display: flex;
+                align-items: center;
+                margin: 6px 0;
+                font-size: 13px;
+            }
+            .status-label {
+                color: #666;
+                min-width: 140px;
+                margin-right: 12px;
+            }
+            .status-value {
+                font-family: monospace;
+                color: #333;
+            }
+            .status-badge {
+                display: inline-block;
+                padding: 2px 8px;
+                border-radius: 3px;
+                font-size: 11px;
+                margin-left: 8px;
+            }
+            .badge-ready {
+                background: #d4edda;
+                color: #155724;
+            }
+            .badge-not-ready {
+                background: #f8d7da;
+                color: #721c24;
+            }
+            .docs-section {
+                margin-top: 16px;
+                padding-top: 12px;
+                border-top: 1px solid #e0e0e0;
+                font-size: 12px;
+                color: #666;
+            }
+            .command-code {
+                font-family: monospace;
+                background: #f5f5f5;
+                padding: 1px 4px;
+                border-radius: 2px;
+                color: #333;
+            }
+        </style>
+        '''
+        
+        # Determine badges
+        syftbox_badge = '<span class="status-badge badge-ready">Running</span>' if syftbox_status == "Running" else '<span class="status-badge badge-not-ready">Not Running</span>'
+        account_badge = '<span class="status-badge badge-ready">Configured</span>' if self._account_configured else '<span class="status-badge badge-not-ready">Not Configured</span>'
+        
+        html += f'''
+        <div class="syfthub-widget">
+            <div class="widget-title">
+                SyftHub Client {syftbox_badge}
+            </div>
+            
+            <div class="status-line">
+                <span class="status-label">SyftBox Path:</span>
+                <span class="status-value">{syftbox_path}</span>
+            </div>
+            
+            <div class="status-line">
+                <span class="status-label">Cache Server:</span>
+                <span class="status-value">{cache_server}</span>
+            </div>
+            
+            <div class="status-line">
+                <span class="status-label">Account:</span>
+                <span class="status-value">{account_email or "Not configured"}</span>
+                {account_badge}
+            </div>
+            
+            <div class="status-line">
+                <span class="status-label">Services Found:</span>
+                <span class="status-value">{service_count} services</span>
+            </div>
+            
+            <div class="docs-section">
+                <div style="margin-bottom: 8px; font-weight: 500;">Common operations:</div>
+                <div style="line-height: 1.8;">
+                    <span class="command-code">client.list_services()</span> — Discover available services<br>
+                    <span class="command-code">client.chat("service", messages=[])</span> — Chat with a service<br>
+                    <span class="command-code">client.search("service", "message")</span> — Search with a service<br>
+                    <span class="command-code">client.register_accounting(email)</span> — Register accounting<br>
+                    <span class="command-code">client.connect_accounting(email, password)</span> — Connect accounting
+                </div>
+            </div>
+        </div>
+        '''
+        
+        display(HTML(html))
+    
+    def __repr__(self) -> str:
+        """Return a text representation of the client's status."""
+        # Get status information
+        syftbox_status = "Running" if self.config_manager.is_syftbox_running() else "Not Running"
+        syftbox_path = str(self.config.data_dir)
+        cache_server = self.config.cache_server_url
+        account_email = self.accounting_client.get_email() if self._account_configured else None
+        
+        # Count available services
+        try:
+            services = self.list_services()
+            service_count = len(services) if services else 0
+        except:
+            service_count = 0
+        
+        # Build text output
+        lines = [
+            f"SyftHub Client [{syftbox_status}]",
+            f"",
+            f"SyftBox Path:     {syftbox_path}",
+            f"Cache Server:     {cache_server}",
+            f"Account:          {account_email or 'Not configured'}",
+            f"Services:         {service_count} services found",
+            f"",
+            f"Common operations:",
+            f"  client.list_services()                    — Discover available services",
+            f"  client.chat('datasite/service', messages=[])       — Chat with a service",
+            f"  client.search('datasite/service', 'message')       — Search with a service",
+            f"  client.register_accounting(email)         — Register account",
+            f"  client.connect_accounting(email, password) — Connect account"
+        ]
+        
+        return "\n".join(lines)
+    
+    def _repr_html_(self) -> str:
+        """Display HTML widget in Jupyter environments - same as show()."""
+        # Get status information
+        syftbox_status = "Running" if self.config_manager.is_syftbox_running() else "Not Running"
+        syftbox_path = str(self.config.data_dir)
+        cache_server = self.config.cache_server_url
+        account_email = self.accounting_client.get_email() if self._account_configured else None
+        
+        # Count available services
+        try:
+            services = self.list_services()
+            service_count = len(services) if services else 0
+        except:
+            service_count = 0
+        
+        # Build HTML widget with minimal notebook-like styling (same as show())
+        html = '''
+        <style>
+            .syfthub-widget {
+                font-family: system-ui, -apple-system, sans-serif;
+                padding: 12px 0;
+                color: #333;
+                line-height: 1.5;
+            }
+            .widget-title {
+                font-size: 14px;
+                font-weight: 600;
+                margin-bottom: 12px;
+                color: #333;
+            }
+            .status-line {
+                display: flex;
+                align-items: center;
+                margin: 6px 0;
+                font-size: 13px;
+            }
+            .status-label {
+                color: #666;
+                min-width: 140px;
+                margin-right: 12px;
+            }
+            .status-value {
+                font-family: monospace;
+                color: #333;
+            }
+            .status-badge {
+                display: inline-block;
+                padding: 2px 8px;
+                border-radius: 3px;
+                font-size: 11px;
+                margin-left: 8px;
+            }
+            .badge-ready {
+                background: #d4edda;
+                color: #155724;
+            }
+            .badge-not-ready {
+                background: #f8d7da;
+                color: #721c24;
+            }
+            .docs-section {
+                margin-top: 16px;
+                padding-top: 12px;
+                border-top: 1px solid #e0e0e0;
+                font-size: 12px;
+                color: #666;
+            }
+            .command-code {
+                font-family: monospace;
+                background: #f5f5f5;
+                padding: 1px 4px;
+                border-radius: 2px;
+                color: #333;
+            }
+        </style>
+        '''
+        
+        # Determine badges
+        syftbox_badge = '<span class="status-badge badge-ready">Running</span>' if syftbox_status == "Running" else '<span class="status-badge badge-not-ready">Not Running</span>'
+        account_badge = '<span class="status-badge badge-ready">Configured</span>' if self._account_configured else '<span class="status-badge badge-not-ready">Not Configured</span>'
+        
+        html += f'''
+        <div class="syfthub-widget">
+            <div class="widget-title">
+                SyftHub Client {syftbox_badge}
+            </div>
+            
+            <div class="status-line">
+                <span class="status-label">SyftBox Path:</span>
+                <span class="status-value">{syftbox_path}</span>
+            </div>
+            
+            <div class="status-line">
+                <span class="status-label">Cache Server:</span>
+                <span class="status-value">{cache_server}</span>
+            </div>
+            
+            <div class="status-line">
+                <span class="status-label">Account:</span>
+                <span class="status-value">{account_email or "Not configured"}</span>
+                {account_badge}
+            </div>
+            
+            <div class="status-line">
+                <span class="status-label">Services Found:</span>
+                <span class="status-value">{service_count} services</span>
+            </div>
+            
+            <div class="docs-section">
+                <div style="margin-bottom: 8px; font-weight: 500;">Common operations:</div>
+                <div style="line-height: 1.8;">
+                    <span class="command-code">client.list_services()</span> — Discover available services<br>
+                    <span class="command-code">client.chat("datasite/service", "message")</span> — Chat with a service<br>
+                    <span class="command-code">client.search("datasite/service", "message")</span> — Search with a service<br>
+                    <span class="command-code">client.register_accounting(email)</span> — Register account<br>
+                    <span class="command-code">client.connect_accounting(email, password)</span> — Connect account
+                </div>
+            </div>
+        </div>
+        '''
+        
+        return html
     
     # Updated Service Usage Methods
     def clear_cache(self):
         """Clear the service discovery cache."""
-        self.scanner.clear_cache()
+        self._scanner.clear_cache()
     
     # Private helper methods
     def _extract_request_parameters(self, request_schema: Dict[str, Any], all_schemas: Dict[str, Any]) -> Dict[str, Any]:
@@ -898,7 +1425,7 @@ class Client:
         elif health_check == "never":
             return False
         elif health_check == "auto":
-            return service_count <= self.auto_health_check_threshold
+            return service_count <= self._auto_health_check_threshold
         else:
             raise ValueError(f"Invalid health_check value: {health_check}")
     
@@ -970,7 +1497,7 @@ class Client:
         
         return "\n".join(lines)
 
-    def _format_search_context(self, results: List[DocumentResult], format_type: str = "frontend") -> str:
+    def format_search_context(self, results: List[DocumentResult], format_type: str = "simple") -> str:
         """Format search results as context for chat injection.
         
         Args:
@@ -1004,7 +1531,7 @@ class Client:
         else:
             raise ValidationError(f"Unknown context format: {format_type}")
 
-    def _remove_duplicate_results(self, results: List[DocumentResult]) -> List[DocumentResult]:
+    def remove_duplicate_results(self, results: List[DocumentResult]) -> List[DocumentResult]:
         """Remove duplicate results based on content similarity.
         
         Args:
@@ -1051,7 +1578,7 @@ class Client:
         
         # Service requires payment - ensure accounting is set up
         if not self.is_accounting_configured():
-            if self.auto_setup_accounting:
+            if self._auto_setup_accounting:
                 print(f"\nPayment Required")
                 print(f"Service '{service.name}' costs ${service_info.pricing} per request")
                 print(f"Datasite: {service.datasite}")
@@ -1062,8 +1589,6 @@ class Client:
                     if response in ['y', 'yes']:
                         # Interactive setup would go here
                         print("Please use below to configure:\n")
-                        print("     await client.register_accounting_async(email, password) to configure.\n")
-                        print("Or:\n")
                         print("     client.register_accounting(email, password) to configure.")
                         return None
                     else:
