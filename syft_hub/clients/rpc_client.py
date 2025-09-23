@@ -91,7 +91,7 @@ class SyftBoxRPCClient(SyftBoxAPIClient):
             RPCError: For RPC-specific errors
             PollingTimeoutError: When polling times out
         """
-        
+
         if args is None:
             args = RequestArgs()
             
@@ -128,57 +128,31 @@ class SyftBoxRPCClient(SyftBoxAPIClient):
             if payload is not None:
                 request_data = payload.copy()
                 request_headers["Content-Type"] = "application/json"
-                
-            # Handle accounting token injection independently
-            # if args.is_accounting:
-            #     if request_data is None:
-            #         request_data = {}
-                
-            #     # Always include user email for identification
-            #     request_data["user_email"] = self.from_email
-            #     request_headers["Content-Type"] = "application/json"
-                
-            #     if self.accounting_client.is_configured():
-            #         # Add transaction token for paid services
-            #         try:
-            #             recipient_email = syft_url.split('//')[1].split('/')[0]
-            #             transaction_token = await self.accounting_client.create_transaction_token(
-            #                 recipient_email=recipient_email
-            #             )
-            #             request_data["transaction_token"] = transaction_token
-            #             logger.debug(f"Added accounting token for payment to {recipient_email}")
-                            
-            #         except Exception as e:
-            #             raise TransactionTokenCreationError(f"Failed to create accounting token: {e}", recipient_email=recipient_email)
-            #     else:
-            #         # Guest mode - no transaction token available
-            #         logger.debug(f"Guest mode request to {syft_url.split('//')[1].split('/')[0]} - no accounting token available")
             
             # Handle accounting token injection independently
             if args.is_accounting:
                 recipient_email, service_identifier = self._parse_service_info_from_url(syft_url)
-                
                 if request_data is None:
                     request_data = {}
                 
-                # Always include user email for identification
-                request_data["user_email"] = self.from_email
-                request_headers["Content-Type"] = "application/json"
-                
                 if self.accounting_client.is_configured():
-                    # Add transaction token for paid services
+                    # Use accounting email as sender when we have accounting tokens
+                    accounting_email = self.accounting_client.get_email()
+                    request_data["user_email"] = accounting_email
+                    
                     try:
+                        recipient_email = syft_url.split('//')[1].split('/')[0]
                         transaction_token = await self.accounting_client.create_transaction_token(
                             recipient_email=recipient_email
                         )
                         request_data["transaction_token"] = transaction_token
                         logger.debug(f"Added accounting token for {service_identifier}")
-                            
                     except Exception as e:
                         raise TransactionTokenCreationError(f"Failed to create accounting token: {e}", recipient_email=recipient_email)
                 else:
-                    # Guest mode - no transaction token available
-                    logger.info(f"Guest mode request to {service_identifier} - no accounting token available")
+                    # Guest mode - use the current from_email
+                    request_data["user_email"] = self.from_email
+                    logger.debug(f"Guest mode request to {service_identifier} - no accounting token available")
 
             # Make the unified request
             response = await self.http_client.request(
@@ -379,9 +353,13 @@ class SyftBoxRPCClient(SyftBoxAPIClient):
         Returns:
             Health response data
         """
+
+        # Health checks don't need auth or accounting - use guest mode
+        health_args = RequestArgs(is_accounting=False)
+
         endpoints = ServiceEndpoints(service_info.datasite, service_info.name)
         syft_url = endpoints.health_url()
-        return await self.call_rpc(syft_url, payload=None, method="GET", show_spinner=False)
+        return await self.call_rpc(syft_url, payload=None, method="GET", show_spinner=False, args=health_args)
     
     async def call_chat(self, service_info: ServiceInfo, request_data: Dict[str, Any]) -> Dict[str, Any]:
         """Call the chat endpoint of a service.
