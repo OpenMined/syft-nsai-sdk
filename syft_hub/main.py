@@ -1,5 +1,5 @@
 """
-Main SyftBox NSAI SDK client
+Main Syft Hub SDK client
 """
 import json
 import os
@@ -24,7 +24,7 @@ from .core.exceptions import (
     ValidationError,
 )
 from .discovery import FastScanner, MetadataParser, ServiceFilter, FilterCriteria
-from .clients import SyftBoxRPCClient, AccountingClient
+from .clients import SyftBoxRPCClient, AccountingClient, SyftBoxAuthClient
 from .services import ChatService, SearchService, HealthMonitor, check_service_health, batch_health_check
 from .models import ChatResponse, SearchResponse, DocumentResult, ServicesList, ServiceInfo
 from .utils.formatting import format_services_table, format_service_details
@@ -72,6 +72,14 @@ class Client:
         # Initialize account state
         self._account_configured = False
 
+        # Set up SyftBox authentication client using the loaded config
+        self.syftbox_auth_client, is_auth_configured = SyftBoxAuthClient.setup_auth_discovery(self.config)
+        
+        if is_auth_configured:
+            logger.info(f"SyftBox authentication configured for {self.syftbox_auth_client.get_user_email()}")
+        else:
+            logger.info("Using guest mode - no SyftBox authentication found")
+
         # Set up accounting client - check for existing credentials
         if accounting_client:
             self.accounting_client = accounting_client
@@ -111,9 +119,10 @@ class Client:
         self.rpc_client = SyftBoxRPCClient(
             cache_server_url=server_url,
             accounting_client=self.accounting_client,
+            syftbox_auth_client=self.syftbox_auth_client,
         )
         
-        # Set up service scanner
+        # Set up discovery services
         self._scanner = FastScanner(self.config)
         self._parser = MetadataParser()
         

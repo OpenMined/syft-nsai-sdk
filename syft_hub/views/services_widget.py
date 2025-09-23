@@ -447,7 +447,7 @@ def get_services_widget_html(
                 
                 const pricing = (service.min_pricing === 0 || service.min_pricing === undefined) ? 
                     '<span class="badge badge-free">Free</span>' : 
-                    `<span class="badge badge-paid">$$${{service.min_pricing.toFixed(3)}}</span>`;
+                    `<span class="badge badge-paid">$${{service.min_pricing.toFixed(3)}}</span>`;
                 
                 const status = service.health_status ? 
                     `<span class="badge badge-${{service.health_status}}">${{service.health_status}}</span>` :

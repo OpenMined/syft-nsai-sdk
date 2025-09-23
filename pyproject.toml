@@ -33,7 +33,7 @@ dependencies = [
     "requests>=2.32.3",
     "sqlmodel>=0.0.24",
     "typer>=0.15.2",
-    "python-dotenv>=1.1.1",
+    "python-dotenv>=1.1.0",
     "pydantic-settings>=2.10.1",
     "syft-accounting-sdk @ git+https://github.com/OpenMined/accounting-sdk.git",
     "PyJWT>=2.10.1",
