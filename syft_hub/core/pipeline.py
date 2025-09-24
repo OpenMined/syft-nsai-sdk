@@ -461,6 +461,7 @@ pipeline = client.pipeline(
             message_count=message_count
         )
     
+    
     def run(self, messages: List[Dict[str, str]], continue_without_results: bool = False) -> PipelineResult:
         """Execute the pipeline synchronously
         
@@ -683,3 +684,84 @@ pipeline = client.pipeline(
             })
         
         return enhanced_messages
+    
+    def interactive_run(self, max_turns: int = 10) -> None:
+        """
+        Interactive chat session with the pipeline.
+        
+        Args:
+            max_turns: Maximum number of conversation turns (default: 10)
+        """
+        print("🚀 Starting interactive pipeline session")
+        print(f"📊 Data sources: {', '.join([ds.name for ds in self.data_sources])}")
+        print(f"🤖 Synthesizer: {self.synthesizer.name if self.synthesizer else 'Not configured'}")
+        print("💬 Type 'exit' or 'quit' to end the session\n")
+        
+        # Validate pipeline is configured
+        try:
+            self.validate()
+        except ValidationError as e:
+            print(f"❌ Pipeline not configured: {e}")
+            return
+        
+        message_history = []
+        turn_count = 0
+        
+        while turn_count < max_turns:
+            # Get user input
+            print(f"\n{'='*50}")
+            print(f"User (turn {turn_count + 1}/{max_turns}):")
+            try:
+                user_input = input(">>> ").strip()
+            except (EOFError, KeyboardInterrupt):
+                print("\n\n👋 Session ended by user")
+                break
+            
+            # Check for exit commands
+            if user_input.lower() in ['exit', 'quit', 'q']:
+                print("\n👋 Ending session")
+                break
+            
+            # Skip empty inputs
+            if not user_input:
+                print("⚠️  Please enter a message")
+                continue
+            
+            # Add user message to history
+            message_history.append({"role": "user", "content": user_input})
+            turn_count += 1
+            
+            # Show processing indicator
+            print(f"\n{'='*50}")
+            print("Pipeline: [Processing...]")
+            
+            try:
+                # Run the pipeline
+                result = self.run(messages=message_history)
+                
+                # Extract and display response
+                if result.response and result.response.message:
+                    response_content = result.response.message.content
+                    message_history.append({"role": "assistant", "content": response_content})
+                    
+                    # Clear the processing line and show response
+                    print(f"\rPipeline:{'':20}")  # Clear processing indicator
+                    print(f"\rPipeline:\n{response_content}")
+                    
+                    # Show cost if available
+                    if hasattr(result, 'cost') and result.cost > 0:
+                        print(f"\n💰 Cost: ${result.cost:.4f}")
+                else:
+                    print("\r❌ No response generated")
+                    
+            except Exception as e:
+                print(f"\r❌ Error: {e}")
+                logger.error(f"Interactive run error: {e}", exc_info=True)
+        
+        if turn_count >= max_turns:
+            print(f"\n⚠️  Maximum turns ({max_turns}) reached")
+        
+        print("\n📊 Session Summary:")
+        print(f"  • Total turns: {turn_count}")
+        print(f"  • Messages exchanged: {len(message_history)}")
+        print("\n👋 Interactive session ended")
