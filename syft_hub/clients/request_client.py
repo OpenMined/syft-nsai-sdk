@@ -203,17 +203,11 @@ class HTTPClient:
         Raises:
             NetworkError: For network-related failures
         """
-        # DEBUG: Log what's actually being passed to httpx
-        logger.debug(f"HTTPClient._request called with:")
-        logger.debug(f"  method: {method}")
-        logger.debug(f"  url: {url}")
-        logger.debug(f"  kwargs: {kwargs}")
         
         last_exception = None
         
         for attempt in range(self.max_retries + 1):
             try:
-                logger.debug(f"Making httpx request: {method} {url}")
                 response = await self.client.request(method, url, **kwargs)
                 
                 # Log successful request

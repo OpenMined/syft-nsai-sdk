@@ -13,6 +13,7 @@ from ..core.exceptions import NetworkError, RPCError, PollingTimeoutError, Polli
 from ..models.service_info import ServiceInfo
 from ..utils.spinner import AsyncSpinner
 from .accounting_client import AccountingClient
+from .auth_client import SyftBoxAuthClient
 from .endpoint_client import ServiceEndpoints
 from .request_client import SyftBoxAPIClient, HTTPClient, RequestArgs
 
@@ -27,6 +28,7 @@ class SyftBoxRPCClient(SyftBoxAPIClient):
             max_poll_attempts: int = 30,
             poll_interval: float = 3.0,
             accounting_client: Optional[AccountingClient] = None,
+            syftbox_auth_client: Optional[SyftBoxAuthClient] = None,
             http_client: Optional[HTTPClient] = None,
         ):
         """Initialize RPC client.
@@ -37,19 +39,29 @@ class SyftBoxRPCClient(SyftBoxAPIClient):
             max_poll_attempts: Maximum polling attempts for async responses
             poll_interval: Seconds between polling attempts
             accounting_client: Optional accounting client for payments
+            syftbox_auth_client: Optional SyftBox auth client for authentication
             http_client: Optional HTTP client instance
         """
         # Initialize parent SyftBoxAPIClient
         super().__init__(cache_server_url, http_client)
         
         # RPC-specific configuration
-        self.from_email = "guest@syft.org" or (accounting_client.get_email() if accounting_client else None)
         self.max_poll_attempts = max_poll_attempts
         self.poll_interval = poll_interval
         self.timeout = timeout
         
-        # Accounting client
+        # Authentication and accounting clients
         self.accounting_client = accounting_client or AccountingClient()
+        self.syftbox_auth_client = syftbox_auth_client or SyftBoxAuthClient()
+        
+        # Get user email from SyftBox auth (with guest fallback)
+        self.from_email = self.syftbox_auth_client.get_user_email()
+    
+    async def close(self):
+        """Close client and cleanup resources."""
+        await super().close()
+        if self.syftbox_auth_client:
+            await self.syftbox_auth_client.close()
     
     async def call_rpc(self, 
                     syft_url: str, 
@@ -79,12 +91,14 @@ class SyftBoxRPCClient(SyftBoxAPIClient):
             RPCError: For RPC-specific errors
             PollingTimeoutError: When polling times out
         """
+
         if args is None:
             args = RequestArgs()
             
         try:
             # Build base query parameters for SyftBox
             syftbox_params = {
+                "suffix-sender": "true",
                 "x-syft-url": syft_url,
                 "x-syft-from": self.from_email
             }
@@ -97,38 +111,51 @@ class SyftBoxRPCClient(SyftBoxAPIClient):
             if query_params:
                 syftbox_params.update(query_params)
 
-            # Prepare request data
-            request_data = None
+            # Prepare request headers
             request_headers = {
                 "Accept": "application/json",
                 "x-syft-from": self.from_email,
                 **(headers or {})
             }
+            
+            # Add SyftBox authentication if available
+            auth_token = await self.syftbox_auth_client.get_auth_token()
+            if auth_token:
+                request_headers["Authorization"] = f"Bearer {auth_token}"
 
-            # Handle payload if provided
+            # Prepare request data
+            request_data = None
             if payload is not None:
                 request_data = payload.copy()
                 request_headers["Content-Type"] = "application/json"
-                
+            
             # Handle accounting token injection independently
-            if args.is_accounting and self.accounting_client.is_configured():
-                try:
-                    recipient_email = syft_url.split('//')[1].split('/')[0]
-                    transaction_token = await self.accounting_client.create_transaction_token(
-                        recipient_email=recipient_email
-                    )
-                    if request_data is None:
-                        request_data = {}
-                    request_data["transaction_token"] = transaction_token
-                    # request_data["email"] = user_email
-                    request_headers["Content-Type"] = "application/json"
-                        
-                except Exception as e:
-                    raise TransactionTokenCreationError(f"Failed to create accounting token: {e}", recipient_email=recipient_email)
+            if args.is_accounting:
+                recipient_email, service_identifier = self._parse_service_info_from_url(syft_url)
+                if request_data is None:
+                    request_data = {}
+                
+                if self.accounting_client.is_configured():
+                    # Use accounting email as sender when we have accounting tokens
+                    accounting_email = self.accounting_client.get_email()
+                    request_data["user_email"] = accounting_email
+                    
+                    try:
+                        recipient_email = syft_url.split('//')[1].split('/')[0]
+                        transaction_token = await self.accounting_client.create_transaction_token(
+                            recipient_email=recipient_email
+                        )
+                        request_data["transaction_token"] = transaction_token
+                        logger.debug(f"Added accounting token for {service_identifier}")
+                    except Exception as e:
+                        raise TransactionTokenCreationError(f"Failed to create accounting token: {e}", recipient_email=recipient_email)
+                else:
+                    # Guest mode - use the current from_email
+                    request_data["user_email"] = self.from_email
+                    logger.debug(f"Guest mode request to {service_identifier} - no accounting token available")
 
             # Make the unified request
             response = await self.http_client.request(
-                # self._build_url("/api/v1/send/msg"),
                 f"{self.base_url}/api/v1/send/msg",
                 method,
                 params=syftbox_params,
@@ -168,6 +195,7 @@ class SyftBoxRPCClient(SyftBoxAPIClient):
                 # Error response
                 try:
                     error_data = response.json()
+                    logger.debug(f"Error response data: {error_data}")
                     error_msg = error_data.get("message", f"HTTP {response.status_code}")
                     logger.error(f"Got error response from {error_msg}")
                 except:
@@ -218,13 +246,21 @@ class SyftBoxRPCClient(SyftBoxAPIClient):
         try:
             for attempt in range(1, self.max_poll_attempts + 1):
                 try:
+                    # Prepare polling headers (include auth if available)
+                    poll_headers = {
+                        "Accept": "application/json",
+                        "Content-Type": "application/json"
+                    }
+                    
+                    # Add SyftBox auth token for polling requests too
+                    auth_token = await self.syftbox_auth_client.get_auth_token()
+                    if auth_token:
+                        poll_headers["Authorization"] = f"Bearer {auth_token}"
+
                     # Make polling request
                     response = await self.http_client.get(
-                        poll_url,  # Use poll_url instead of poll_url_path
-                        headers={
-                            "Accept": "application/json",
-                            "Content-Type": "application/json"
-                        }
+                        poll_url,
+                        headers=poll_headers
                     )
 
                     if response.status_code == 200:
@@ -317,9 +353,13 @@ class SyftBoxRPCClient(SyftBoxAPIClient):
         Returns:
             Health response data
         """
+
+        # Health checks don't need auth or accounting - use guest mode
+        health_args = RequestArgs(is_accounting=False)
+
         endpoints = ServiceEndpoints(service_info.datasite, service_info.name)
         syft_url = endpoints.health_url()
-        return await self.call_rpc(syft_url, payload=None, method="GET", show_spinner=False)
+        return await self.call_rpc(syft_url, payload=None, method="GET", show_spinner=False, args=health_args)
     
     async def call_chat(self, service_info: ServiceInfo, request_data: Dict[str, Any]) -> Dict[str, Any]:
         """Call the chat endpoint of a service.
@@ -364,8 +404,6 @@ class SyftBoxRPCClient(SyftBoxAPIClient):
 
         search_args = RequestArgs(
             is_accounting=True,  # Enable accounting for search
-            # timeout=60.0,        # Longer timeout for search
-            # skip_loader=False    # Show spinner
         )
 
         endpoints = ServiceEndpoints(service_info.datasite, service_info.name)
@@ -400,48 +438,24 @@ class SyftBoxRPCClient(SyftBoxAPIClient):
             method=method
         )
     
-    # def configure_accounting(self, service_url: str, email: str, password: str):
-    #     """Configure accounting client.
+    def _parse_service_info_from_url(self, syft_url: str) -> tuple[str, str]:
+        """Parse datasite email and service name from syft URL.
         
-    #     Args:
-    #         service_url: Accounting service URL
-    #         email: User email
-    #         password: User password
-    #     """
-    #     self.accounting_client.configure(service_url, email, password)
-    
-    # def has_accounting_client(self) -> bool:
-    #     """Check if accounting client is configured."""
-    #     return self.accounting_client.is_configured()
-    
-    # def get_accounting_email(self) -> Optional[str]:
-    #     """Get accounting email."""
-    #     return self.accounting_client.get_email()
-    
-    # async def get_account_balance(self) -> float:
-    #     """Get current account balance.
-        
-    #     Returns:
-    #         Account balance
-    #     """
-    #     return await self.accounting_client.get_account_balance()
-    
-    # def configure(self, **kwargs):
-    #     """Update client configuration.
-        
-    #     Args:
-    #         **kwargs: Configuration options to update
-    #     """
-    #     if "cache_server_url" in kwargs:
-    #         self.base_url = kwargs["cache_server_url"].rstrip('/')
-    #     if "from_email" in kwargs:
-    #         self.from_email = kwargs["from_email"]
-    #     if "timeout" in kwargs:
-    #         self.timeout = kwargs["timeout"]
-    #         # Update the HTTP client timeout as well
-    #         if hasattr(self.http_client, 'timeout'):
-    #             self.http_client.timeout = kwargs["timeout"]
-    #     if "max_poll_attempts" in kwargs:
-    #         self.max_poll_attempts = kwargs["max_poll_attempts"]
-    #     if "poll_interval" in kwargs:
-    #         self.poll_interval = kwargs["poll_interval"]
+        Args:
+            syft_url: URL like 'syft://callis@openmined.org/app_data/carl-model/rpc/chat'
+            
+        Returns:
+            Tuple of (recipient_email, service_identifier)
+        """
+        try:
+            # parse datasite
+            url_parts = syft_url.split('//')
+            if len(url_parts) > 1:
+                path_parts = url_parts[1].split('/')
+                recipient_email = path_parts[0]  # callis@openmined.org
+                service_name = path_parts[2] if len(path_parts) > 2 else "unknown"  # carl-model
+                return recipient_email, f"{recipient_email}/{service_name}"
+            else:
+                return "unknown", "unknown"
+        except (IndexError, AttributeError):
+            return "unknown", "unknown"

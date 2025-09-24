@@ -14,6 +14,7 @@ from syft_accounting_sdk import UserClient, ServiceException
 from ..models.validation import UserAccountModel
 from ..core.types import APIException
 from ..core.exceptions import PaymentError, AuthenticationError
+from ..core.settings import settings
 
 logger = logging.getLogger(__name__)
 
@@ -22,16 +23,17 @@ class AccountingClient:
     """Client for handling accounting operations."""
     
     def __init__(self, 
-                 accounting_url: str = "https://syftaccounting.centralus.cloudapp.azure.com/",
+                 accounting_url: str = None,
                  credentials: Optional[Dict[str, str]] = None
         ):
         """Initialize accounting client.
         
         Args:
-            accounting_url: URL of the accounting service
+            accounting_url: URL of the accounting service (defaults to settings)
             credentials: Dict with 'email', 'password', and optionally 'accounting_url'
         """
-        self.accounting_url = accounting_url
+        # Use settings default if no URL provided
+        self.accounting_url = accounting_url or settings.accounting_url
         self._credentials = credentials
         self._client = None
     
@@ -103,51 +105,6 @@ class AccountingClient:
                     f"Failed to create user account: {e.message} with {e.status_code}",
                     status_code=e.status_code,
                 )
-        # return user, user_pwd
-        # Create UserAccountModel object with required fields
-        # return UserAccountModel(
-        #     email=email,
-        #     password=user_pwd,
-        #     organization=organization,
-        #     balance=getattr(user, 'balance', 0.0)  # Default to 0.0 if not available
-        # )
-
-    # def add_or_update_credentials(
-    #     self,
-    #     email: str,
-    #     organization: Optional[str] = None,
-    #     password: Optional[str] = None,
-    # ) -> UserAccountModel:
-    #     """Add or update user account credentials to the repository."""
-
-    #     try:
-    #         credentials = self.repository.add_or_update_credentials(
-    #             email=email,
-    #             password=password,
-    #             accounting_url=self.accounting_config.url,
-    #             organization=organization,
-    #         )
-    #     except Exception as e:
-    #         logger.error(f"Failed to add or update credentials: {e}")
-    #         raise APIException(
-    #             f"Failed to add or update credentials: {e}",
-    #             status_code=500,
-    #         )
-
-    #     try:
-    #         user_info = self.client.get_user_info()
-    #     except ServiceException as e:
-    #         raise APIException(
-    #             f"Failed to get user info: {e}",
-    #             status_code=e.status_code,
-    #         )
-
-    #     return UserAccountModel(
-    #         email=credentials.email,
-    #         organization=credentials.organization,
-    #         balance=user_info.balance,
-    #         password=credentials.password,
-    #     )
 
     def register_accounting(self, email: str, password: Optional[str] = None, organization: Optional[str] = None) -> UserAccountModel:
         """Register a new accounting user account.
@@ -563,7 +520,6 @@ class AccountingClient:
                 "email": self._credentials["email"],
                 "password": self._credentials["password"],
                 "created_at": datetime.now().isoformat(),
-                # "organization": self._credentials["organization"],
             }
             
             with open(config_path, 'w') as f:
@@ -593,7 +549,7 @@ class AccountingClient:
         except AuthenticationError:
             pass
         
-        # No credentials found
+        # No credentials found - create client with default URL from settings
         return cls(), False  # Not configured
 
     @classmethod
@@ -643,18 +599,19 @@ class AccountingClient:
         """
         import os
         
-        accounting_url = os.getenv("SYFTBOX_ACCOUNTING_URL", "https://syftaccounting.centralus.cloudapp.azure.com/")
+        accounting_url = os.getenv("SYFTBOX_ACCOUNTING_URL")
         email = os.getenv("SYFTBOX_ACCOUNTING_EMAIL")
         password = os.getenv("SYFTBOX_ACCOUNTING_PASSWORD")
         
-        if not all([accounting_url, email, password]):
+        if not all([email, password]):
             missing = []
-            if not accounting_url: missing.append("SYFTBOX_ACCOUNTING_URL")
             if not email: missing.append("SYFTBOX_ACCOUNTING_EMAIL") 
             if not password: missing.append("SYFTBOX_ACCOUNTING_PASSWORD")
             
             raise AuthenticationError(f"Missing environment variables: {', '.join(missing)}")
         
         client = cls()
-        client._configure(accounting_url, email, password)
+        # Use provided URL or fall back to settings default
+        effective_url = accounting_url or settings.accounting_url
+        client._configure(effective_url, email, password)
         return client

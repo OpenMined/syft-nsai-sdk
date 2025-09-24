@@ -1,5 +1,5 @@
 """
-Clean settings configuration for Syft NSAI SDK.
+Settings configuration for Syft hub SDK.
 """
 import os
 
@@ -12,6 +12,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 # Load environment variables from .env file
 load_dotenv(override=True)
 
+DEFAULT_ACCOUNTING_SERVICE_URL = "https://syftaccounting.centralus.cloudapp.azure.com"
+
 class Settings(BaseSettings):
     """Application settings with environment variable support."""
     
@@ -20,8 +22,10 @@ class Settings(BaseSettings):
     debug: bool = Field(False, env="DEBUG")
     log_level: str = Field("INFO", env="LOG_LEVEL")
     
-    # Security
-    # jwt_secret: str = Field(..., env="JWT_SECRET")
+    # accounting service
+    accounting_url: str = Field(
+        DEFAULT_ACCOUNTING_SERVICE_URL, env="SYFTBOX_ACCOUNTING_URL"
+    )
     
     # SyftBox paths
     syftbox_config_path: Path = Field("~/.syftbox/config.json", env="SYFTBOX_CONFIG_PATH")

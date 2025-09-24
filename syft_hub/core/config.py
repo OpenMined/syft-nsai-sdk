@@ -307,7 +307,7 @@ class ConfigManager:
         """
         return ProcessValidator.is_syftbox_running()
     
-    def get_installation_instructions(self) -> str:
+    def get_installation_instructions1(self) -> str:
         """Instructions for installing SyftBox.
         
         Returns:
@@ -341,6 +341,44 @@ class ConfigManager:
                 "     import syft_installer as si\n"
                 "     si.install_and_run_if_needed()\n"
                 "2. If installed in custom location, provide syftbox_config_path parameter\n\n"
+                "For detailed instructions, visit the official repositories above."
+            )
+
+    def get_installation_instructions(self) -> str:
+        """Instructions for installing SyftBox.
+        
+        Returns:
+            Installation instructions string
+        """
+        # Determine what paths were actually checked
+        default_path = Path.home() / SYFTBOX_DIR / CONFIG_FILENAME
+        
+        if self.config_path and self.config_path != default_path:
+            # Custom path was explicitly provided
+            return (
+                f"SyftBox config not found at custom path: {self.config_path}\n\n"
+                "Options:\n"
+                "1. Verify the custom config path is correct\n"
+                "2. Use default location by calling Client() without syftbox_config_path parameter\n"
+                "3. Install SyftBox if not installed:\n"
+                f"   • Desktop App: {DESKTOP_RELEASES_URL}\n"
+                f"   • Quick install (terminal): curl -fsSL {QUICK_INSTALL_URL} | sh\n"
+                "4. Run 'syftbox setup' to create config"
+            )
+        else:
+            # No custom path provided, checked default location
+            return (
+                f"SyftBox config not found at default location: {default_path}\n\n"
+                "This means SyftBox is not installed or not set up on this system.\n\n"
+                "Options:\n"
+                "1. Install SyftBox:\n"
+                f"   • Desktop App: {DESKTOP_RELEASES_URL}\n"
+                f"   • Quick install (terminal): curl -fsSL {QUICK_INSTALL_URL} | sh\n"
+                "   • Google Colab: Run the following in a cell:\n"
+                "     !pip install syft-installer\n"
+                "     import syft_installer as si\n"
+                "     si.install_and_run_if_needed()\n"
+                "2. If SyftBox is installed elsewhere, provide syftbox_config_path parameter\n\n"
                 "For detailed instructions, visit the official repositories above."
             )
     
