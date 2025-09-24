@@ -1,0 +1,510 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Services - SyftHub SDK</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+</head>
+<body>
+    <!-- Header -->
+    <header class="header">
+        <div class="header-container">
+            <a href="index.html" class="logo">
+                <svg width="32" height="32" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <rect width="100" height="100" rx="20" fill="#000"/>
+                    <path d="M30 35 L50 20 L70 35 L70 65 L50 80 L30 65 Z" stroke="#fff" stroke-width="3" fill="none"/>
+                    <circle cx="50" cy="50" r="8" fill="#fff"/>
+                </svg>
+                <span>SyftHub SDK</span>
+            </a>
+            <nav class="nav">
+                <a href="index.html">Home</a>
+                <a href="authentication.html">Authentication</a>
+                <a href="ai-services.html" class="active">AI Services</a>
+                <a href="https://github.com/OpenMined/syft-nsai-sdk" target="_blank" class="github-link">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
+                    </svg>
+                </a>
+            </nav>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="main">
+        <section class="content-section">
+            <div class="section-header">
+                <h1>AI Services</h1>
+                <p>Discover, test, and compose AI services on the SyftHub network</p>
+            </div>
+
+            <!-- Service Discovery -->
+            <div class="linear-section">
+                <h2>Service Discovery</h2>
+                <p>Find and explore available AI services on the network:</p>
+                
+                <pre><code><span class="keyword">from</span> syft_hub <span class="keyword">import</span> Client
+
+client = Client()
+
+<span class="comment"># List all available services</span>
+services = client.list_services()
+<span class="keyword">print</span>(f<span class="string">"Found {len(services)} services\n"</span>)
+
+<span class="comment"># Display service details</span>
+<span class="keyword">for</span> service <span class="keyword">in</span> services:
+    <span class="keyword">print</span>(f<span class="string">"Name: {service.name}"</span>)
+    <span class="keyword">print</span>(f<span class="string">"Type: {service.type}"</span>)  <span class="comment"># CHAT, SEARCH, or DATA</span>
+    <span class="keyword">print</span>(f<span class="string">"Status: {service.status}"</span>)  <span class="comment"># healthy, degraded, offline</span>
+    <span class="keyword">print</span>(f<span class="string">"Owner: {service.owner}"</span>)
+    <span class="keyword">print</span>(f<span class="string">"Description: {service.description}"</span>)
+    <span class="keyword">print</span>(<span class="string">"-" * 40</span>)</code></pre>
+
+                <p>In Jupyter notebooks, use the interactive widget:</p>
+                <pre><code><span class="comment"># Display services in an interactive table</span>
+client.show_services()  <span class="comment"># Shows filterable, sortable table</span></code></pre>
+
+                <h3>Filtering Services</h3>
+                <p>Filter services by type, status, or other criteria:</p>
+                <pre><code><span class="comment"># Filter by service type</span>
+chat_services = client.list_services(filter={<span class="string">"type"</span>: <span class="string">"CHAT"</span>})
+search_services = client.list_services(filter={<span class="string">"type"</span>: <span class="string">"SEARCH"</span>})
+data_sources = client.list_services(filter={<span class="string">"type"</span>: <span class="string">"DATA"</span>})
+
+<span class="comment"># Filter by status</span>
+healthy_services = client.list_services(filter={<span class="string">"status"</span>: <span class="string">"healthy"</span>})
+
+<span class="comment"># Filter by owner</span>
+openmined_services = client.list_services(filter={<span class="string">"owner"</span>: <span class="string">"*@openmined.org"</span>})
+
+<span class="comment"># Combine filters</span>
+healthy_chat = client.list_services(filter={
+    <span class="string">"type"</span>: <span class="string">"CHAT"</span>,
+    <span class="string">"status"</span>: <span class="string">"healthy"</span>
+})</code></pre>
+            </div>
+
+            <!-- Loading and Testing Services -->
+            <div class="linear-section">
+                <h2>Loading and Testing Services</h2>
+                <p>Load specific services and test their functionality:</p>
+                
+                <pre><code><span class="comment"># Load a specific service by name</span>
+service = client.load_service(<span class="string">"aggregator@openmined.org/claude-sonnet-3.5"</span>)
+
+<span class="comment"># Check service information</span>
+<span class="keyword">print</span>(service)  <span class="comment"># Display service details</span>
+<span class="keyword">print</span>(f<span class="string">"Service Type: {service.type}"</span>)
+<span class="keyword">print</span>(f<span class="string">"Pricing: ${service.price_per_token}"</span>)
+<span class="keyword">print</span>(f<span class="string">"Health Status: {service.health_status}"</span>)
+
+<span class="comment"># Test service availability</span>
+<span class="keyword">if</span> service.is_available():
+    <span class="keyword">print</span>(<span class="string">"Service is ready to use"</span>)
+<span class="keyword">else</span>:
+    <span class="keyword">print</span>(<span class="string">"Service is currently unavailable"</span>)
+
+<span class="comment"># Get service metadata</span>
+metadata = service.get_metadata()
+<span class="keyword">print</span>(f<span class="string">"Model Version: {metadata['model_version']}"</span>)
+<span class="keyword">print</span>(f<span class="string">"Max Tokens: {metadata['max_tokens']}"</span>)
+<span class="keyword">print</span>(f<span class="string">"Supported Languages: {metadata['languages']}"</span>)</code></pre>
+            </div>
+
+            <!-- Chat Services -->
+            <div class="linear-section" id="chat">
+                <h2>Chat Services</h2>
+                <p>Interact with AI models through chat interfaces:</p>
+                
+                <h3>Basic Chat</h3>
+                <pre><code><span class="comment"># Load a chat service</span>
+chat_service = client.load_service(<span class="string">"aggregator@openmined.org/claude-sonnet-3.5"</span>)
+
+<span class="comment"># Single message chat</span>
+response = client.chat_sync(
+    service_name=<span class="string">"aggregator@openmined.org/claude-sonnet-3.5"</span>,
+    messages=[
+        {<span class="string">"role"</span>: <span class="string">"user"</span>, <span class="string">"content"</span>: <span class="string">"What is federated learning?"</span>}
+    ]
+)
+
+<span class="keyword">print</span>(response.content)
+<span class="keyword">print</span>(f<span class="string">"Tokens used: {response.token_count}"</span>)
+<span class="keyword">print</span>(f<span class="string">"Cost: ${response.cost}"</span>)</code></pre>
+
+                <h3>Multi-turn Conversation</h3>
+                <pre><code><span class="comment"># Multi-turn conversation</span>
+messages = [
+    {<span class="string">"role"</span>: <span class="string">"system"</span>, <span class="string">"content"</span>: <span class="string">"You are a helpful AI assistant."</span>},
+    {<span class="string">"role"</span>: <span class="string">"user"</span>, <span class="string">"content"</span>: <span class="string">"What is differential privacy?"</span>},
+    {<span class="string">"role"</span>: <span class="string">"assistant"</span>, <span class="string">"content"</span>: <span class="string">"Differential privacy is..."</span>},
+    {<span class="string">"role"</span>: <span class="string">"user"</span>, <span class="string">"content"</span>: <span class="string">"How does it apply to federated learning?"</span>}
+]
+
+response = client.chat_sync(
+    service_name=<span class="string">"aggregator@openmined.org/gpt-4"</span>,
+    messages=messages,
+    temperature=0.7,
+    max_tokens=500
+)
+
+<span class="keyword">print</span>(response.content)</code></pre>
+
+                <h3>Chat Schema</h3>
+                <p>Understanding the chat message format:</p>
+                <pre><code><span class="comment"># Message schema</span>
+message = {
+    <span class="string">"role"</span>: <span class="string">"user"</span>,  <span class="comment"># "system", "user", or "assistant"</span>
+    <span class="string">"content"</span>: <span class="string">"Your message here"</span>,
+    <span class="string">"name"</span>: <span class="string">"optional_name"</span>,  <span class="comment"># Optional: speaker name</span>
+    <span class="string">"metadata"</span>: {}  <span class="comment"># Optional: additional data</span>
+}
+
+<span class="comment"># Chat response schema</span>
+response = {
+    <span class="string">"content"</span>: <span class="string">"AI response text"</span>,
+    <span class="string">"role"</span>: <span class="string">"assistant"</span>,
+    <span class="string">"model"</span>: <span class="string">"claude-sonnet-3.5"</span>,
+    <span class="string">"token_count"</span>: {
+        <span class="string">"input"</span>: 150,
+        <span class="string">"output"</span>: 200,
+        <span class="string">"total"</span>: 350
+    },
+    <span class="string">"cost"</span>: 0.0035,
+    <span class="string">"finish_reason"</span>: <span class="string">"stop"</span>,  <span class="comment"># "stop", "length", "error"</span>
+    <span class="string">"metadata"</span>: {
+        <span class="string">"model_version"</span>: <span class="string">"2024-01"</span>,
+        <span class="string">"latency_ms"</span>: 1250
+    }
+}</code></pre>
+            </div>
+
+            <!-- Search Services -->
+            <div class="linear-section" id="search">
+                <h2>Search Services</h2>
+                <p>Query data sources with semantic search capabilities:</p>
+                
+                <h3>Basic Search</h3>
+                <pre><code><span class="comment"># Load a search service (data source)</span>
+data_source = client.load_service(<span class="string">"irina@openmined.org/openmined-blog"</span>)
+
+<span class="comment"># Perform a search</span>
+results = client.search_sync(
+    service_name=<span class="string">"irina@openmined.org/openmined-blog"</span>,
+    query=<span class="string">"privacy-preserving machine learning"</span>
+)
+
+<span class="comment"># Process results</span>
+<span class="keyword">for</span> result <span class="keyword">in</span> results.documents:
+    <span class="keyword">print</span>(f<span class="string">"Title: {result.title}"</span>)
+    <span class="keyword">print</span>(f<span class="string">"Score: {result.relevance_score}"</span>)
+    <span class="keyword">print</span>(f<span class="string">"Content: {result.content[:200]}..."</span>)
+    <span class="keyword">print</span>(f<span class="string">"Source: {result.source_url}"</span>)
+    <span class="keyword">print</span>(<span class="string">"-" * 40</span>)</code></pre>
+
+                <h3>Advanced Search Options</h3>
+                <pre><code><span class="comment"># Search with filters and options</span>
+results = client.search_sync(
+    service_name=<span class="string">"researcher@org/papers"</span>,
+    query=<span class="string">"differential privacy"</span>,
+    filters={
+        <span class="string">"date_range"</span>: {<span class="string">"start"</span>: <span class="string">"2023-01-01"</span>, <span class="string">"end"</span>: <span class="string">"2024-12-31"</span>},
+        <span class="string">"document_type"</span>: <span class="string">"research_paper"</span>,
+        <span class="string">"min_relevance"</span>: 0.7
+    },
+    max_results=10,
+    include_metadata=<span class="keyword">True</span>
+)
+
+<span class="keyword">print</span>(f<span class="string">"Found {len(results.documents)} documents"</span>)
+<span class="keyword">print</span>(f<span class="string">"Search took {results.latency_ms}ms"</span>)</code></pre>
+
+                <h3>Search Schema</h3>
+                <p>Understanding search requests and responses:</p>
+                <pre><code><span class="comment"># Search request schema</span>
+search_request = {
+    <span class="string">"query"</span>: <span class="string">"search terms"</span>,
+    <span class="string">"filters"</span>: {
+        <span class="string">"date_range"</span>: {<span class="string">"start"</span>: <span class="string">"2023-01-01"</span>, <span class="string">"end"</span>: <span class="string">"2024-12-31"</span>},
+        <span class="string">"document_type"</span>: <span class="string">"blog_post"</span>,
+        <span class="string">"tags"</span>: [<span class="string">"privacy"</span>, <span class="string">"AI"</span>],
+        <span class="string">"min_relevance"</span>: 0.5
+    },
+    <span class="string">"max_results"</span>: 20,
+    <span class="string">"offset"</span>: 0,
+    <span class="string">"include_metadata"</span>: <span class="keyword">True</span>,
+    <span class="string">"highlight"</span>: <span class="keyword">True</span>
+}
+
+<span class="comment"># Search response schema</span>
+search_response = {
+    <span class="string">"documents"</span>: [
+        {
+            <span class="string">"id"</span>: <span class="string">"doc_123"</span>,
+            <span class="string">"title"</span>: <span class="string">"Document Title"</span>,
+            <span class="string">"content"</span>: <span class="string">"Full document content..."</span>,
+            <span class="string">"relevance_score"</span>: 0.95,
+            <span class="string">"source_url"</span>: <span class="string">"https://example.com/doc"</span>,
+            <span class="string">"metadata"</span>: {
+                <span class="string">"author"</span>: <span class="string">"John Doe"</span>,
+                <span class="string">"date"</span>: <span class="string">"2024-01-15"</span>,
+                <span class="string">"tags"</span>: [<span class="string">"privacy"</span>, <span class="string">"federated"</span>],
+                <span class="string">"word_count"</span>: 1500
+            },
+            <span class="string">"highlights"</span>: [
+                <span class="string">"...privacy-preserving &lt;mark&gt;machine learning&lt;/mark&gt;..."</span>
+            ]
+        }
+    ],
+    <span class="string">"total_results"</span>: 42,
+    <span class="string">"latency_ms"</span>: 150,
+    <span class="string">"service"</span>: <span class="string">"researcher@org/papers"</span>
+}</code></pre>
+            </div>
+
+            <!-- Composing Pipelines -->
+            <div class="linear-section">
+                <h2>Composing Pipelines</h2>
+                <p>Combine multiple services into attribution-aware pipelines:</p>
+                
+                <h3>Basic Pipeline</h3>
+                <pre><code><span class="comment"># Load services</span>
+data_source1 = client.load_service(<span class="string">"university@edu/papers"</span>)
+data_source2 = client.load_service(<span class="string">"company@tech/docs"</span>)
+llm = client.load_service(<span class="string">"aggregator@openmined.org/claude-sonnet-3.5"</span>)
+
+<span class="comment"># Create pipeline</span>
+pipeline = client.pipeline(
+    data_sources=[data_source1, data_source2],
+    synthesizer=llm
+)
+
+<span class="comment"># Execute query</span>
+response = pipeline.run(messages=[
+    {<span class="string">"role"</span>: <span class="string">"user"</span>, <span class="string">"content"</span>: <span class="string">"What are the latest advances in federated learning?"</span>}
+])
+
+<span class="keyword">print</span>(response.content)</code></pre>
+
+                <h3>Advanced Pipeline Configuration</h3>
+                <pre><code><span class="comment"># Configure pipeline with options</span>
+pipeline = client.pipeline(
+    data_sources=[
+        (data_source1, 0.6),  <span class="comment"># 60% weight</span>
+        (data_source2, 0.4)   <span class="comment"># 40% weight</span>
+    ],
+    synthesizer=llm,
+    search_options={
+        <span class="string">"max_results_per_source"</span>: 5,
+        <span class="string">"min_relevance"</span>: 0.7,
+        <span class="string">"parallel_search"</span>: <span class="keyword">True</span>
+    },
+    synthesis_options={
+        <span class="string">"temperature"</span>: 0.7,
+        <span class="string">"max_tokens"</span>: 1000,
+        <span class="string">"include_citations"</span>: <span class="keyword">True</span>
+    }
+)
+
+<span class="comment"># Run with custom parameters</span>
+response = pipeline.run(
+    messages=[{<span class="string">"role"</span>: <span class="string">"user"</span>, <span class="string">"content"</span>: <span class="string">"Your query"</span>}],
+    max_cost=5.0,  <span class="comment"># Stop if cost exceeds $5</span>
+    timeout=30  <span class="comment"># 30 second timeout</span>
+)</code></pre>
+
+                <h3>Pipeline Response Schema</h3>
+                <pre><code><span class="comment"># Pipeline response includes attribution</span>
+pipeline_response = {
+    <span class="string">"content"</span>: <span class="string">"Synthesized answer from multiple sources..."</span>,
+    <span class="string">"sources"</span>: [
+        {
+            <span class="string">"name"</span>: <span class="string">"university@edu/papers"</span>,
+            <span class="string">"contribution"</span>: 65,  <span class="comment"># Percentage contribution</span>
+            <span class="string">"documents_used"</span>: 3,
+            <span class="string">"relevance_score"</span>: 0.89,
+            <span class="string">"cost"</span>: 0.15
+        },
+        {
+            <span class="string">"name"</span>: <span class="string">"company@tech/docs"</span>,
+            <span class="string">"contribution"</span>: 35,
+            <span class="string">"documents_used"</span>: 2,
+            <span class="string">"relevance_score"</span>: 0.76,
+            <span class="string">"cost"</span>: 0.10
+        }
+    ],
+    <span class="string">"total_cost"</span>: 0.45,  <span class="comment"># Total cost in USD</span>
+    <span class="string">"cost_breakdown"</span>: {
+        <span class="string">"search_cost"</span>: 0.25,
+        <span class="string">"synthesis_cost"</span>: 0.20
+    },
+    <span class="string">"model"</span>: <span class="string">"claude-sonnet-3.5"</span>,
+    <span class="string">"tokens_used"</span>: {
+        <span class="string">"search"</span>: 500,
+        <span class="string">"synthesis_input"</span>: 800,
+        <span class="string">"synthesis_output"</span>: 400,
+        <span class="string">"total"</span>: 1700
+    },
+    <span class="string">"latency_ms"</span>: 2500,
+    <span class="string">"citations"</span>: [
+        <span class="string">"[1] Smith et al. (2024). Advances in FL. University Papers."</span>,
+        <span class="string">"[2] Tech Corp. (2024). FL Implementation Guide. Company Docs."</span>
+    ]
+}</code></pre>
+            </div>
+
+            <!-- Attribution Tracking -->
+            <div class="linear-section" id="attribution">
+                <h2>Attribution Tracking</h2>
+                <p>Understanding and working with attribution data:</p>
+                
+                <h3>Accessing Attribution Information</h3>
+                <pre><code><span class="comment"># After running a pipeline</span>
+response = pipeline.run(messages=[...])
+
+<span class="comment"># Display attribution report</span>
+<span class="keyword">print</span>(<span class="string">"=== Attribution Report ==="</span>)
+<span class="keyword">print</span>(f<span class="string">"Query: {messages[0]['content']}\n"</span>)
+
+<span class="comment"># Source contributions</span>
+<span class="keyword">print</span>(<span class="string">"Data Source Contributions:"</span>)
+<span class="keyword">for</span> source <span class="keyword">in</span> response.sources:
+    <span class="keyword">print</span>(f<span class="string">"  • {source.name}:"</span>)
+    <span class="keyword">print</span>(f<span class="string">"    - Contribution: {source.contribution}%"</span>)
+    <span class="keyword">print</span>(f<span class="string">"    - Documents: {source.documents_used}"</span>)
+    <span class="keyword">print</span>(f<span class="string">"    - Relevance: {source.relevance_score:.2f}"</span>)
+    <span class="keyword">print</span>(f<span class="string">"    - Cost: ${source.cost:.4f}"</span>)
+
+<span class="comment"># Cost breakdown</span>
+<span class="keyword">print</span>(f<span class="string">"\nCost Analysis:"</span>)
+<span class="keyword">print</span>(f<span class="string">"  Search: ${response.cost_breakdown['search_cost']}"</span>)
+<span class="keyword">print</span>(f<span class="string">"  Synthesis: ${response.cost_breakdown['synthesis_cost']}"</span>)
+<span class="keyword">print</span>(f<span class="string">"  Total: ${response.total_cost}"</span>)
+
+<span class="comment"># Model attribution</span>
+<span class="keyword">print</span>(f<span class="string">"\nModel Information:"</span>)
+<span class="keyword">print</span>(f<span class="string">"  Model: {response.model}"</span>)
+<span class="keyword">print</span>(f<span class="string">"  Tokens: {response.tokens_used['total']}"</span>)</code></pre>
+
+                <h3>Exporting Attribution Data</h3>
+                <pre><code><span class="keyword">import</span> json
+<span class="keyword">import</span> csv
+
+<span class="comment"># Export to JSON</span>
+attribution_data = response.to_dict()
+<span class="keyword">with</span> open(<span class="string">"attribution_report.json"</span>, <span class="string">"w"</span>) <span class="keyword">as</span> f:
+    json.dump(attribution_data, f, indent=2)
+
+<span class="comment"># Export to CSV</span>
+<span class="keyword">with</span> open(<span class="string">"attribution_report.csv"</span>, <span class="string">"w"</span>, newline=<span class="string">""</span>) <span class="keyword">as</span> f:
+    writer = csv.writer(f)
+    writer.writerow([<span class="string">"Source"</span>, <span class="string">"Contribution %"</span>, <span class="string">"Documents"</span>, <span class="string">"Cost"</span>])
+    <span class="keyword">for</span> source <span class="keyword">in</span> response.sources:
+        writer.writerow([
+            source.name,
+            source.contribution,
+            source.documents_used,
+            source.cost
+        ])
+
+<span class="comment"># Generate citation list</span>
+citations = response.generate_citations(format=<span class="string">"APA"</span>)
+<span class="keyword">for</span> citation <span class="keyword">in</span> citations:
+    <span class="keyword">print</span>(citation)</code></pre>
+            </div>
+
+            <!-- Service Health Monitoring -->
+            <div class="linear-section">
+                <h2>Service Health Monitoring</h2>
+                <p>Monitor service availability and performance:</p>
+                
+                <pre><code><span class="comment"># Check individual service health</span>
+service = client.load_service(<span class="string">"aggregator@openmined.org/claude-sonnet-3.5"</span>)
+health = service.get_health_status()
+
+<span class="keyword">print</span>(f<span class="string">"Status: {health['status']}"</span>)  <span class="comment"># healthy, degraded, offline</span>
+<span class="keyword">print</span>(f<span class="string">"Uptime: {health['uptime_percentage']}%"</span>)
+<span class="keyword">print</span>(f<span class="string">"Average Latency: {health['avg_latency_ms']}ms"</span>)
+<span class="keyword">print</span>(f<span class="string">"Error Rate: {health['error_rate']}%"</span>)
+
+<span class="comment"># Monitor all services</span>
+health_report = client.get_services_health()
+<span class="keyword">for</span> service_name, status <span class="keyword">in</span> health_report.items():
+    <span class="keyword">if</span> status[<span class="string">"status"</span>] != <span class="string">"healthy"</span>:
+        <span class="keyword">print</span>(f<span class="string">"⚠️ {service_name}: {status['status']}"</span>)
+
+<span class="comment"># Use only healthy services in pipeline</span>
+healthy_sources = [
+    s <span class="keyword">for</span> s <span class="keyword">in</span> client.list_services(filter={<span class="string">"type"</span>: <span class="string">"DATA"</span>})
+    <span class="keyword">if</span> s.health_status == <span class="string">"healthy"</span>
+]
+
+pipeline = client.pipeline(
+    data_sources=healthy_sources,
+    synthesizer=llm
+)</code></pre>
+            </div>
+
+            <!-- Best Practices -->
+            <div class="linear-section">
+                <h2>Best Practices</h2>
+                
+                <h3>Service Selection</h3>
+                <ul>
+                    <li>Always check service health before using</li>
+                    <li>Consider cost vs. quality trade-offs</li>
+                    <li>Use multiple data sources for better coverage</li>
+                    <li>Cache service metadata to reduce API calls</li>
+                </ul>
+
+                <h3>Pipeline Optimization</h3>
+                <ul>
+                    <li>Set appropriate relevance thresholds</li>
+                    <li>Use parallel search when possible</li>
+                    <li>Implement cost limits to prevent overruns</li>
+                    <li>Monitor and log attribution data</li>
+                </ul>
+
+                <h3>Error Handling</h3>
+                <pre><code><span class="keyword">from</span> syft_hub <span class="keyword">import</span> ServiceUnavailableError, ServiceNotFoundError
+
+<span class="keyword">try</span>:
+    service = client.load_service(<span class="string">"service@org/name"</span>)
+    response = pipeline.run(messages=[...])
+<span class="keyword">except</span> ServiceNotFoundError:
+    <span class="keyword">print</span>(<span class="string">"Service does not exist"</span>)
+<span class="keyword">except</span> ServiceUnavailableError:
+    <span class="keyword">print</span>(<span class="string">"Service is temporarily unavailable"</span>)
+    <span class="comment"># Try alternative service or retry later</span></code></pre>
+            </div>
+        </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="footer-container">
+            <div class="footer-content">
+                <div class="footer-section">
+                    <strong>SyftHub SDK</strong>
+                    <p>Federated AI with Attribution Control</p>
+                </div>
+                <div class="footer-links">
+                    <a href="index.html">Home</a>
+                    <a href="authentication.html">Authentication</a>
+                    <a href="ai-services.html">AI Services</a>
+                    <a href="https://github.com/OpenMined/syft-nsai-sdk">GitHub</a>
+                    <a href="https://openmined.org">OpenMined</a>
+                    <a href="https://slack.openmined.org">Community</a>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <p>© 2024 OpenMined. Built with privacy in mind.</p>
+            </div>
+        </div>
+    </footer>
+</body>
+</html>

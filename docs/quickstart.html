@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quickstart - SyftHub SDK</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+</head>
+<body>
+    <!-- Header -->
+    <header class="header">
+        <div class="header-container">
+            <a href="index.html" class="logo">
+                <svg width="32" height="32" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <rect width="100" height="100" rx="20" fill="#000"/>
+                    <path d="M30 35 L50 20 L70 35 L70 65 L50 80 L30 65 Z" stroke="#fff" stroke-width="3" fill="none"/>
+                    <circle cx="50" cy="50" r="8" fill="#fff"/>
+                </svg>
+                <span>SyftHub SDK</span>
+            </a>
+            <nav class="nav">
+                <a href="index.html">Home</a>
+                <a href="quickstart.html" class="active">Quickstart</a>
+                <a href="authentication.html">Authentication</a>
+                <a href="attribution.html">Attribution</a>
+                <a href="api.html">API Reference</a>
+                <a href="examples.html">Examples</a>
+                <a href="https://github.com/OpenMined/syft-nsai-sdk" target="_blank" class="github-link">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
+                    </svg>
+                </a>
+            </nav>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="main">
+        <section class="content-section">
+            <div class="section-header">
+                <h1>Quickstart Guide</h1>
+                <p>Get up and running with SyftHub SDK in under 5 minutes</p>
+            </div>
+
+            <!-- Prerequisites -->
+            <div class="prerequisites">
+                <h2>Prerequisites</h2>
+                <ul>
+                    <li>Python 3.8 or higher</li>
+                    <li>SyftBox installed and running (<a href="https://syftbox.openmined.org">installation guide</a>)</li>
+                    <li>A SyftHub account (free registration available)</li>
+                </ul>
+            </div>
+
+            <!-- Steps -->
+            <div class="steps">
+                <div class="step">
+                    <div class="step-number">1</div>
+                    <div class="step-content">
+                        <h3>Install the SDK</h3>
+                        <p>Install the SyftHub SDK using pip:</p>
+                        <pre><code>pip install syft-hub</code></pre>
+                        <p>Or if you're using Poetry:</p>
+                        <pre><code>poetry add syft-hub</code></pre>
+                    </div>
+                </div>
+
+                <div class="step">
+                    <div class="step-number">2</div>
+                    <div class="step-content">
+                        <h3>Initialize the Client</h3>
+                        <p>Create a client instance that connects to your local SyftBox:</p>
+                        <pre><code><span class="keyword">from</span> syft_hub <span class="keyword">import</span> Client
+
+<span class="comment"># Auto-detects SyftBox at ~/SyftBox</span>
+client = Client()
+
+<span class="comment"># Verify connection</span>
+<span class="keyword">print</span>(client)  <span class="comment"># Shows connection status</span></code></pre>
+                        <p>The client will automatically detect your SyftBox installation and connect to the cache server.</p>
+                    </div>
+                </div>
+
+                <div class="step">
+                    <div class="step-number">3</div>
+                    <div class="step-content">
+                        <h3>Authenticate Your Account</h3>
+                        <p>Connect your SyftHub account to access services:</p>
+                        <pre><code><span class="comment"># For new users - register an account</span>
+client.register_accounting(
+    email=<span class="string">"your.email@example.com"</span>,
+    password=<span class="string">"secure_password"</span>,
+    organization=<span class="string">"YourOrg"</span>  <span class="comment"># Optional</span>
+)
+
+<span class="comment"># For existing users - connect your account</span>
+client.connect_accounting(
+    email=<span class="string">"your.email@example.com"</span>,
+    password=<span class="string">"your_password"</span>
+)
+
+<span class="comment"># Check authentication status</span>
+client.show_accounting_status()</code></pre>
+                    </div>
+                </div>
+
+                <div class="step">
+                    <div class="step-number">4</div>
+                    <div class="step-content">
+                        <h3>Discover Available Services</h3>
+                        <p>Explore data sources and AI models available on the network:</p>
+                        <pre><code><span class="comment"># List all available services</span>
+services = client.list_services()
+<span class="keyword">print</span>(f<span class="string">"Found {len(services)} services"</span>)
+
+<span class="comment"># In Jupyter notebooks, use the interactive widget</span>
+client.show_services()
+
+<span class="comment"># Load specific services</span>
+data_source = client.load_service(<span class="string">"user@org/data"</span>)
+llm_service = client.load_service(<span class="string">"aggregator@org/claude"</span>)</code></pre>
+                    </div>
+                </div>
+
+                <div class="step">
+                    <div class="step-number">5</div>
+                    <div class="step-content">
+                        <h3>Create an Attribution Pipeline</h3>
+                        <p>Build a pipeline that tracks data sources and costs:</p>
+                        <pre><code><span class="comment"># Create a FedRAG pipeline</span>
+pipeline = client.pipeline(
+    data_sources=[data_source],  <span class="comment"># Can include multiple sources</span>
+    synthesizer=llm_service       <span class="comment"># LLM for synthesis</span>
+)</code></pre>
+                    </div>
+                </div>
+
+                <div class="step">
+                    <div class="step-number">6</div>
+                    <div class="step-content">
+                        <h3>Execute Your First Query</h3>
+                        <p>Run a federated query with full attribution tracking:</p>
+                        <pre><code><span class="comment"># Execute the query</span>
+response = pipeline.run(messages=[
+    {<span class="string">"role"</span>: <span class="string">"user"</span>, <span class="string">"content"</span>: <span class="string">"What is federated learning?"</span>}
+])
+
+<span class="comment"># View the results</span>
+<span class="keyword">print</span>(f<span class="string">"Answer: {response.content}"</span>)
+<span class="keyword">print</span>(f<span class="string">"Total Cost: ${response.total_cost}"</span>)
+<span class="keyword">print</span>(f<span class="string">"Sources Used: {response.sources}"</span>)
+<span class="keyword">print</span>(f<span class="string">"Tokens: {response.tokens_used}"</span>)</code></pre>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Complete Example -->
+            <div class="complete-example">
+                <h2>Complete Example</h2>
+                <p>Here's everything together in a single script:</p>
+                <pre><code><span class="keyword">from</span> syft_hub <span class="keyword">import</span> Client
+
+<span class="comment"># Initialize and authenticate</span>
+client = Client()
+client.connect_accounting(
+    email=<span class="string">"your.email@example.com"</span>,
+    password=<span class="string">"your_password"</span>
+)
+
+<span class="comment"># Discover and load services</span>
+services = client.list_services()
+<span class="keyword">print</span>(f<span class="string">"Available services: {len(services)}"</span>)
+
+<span class="comment"># Load specific services</span>
+data = client.load_service(<span class="string">"irina@openmined.org/openmined-blog"</span>)
+llm = client.load_service(<span class="string">"aggregator@openmined.org/claude-sonnet-3.5"</span>)
+
+<span class="comment"># Create attribution pipeline</span>
+pipeline = client.pipeline(
+    data_sources=[data],
+    synthesizer=llm
+)
+
+<span class="comment"># Execute federated query</span>
+response = pipeline.run(messages=[
+    {<span class="string">"role"</span>: <span class="string">"user"</span>, <span class="string">"content"</span>: <span class="string">"Explain attribution-based control in AI"</span>}
+])
+
+<span class="comment"># Display results with attribution</span>
+<span class="keyword">print</span>(<span class="string">"=== Query Results ==="</span>)
+<span class="keyword">print</span>(f<span class="string">"Answer: {response.content}\n"</span>)
+<span class="keyword">print</span>(f<span class="string">"Attribution:"</span>)
+<span class="keyword">for</span> source <span class="keyword">in</span> response.sources:
+    <span class="keyword">print</span>(f<span class="string">"  • {source.name}: {source.contribution}%"</span>)
+<span class="keyword">print</span>(f<span class="string">"\nTotal Cost: ${response.total_cost}"</span>)
+<span class="keyword">print</span>(f<span class="string">"Model Used: {response.model}"</span>)</code></pre>
+            </div>
+
+            <!-- Next Steps -->
+            <div class="next-steps">
+                <h2>Next Steps</h2>
+                <div class="next-steps-grid">
+                    <div class="next-step-card">
+                        <h3>🔐 Configure Authentication</h3>
+                        <p>Learn about environment variables, account management, and secure credential storage.</p>
+                        <a href="authentication.html" class="button button-secondary">Authentication Guide →</a>
+                    </div>
+                    <div class="next-step-card">
+                        <h3>🏷️ Understand Attribution</h3>
+                        <p>Deep dive into how attribution tracking works and why it matters for AI governance.</p>
+                        <a href="attribution.html" class="button button-secondary">Attribution Control →</a>
+                    </div>
+                    <div class="next-step-card">
+                        <h3>📚 Explore Examples</h3>
+                        <p>See real-world use cases including research, healthcare, and enterprise applications.</p>
+                        <a href="examples.html" class="button button-secondary">View Examples →</a>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Troubleshooting -->
+            <div class="troubleshooting">
+                <h2>Troubleshooting</h2>
+                <div class="troubleshooting-items">
+                    <details>
+                        <summary>SyftBox not found</summary>
+                        <p>Ensure SyftBox is installed and running. The SDK looks for it at <code>~/SyftBox</code> by default. You can specify a custom path:</p>
+                        <pre><code>client = Client(syftbox_path=<span class="string">"/path/to/SyftBox"</span>)</code></pre>
+                    </details>
+                    <details>
+                        <summary>Authentication failed</summary>
+                        <p>Check your credentials and ensure you have an active internet connection. If you forgot your password, contact support.</p>
+                    </details>
+                    <details>
+                        <summary>No services found</summary>
+                        <p>Make sure your SyftBox is syncing properly. Check the SyftBox logs and ensure you have proper network connectivity.</p>
+                    </details>
+                    <details>
+                        <summary>Insufficient credits</summary>
+                        <p>Check your account balance with <code>client.get_account_info()</code>. You may need to top up your account or use free services.</p>
+                    </details>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="footer-container">
+            <div class="footer-content">
+                <div class="footer-section">
+                    <strong>SyftHub SDK</strong>
+                    <p>Federated AI with Attribution Control</p>
+                </div>
+                <div class="footer-links">
+                    <div class="footer-column">
+                        <h4>Documentation</h4>
+                        <a href="quickstart.html">Quickstart</a>
+                        <a href="authentication.html">Authentication</a>
+                        <a href="attribution.html">Attribution</a>
+                        <a href="api.html">API Reference</a>
+                    </div>
+                    <div class="footer-column">
+                        <h4>Resources</h4>
+                        <a href="examples.html">Examples</a>
+                        <a href="https://github.com/OpenMined/syft-nsai-sdk">GitHub</a>
+                        <a href="https://openmined.org">OpenMined</a>
+                        <a href="https://slack.openmined.org">Community</a>
+                    </div>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <p>© 2024 OpenMined. Built with privacy in mind.</p>
+            </div>
+        </div>
+    </footer>
+</body>
+</html>

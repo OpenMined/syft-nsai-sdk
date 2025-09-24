@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Attribution Control - SyftHub SDK</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+</head>
+<body>
+    <!-- Header -->
+    <header class="header">
+        <div class="header-container">
+            <a href="index.html" class="logo">
+                <svg width="32" height="32" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <rect width="100" height="100" rx="20" fill="#000"/>
+                    <path d="M30 35 L50 20 L70 35 L70 65 L50 80 L30 65 Z" stroke="#fff" stroke-width="3" fill="none"/>
+                    <circle cx="50" cy="50" r="8" fill="#fff"/>
+                </svg>
+                <span>SyftHub SDK</span>
+            </a>
+            <nav class="nav">
+                <a href="index.html">Home</a>
+                <a href="quickstart.html">Quickstart</a>
+                <a href="authentication.html">Authentication</a>
+                <a href="attribution.html" class="active">Attribution</a>
+                <a href="api.html">API Reference</a>
+                <a href="examples.html">Examples</a>
+                <a href="https://github.com/OpenMined/syft-nsai-sdk" target="_blank" class="github-link">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
+                    </svg>
+                </a>
+            </nav>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="main">
+        <section class="content-section">
+            <div class="section-header">
+                <h1>Attribution-Based Control</h1>
+                <p>Transparent tracking of data sources, model contributions, and costs in federated AI</p>
+            </div>
+
+            <!-- Overview -->
+            <div class="overview-section">
+                <h2>What is Attribution-Based Control?</h2>
+                <p>Attribution-based control is a governance mechanism that ensures transparency and accountability in federated AI systems. It tracks:</p>
+                <ul>
+                    <li><strong>Data Provenance:</strong> Which data sources contributed to each result</li>
+                    <li><strong>Model Attribution:</strong> Which models were used in the pipeline</li>
+                    <li><strong>Cost Allocation:</strong> How costs are distributed across services</li>
+                    <li><strong>Contribution Metrics:</strong> The relative importance of each source</li>
+                </ul>
+            </div>
+
+            <!-- How It Works -->
+            <div class="attribution-diagram">
+                <h2>How Attribution Works</h2>
+                <div class="diagram-flow">
+                    <div class="flow-item">
+                        <div class="flow-icon">📊</div>
+                        <strong>Data Sources</strong>
+                        <span>Multiple distributed sources with unique identifiers</span>
+                    </div>
+                    <div class="flow-arrow">→</div>
+                    <div class="flow-item">
+                        <div class="flow-icon">🔍</div>
+                        <strong>Federated Search</strong>
+                        <span>Query execution with source tracking</span>
+                    </div>
+                    <div class="flow-arrow">→</div>
+                    <div class="flow-item">
+                        <div class="flow-icon">🤖</div>
+                        <strong>AI Synthesis</strong>
+                        <span>Model processing with attribution</span>
+                    </div>
+                    <div class="flow-arrow">→</div>
+                    <div class="flow-item">
+                        <div class="flow-icon">🏷️</div>
+                        <strong>Attribution Report</strong>
+                        <span>Complete provenance and costs</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Creating Attribution Pipelines -->
+            <div class="docs-section">
+                <h2>Creating Attribution Pipelines</h2>
+                
+                <div class="code-example">
+                    <h3>Basic Pipeline Setup</h3>
+                    <pre><code><span class="keyword">from</span> syft_hub <span class="keyword">import</span> Client
+
+client = Client()
+
+<span class="comment"># Load multiple data sources</span>
+academic_source = client.load_service(<span class="string">"university@edu/papers"</span>)
+industry_source = client.load_service(<span class="string">"company@tech/reports"</span>)
+blog_source = client.load_service(<span class="string">"researcher@org/blog"</span>)
+
+<span class="comment"># Load synthesis model</span>
+llm = client.load_service(<span class="string">"aggregator@org/claude-sonnet-3.5"</span>)
+
+<span class="comment"># Create pipeline with attribution tracking</span>
+pipeline = client.pipeline(
+    data_sources=[academic_source, industry_source, blog_source],
+    synthesizer=llm,
+    track_attribution=<span class="keyword">True</span>  <span class="comment"># Enabled by default</span>
+)</code></pre>
+                </div>
+
+                <div class="code-example">
+                    <h3>Executing Queries with Attribution</h3>
+                    <pre><code><span class="comment"># Execute federated query</span>
+response = pipeline.run(
+    messages=[
+        {<span class="string">"role"</span>: <span class="string">"user"</span>, <span class="string">"content"</span>: <span class="string">"What are the latest advances in differential privacy?"</span>}
+    ],
+    max_sources=5,  <span class="comment"># Limit number of sources</span>
+    min_relevance=0.7  <span class="comment"># Minimum relevance threshold</span>
+)
+
+<span class="comment"># Access attribution data</span>
+<span class="keyword">print</span>(<span class="string">"=== Attribution Report ==="</span>)
+<span class="keyword">print</span>(f<span class="string">"Query Result: {response.content}\n"</span>)
+
+<span class="comment"># Source contributions</span>
+<span class="keyword">print</span>(<span class="string">"Data Source Contributions:"</span>)
+<span class="keyword">for</span> source <span class="keyword">in</span> response.sources:
+    <span class="keyword">print</span>(f<span class="string">"  • {source.name}:"</span>)
+    <span class="keyword">print</span>(f<span class="string">"    - Contribution: {source.contribution}%"</span>)
+    <span class="keyword">print</span>(f<span class="string">"    - Documents: {source.document_count}"</span>)
+    <span class="keyword">print</span>(f<span class="string">"    - Relevance: {source.relevance_score}"</span>)
+    <span class="keyword">print</span>(f<span class="string">"    - Cost: ${source.cost}"</span>)
+
+<span class="comment"># Model attribution</span>
+<span class="keyword">print</span>(f<span class="string">"\nModel Used: {response.model}"</span>)
+<span class="keyword">print</span>(f<span class="string">"Model Version: {response.model_version}"</span>)
+<span class="keyword">print</span>(f<span class="string">"Synthesis Cost: ${response.synthesis_cost}"</span>)
+
+<span class="comment"># Total costs</span>
+<span class="keyword">print</span>(f<span class="string">"\nTotal Cost Breakdown:"</span>)
+<span class="keyword">print</span>(f<span class="string">"  Search: ${response.search_cost}"</span>)
+<span class="keyword">print</span>(f<span class="string">"  Synthesis: ${response.synthesis_cost}"</span>)
+<span class="keyword">print</span>(f<span class="string">"  Total: ${response.total_cost}"</span>)
+
+<span class="comment"># Token usage</span>
+<span class="keyword">print</span>(f<span class="string">"\nToken Usage:"</span>)
+<span class="keyword">print</span>(f<span class="string">"  Input: {response.input_tokens}"</span>)
+<span class="keyword">print</span>(f<span class="string">"  Output: {response.output_tokens}"</span>)
+<span class="keyword">print</span>(f<span class="string">"  Total: {response.total_tokens}"</span>)</code></pre>
+                </div>
+            </div>
+
+            <!-- Attribution Features -->
+            <div class="docs-section">
+                <h2>Key Attribution Features</h2>
+                
+                <div class="attribution-features">
+                    <div class="feature">
+                        <h3>✅ Source Tracking</h3>
+                        <p>Every piece of information is tracked back to its original source:</p>
+                        <pre><code><span class="comment"># Get detailed source information</span>
+<span class="keyword">for</span> source <span class="keyword">in</span> response.sources:
+    details = source.get_details()
+    <span class="keyword">print</span>(f<span class="string">"Source: {details['name']}"</span>)
+    <span class="keyword">print</span>(f<span class="string">"Owner: {details['owner']}"</span>)
+    <span class="keyword">print</span>(f<span class="string">"License: {details['license']}"</span>)
+    <span class="keyword">print</span>(f<span class="string">"Citation: {details['citation']}"</span>)</code></pre>
+                    </div>
+
+                    <div class="feature">
+                        <h3>💰 Cost Attribution</h3>
+                        <p>Transparent cost breakdown per source and operation:</p>
+                        <pre><code><span class="comment"># Detailed cost analysis</span>
+cost_report = response.get_cost_report()
+<span class="keyword">for</span> item <span class="keyword">in</span> cost_report.items:
+    <span class="keyword">print</span>(f<span class="string">"{item.service}: ${item.cost}"</span>)
+    <span class="keyword">print</span>(f<span class="string">"  - Rate: ${item.rate_per_token}"</span>)
+    <span class="keyword">print</span>(f<span class="string">"  - Tokens: {item.tokens}"</span>)</code></pre>
+                    </div>
+
+                    <div class="feature">
+                        <h3>📊 Contribution Metrics</h3>
+                        <p>Measure the relative importance of each source:</p>
+                        <pre><code><span class="comment"># Analyze contribution metrics</span>
+metrics = response.get_contribution_metrics()
+<span class="keyword">print</span>(f<span class="string">"Diversity Score: {metrics.diversity}"</span>)
+<span class="keyword">print</span>(f<span class="string">"Coverage: {metrics.coverage}"</span>)
+<span class="keyword">print</span>(f<span class="string">"Consensus: {metrics.consensus}"</span>)</code></pre>
+                    </div>
+
+                    <div class="feature">
+                        <h3>🔍 Audit Trail</h3>
+                        <p>Complete audit trail for compliance and verification:</p>
+                        <pre><code><span class="comment"># Generate audit report</span>
+audit = response.generate_audit_trail()
+<span class="keyword">print</span>(f<span class="string">"Query ID: {audit.query_id}"</span>)
+<span class="keyword">print</span>(f<span class="string">"Timestamp: {audit.timestamp}"</span>)
+<span class="keyword">print</span>(f<span class="string">"User: {audit.user}"</span>)
+<span class="keyword">print</span>(f<span class="string">"Sources: {audit.sources}"</span>)
+<span class="keyword">print</span>(f<span class="string">"Hash: {audit.verification_hash}"</span>)</code></pre>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Advanced Attribution -->
+            <div class="docs-section">
+                <h2>Advanced Attribution Controls</h2>
+                
+                <div class="docs-grid">
+                    <div class="docs-card">
+                        <h3>Custom Attribution Weights</h3>
+                        <p>Adjust the importance of different sources:</p>
+                        <pre><code><span class="comment"># Set custom weights</span>
+pipeline = client.pipeline(
+    data_sources=[
+        (academic_source, 0.5),  <span class="comment"># 50% weight</span>
+        (industry_source, 0.3),  <span class="comment"># 30% weight</span>
+        (blog_source, 0.2)       <span class="comment"># 20% weight</span>
+    ],
+    synthesizer=llm
+)</code></pre>
+                    </div>
+
+                    <div class="docs-card">
+                        <h3>Attribution Filtering</h3>
+                        <p>Filter sources based on attribution criteria:</p>
+                        <pre><code><span class="comment"># Only use properly licensed sources</span>
+pipeline = client.pipeline(
+    data_sources=sources,
+    synthesizer=llm,
+    attribution_filter={
+        <span class="string">"license"</span>: [<span class="string">"MIT"</span>, <span class="string">"Apache-2.0"</span>],
+        <span class="string">"min_quality_score"</span>: 0.8
+    }
+)</code></pre>
+                    </div>
+
+                    <div class="docs-card">
+                        <h3>Citation Generation</h3>
+                        <p>Automatically generate citations for sources:</p>
+                        <pre><code><span class="comment"># Generate citations</span>
+citations = response.generate_citations(
+    format=<span class="string">"APA"</span>  <span class="comment"># or "MLA", "Chicago"</span>
+)
+
+<span class="keyword">for</span> citation <span class="keyword">in</span> citations:
+    <span class="keyword">print</span>(citation)</code></pre>
+                    </div>
+
+                    <div class="docs-card">
+                        <h3>Export Attribution Data</h3>
+                        <p>Export attribution data for reporting:</p>
+                        <pre><code><span class="comment"># Export to JSON</span>
+attribution_data = response.export_attribution()
+<span class="keyword">with</span> open(<span class="string">"attribution.json"</span>, <span class="string">"w"</span>) <span class="keyword">as</span> f:
+    json.dump(attribution_data, f, indent=2)
+
+<span class="comment"># Export to CSV</span>
+response.export_attribution_csv(<span class="string">"attribution.csv"</span>)</code></pre>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Why Attribution Matters -->
+            <div class="docs-section">
+                <h2>Why Attribution Matters</h2>
+                
+                <div class="why-attribution">
+                    <div class="attribution-benefit">
+                        <h3>🏛️ Regulatory Compliance</h3>
+                        <p>Meet requirements for AI transparency and explainability:</p>
+                        <ul>
+                            <li>EU AI Act compliance</li>
+                            <li>GDPR data provenance requirements</li>
+                            <li>Industry-specific regulations</li>
+                        </ul>
+                    </div>
+
+                    <div class="attribution-benefit">
+                        <h3>⚖️ Fair Compensation</h3>
+                        <p>Ensure data providers are properly credited and compensated:</p>
+                        <ul>
+                            <li>Track usage for royalty payments</li>
+                            <li>Distribute revenue based on contribution</li>
+                            <li>Incentivize quality data sharing</li>
+                        </ul>
+                    </div>
+
+                    <div class="attribution-benefit">
+                        <h3>🔬 Research Integrity</h3>
+                        <p>Maintain academic and scientific standards:</p>
+                        <ul>
+                            <li>Proper citation of sources</li>
+                            <li>Reproducible results</li>
+                            <li>Verification of claims</li>
+                        </ul>
+                    </div>
+
+                    <div class="attribution-benefit">
+                        <h3>🛡️ Risk Management</h3>
+                        <p>Identify and mitigate risks from data sources:</p>
+                        <ul>
+                            <li>Track data quality issues</li>
+                            <li>Identify biased sources</li>
+                            <li>Monitor for misinformation</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Best Practices -->
+            <div class="docs-section">
+                <h2>Best Practices</h2>
+                
+                <div class="best-practices">
+                    <div class="practice-item">
+                        <h3>Always Verify Attribution</h3>
+                        <pre><code><span class="comment"># Verify attribution before using results</span>
+<span class="keyword">if</span> response.has_attribution():
+    <span class="keyword">if</span> response.verify_attribution():
+        <span class="comment"># Use the results</span>
+        process_results(response)
+    <span class="keyword">else</span>:
+        <span class="keyword">raise</span> ValueError(<span class="string">"Attribution verification failed"</span>)</code></pre>
+                    </div>
+
+                    <div class="practice-item">
+                        <h3>Set Attribution Requirements</h3>
+                        <pre><code><span class="comment"># Require minimum attribution standards</span>
+pipeline = client.pipeline(
+    data_sources=sources,
+    synthesizer=llm,
+    min_sources=3,  <span class="comment"># Require at least 3 sources</span>
+    require_consensus=<span class="keyword">True</span>  <span class="comment"># Sources must agree</span>
+)</code></pre>
+                    </div>
+
+                    <div class="practice-item">
+                        <h3>Monitor Attribution Costs</h3>
+                        <pre><code><span class="comment"># Set cost limits per source</span>
+pipeline = client.pipeline(
+    data_sources=sources,
+    synthesizer=llm,
+    max_cost_per_source=1.0,  <span class="comment"># $1 per source</span>
+    total_cost_limit=5.0  <span class="comment"># $5 total</span>
+)</code></pre>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="footer-container">
+            <div class="footer-content">
+                <div class="footer-section">
+                    <strong>SyftHub SDK</strong>
+                    <p>Federated AI with Attribution Control</p>
+                </div>
+                <div class="footer-links">
+                    <div class="footer-column">
+                        <h4>Documentation</h4>
+                        <a href="quickstart.html">Quickstart</a>
+                        <a href="authentication.html">Authentication</a>
+                        <a href="attribution.html">Attribution</a>
+                        <a href="api.html">API Reference</a>
+                    </div>
+                    <div class="footer-column">
+                        <h4>Resources</h4>
+                        <a href="examples.html">Examples</a>
+                        <a href="https://github.com/OpenMined/syft-nsai-sdk">GitHub</a>
+                        <a href="https://openmined.org">OpenMined</a>
+                        <a href="https://slack.openmined.org">Community</a>
+                    </div>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <p>© 2024 OpenMined. Built with privacy in mind.</p>
+            </div>
+        </div>
+    </footer>
+</body>
+</html>

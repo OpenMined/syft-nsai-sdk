@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Authentication - SyftHub SDK</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+</head>
+<body>
+    <!-- Header -->
+    <header class="header">
+        <div class="header-container">
+            <a href="index.html" class="logo">
+                <svg width="32" height="32" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <rect width="100" height="100" rx="20" fill="#000"/>
+                    <path d="M30 35 L50 20 L70 35 L70 65 L50 80 L30 65 Z" stroke="#fff" stroke-width="3" fill="none"/>
+                    <circle cx="50" cy="50" r="8" fill="#fff"/>
+                </svg>
+                <span>SyftHub SDK</span>
+            </a>
+            <nav class="nav">
+                <a href="index.html">Home</a>
+                <a href="authentication.html" class="active">Authentication</a>
+                <a href="ai-services.html">AI Services</a>
+                <a href="https://github.com/OpenMined/syft-nsai-sdk" target="_blank" class="github-link">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
+                    </svg>
+                </a>
+            </nav>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="main">
+        <section class="content-section">
+            <div class="section-header">
+                <h1>Authentication</h1>
+                <p>Account management and access control for SyftHub services</p>
+            </div>
+
+            <!-- Register New Account -->
+            <div class="linear-section">
+                <h2>Register New Account</h2>
+                <p>Create a new SyftHub account to access AI services and track usage:</p>
+                
+                <pre><code><span class="keyword">from</span> syft_hub <span class="keyword">import</span> Client
+
+client = Client()
+
+<span class="comment"># Register with email and password</span>
+client.register_accounting(
+    email=<span class="string">"your.email@example.com"</span>,
+    password=<span class="string">"secure_password"</span>,
+    organization=<span class="string">"YourOrganization"</span>  <span class="comment"># Optional</span>
+)
+
+<span class="keyword">print</span>(<span class="string">"Account created successfully!"</span>)</code></pre>
+
+                <p><strong>Note:</strong> Passwords must be at least 8 characters with uppercase, number, and special character.</p>
+            </div>
+
+            <!-- Connect Existing Account -->
+            <div class="linear-section">
+                <h2>Connect Existing Account</h2>
+                <p>Sign in with your existing credentials:</p>
+                
+                <pre><code><span class="comment"># Connect to existing account</span>
+client.connect_accounting(
+    email=<span class="string">"your.email@example.com"</span>,
+    password=<span class="string">"your_password"</span>,
+    save_config=<span class="keyword">True</span>  <span class="comment"># Save credentials locally for future sessions</span>
+)
+
+<span class="comment"># Verify connection</span>
+client.show_accounting_status()</code></pre>
+            </div>
+
+            <!-- Check Account Status -->
+            <div class="linear-section">
+                <h2>Check Account Status</h2>
+                <p>View your current account information and configuration:</p>
+                
+                <pre><code><span class="comment"># Display account status</span>
+client.show_accounting_status()
+
+<span class="comment"># Get detailed account information</span>
+info = client.get_account_info()
+<span class="keyword">print</span>(f<span class="string">"Email: {info['email']}"</span>)
+<span class="keyword">print</span>(f<span class="string">"Organization: {info['organization']}"</span>)
+<span class="keyword">print</span>(f<span class="string">"Account Type: {info['type']}"</span>)</code></pre>
+            </div>
+
+            <!-- Balance and Usage -->
+            <div class="linear-section">
+                <h2>Balance and Usage Tracking</h2>
+                <p>Monitor your credits and track service usage:</p>
+                
+                <pre><code><span class="comment"># Get current balance</span>
+balance = client.get_account_balance()
+<span class="keyword">print</span>(f<span class="string">"Available Credits: ${balance}"</span>)
+
+<span class="comment"># Get detailed usage information</span>
+info = client.get_account_info()
+<span class="keyword">print</span>(f<span class="string">"Monthly Usage: ${info['monthly_usage']}"</span>)
+<span class="keyword">print</span>(f<span class="string">"Usage Limit: ${info['usage_limit']}"</span>)
+<span class="keyword">print</span>(f<span class="string">"Remaining: ${info['usage_limit'] - info['monthly_usage']}"</span>)</code></pre>
+            </div>
+
+            <!-- Cost Monitoring -->
+            <div class="linear-section">
+                <h2>Cost Monitoring</h2>
+                <p>Track costs before and after operations:</p>
+                
+                <pre><code><span class="comment"># Check balance before expensive operation</span>
+initial_balance = client.get_account_balance()
+
+<span class="comment"># Execute your pipeline query</span>
+response = pipeline.run(messages=[
+    {<span class="string">"role"</span>: <span class="string">"user"</span>, <span class="string">"content"</span>: <span class="string">"Your query here"</span>}
+])
+
+<span class="comment"># Check the cost</span>
+<span class="keyword">print</span>(f<span class="string">"Query Cost: ${response.total_cost}"</span>)
+<span class="keyword">print</span>(f<span class="string">"Remaining Balance: ${initial_balance - response.total_cost}"</span>)
+
+<span class="comment"># Cost-aware execution</span>
+<span class="keyword">if</span> initial_balance > 10.0:
+    <span class="comment"># Execute expensive query</span>
+    response = pipeline.run(messages=[...])
+<span class="keyword">else</span>:
+    <span class="keyword">print</span>(<span class="string">"Insufficient credits. Please top up your account."</span>)</code></pre>
+            </div>
+
+            <!-- Environment Variables -->
+            <div class="linear-section">
+                <h2>Environment Variables</h2>
+                <p>For production deployments, use environment variables to manage credentials:</p>
+                
+                <pre><code><span class="comment"># Set environment variables in your shell or .env file</span>
+export SYFT_ACCOUNTING_EMAIL=your.email@example.com
+export SYFT_ACCOUNTING_PASSWORD=your_secure_password
+export SYFT_ACCOUNTING_URL=https://syftaccounting.centralus.cloudapp.azure.com/</code></pre>
+
+                <p>Then initialize the client without explicit credentials:</p>
+                
+                <pre><code><span class="keyword">from</span> syft_hub <span class="keyword">import</span> Client
+
+<span class="comment"># Automatically loads from environment variables</span>
+client = Client()
+
+<span class="comment"># Verify authentication</span>
+<span class="keyword">print</span>(client.accounting_client)</code></pre>
+            </div>
+
+            <!-- Session Management -->
+            <div class="linear-section">
+                <h2>Session Management</h2>
+                <p>Manage your authentication session:</p>
+                
+                <pre><code><span class="comment"># Clear current session</span>
+client.logout()
+<span class="keyword">print</span>(<span class="string">"Logged out successfully"</span>)
+
+<span class="comment"># Re-authenticate when needed</span>
+client.connect_accounting(
+    email=<span class="string">"your.email@example.com"</span>,
+    password=<span class="string">"your_password"</span>
+)
+
+<span class="comment"># Update password (requires current password)</span>
+client.update_password(
+    current_password=<span class="string">"old_password"</span>,
+    new_password=<span class="string">"new_secure_password"</span>
+)</code></pre>
+            </div>
+
+            <!-- Common Issues -->
+            <div class="linear-section">
+                <h2>Common Issues</h2>
+                
+                <h3>Authentication Failed</h3>
+                <p>Check your credentials and ensure you have an active internet connection:</p>
+                <pre><code><span class="keyword">try</span>:
+    client.connect_accounting(email, password)
+<span class="keyword">except</span> AuthenticationError <span class="keyword">as</span> e:
+    <span class="keyword">print</span>(f<span class="string">"Failed to authenticate: {e}"</span>)
+    <span class="comment"># Check credentials or register new account</span></code></pre>
+
+                <h3>Insufficient Credits</h3>
+                <p>Monitor your balance and handle insufficient credit scenarios:</p>
+                <pre><code><span class="keyword">try</span>:
+    response = pipeline.run(messages=[...])
+<span class="keyword">except</span> PaymentError <span class="keyword">as</span> e:
+    <span class="keyword">print</span>(f<span class="string">"Payment error: {e}"</span>)
+    balance = client.get_account_balance()
+    <span class="keyword">print</span>(f<span class="string">"Current balance: ${balance}"</span>)
+    <span class="comment"># Top up account or use free services</span></code></pre>
+
+                <h3>Session Expired</h3>
+                <p>Re-authenticate when your session expires:</p>
+                <pre><code><span class="keyword">if</span> <span class="keyword">not</span> client.is_authenticated():
+    client.connect_accounting(
+        email=os.getenv(<span class="string">"SYFT_ACCOUNTING_EMAIL"</span>),
+        password=os.getenv(<span class="string">"SYFT_ACCOUNTING_PASSWORD"</span>)
+    )</code></pre>
+            </div>
+        </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="footer-container">
+            <div class="footer-content">
+                <div class="footer-section">
+                    <strong>SyftHub SDK</strong>
+                    <p>Federated AI with Attribution Control</p>
+                </div>
+                <div class="footer-links">
+                    <a href="index.html">Home</a>
+                    <a href="authentication.html">Authentication</a>
+                    <a href="ai-services.html">AI Services</a>
+                    <a href="https://github.com/OpenMined/syft-nsai-sdk">GitHub</a>
+                    <a href="https://openmined.org">OpenMined</a>
+                    <a href="https://slack.openmined.org">Community</a>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <p>© 2024 OpenMined. Built with privacy in mind.</p>
+            </div>
+        </div>
+    </footer>
+</body>
+</html>
