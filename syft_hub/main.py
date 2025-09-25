@@ -108,34 +108,42 @@ class Client:
             # Check for existing accounting credentials
             client, is_configured = AccountingClient.setup_accounting_discovery()
             
-            if set_accounting:
-                if is_configured:
-                    # Accounting exists and set_accounting=True, require accounting_pass
-                    if accounting_pass is None:
-                        raise ValueError("Accounting account already exists. Please provide accounting_pass parameter.")
+            if is_configured:
+                existing_password = self.accounting_client.get_password()
 
-                    # Verify the provided password works
-                    try:
-                        client.connect_accounting(client.accounting_url, client.get_email(), accounting_pass)
-                        self._account_configured = True
-                        logger.info(f"Connected to existing accounting account for {client.get_email()}")
-                    except Exception as e:
-                        raise AuthenticationError(f"Failed to connect with provided password: {e}")
-                    
-                else:
+                if existing_password is None:
+                    raise ValueError("Accounting account already exists, but the password is not set.")
+
+                # Verify the provided password works
+                try:
+                    client.connect_accounting(client.accounting_url, client.get_email(), existing_password)
+                    self._account_configured = True
+                    logger.info(f"Connected to existing accounting account for {client.get_email()}")
+                except Exception as e:
+                    raise AuthenticationError(f"Failed to connect with provided password: {e}")
+                
+            elif set_accounting or accounting_pass:
                     # No accounting exists and set_accounting=True, create new account
                     user_email = self.config.email
-                    generated_password = _generate_password_from_email_timestamp(user_email)
-                    
-                    try:
-                        account = client.register_accounting(user_email, generated_password)
-                        client.save_credentials()
-                        print(f"Generated password: {generated_password}")
-                        print("⚠️ Save the password, this won't be shown again!")
-                        self._account_configured = True
-                        logger.info(f"Successfully created accounting account for {user_email}")
-                    except Exception as e:
-                        raise RuntimeError(f"Failed to create accounting account: {e}")
+
+                    if accounting_pass:
+                        try:
+                            client.connect_accounting(client.accounting_url, client.get_email(), accounting_pass)
+                            self._account_configured = True
+                            logger.info(f"Connected to existing accounting account for {client.get_email()}")
+                        except Exception as e:
+                            raise AuthenticationError(f"Failed to connect with provided password: {e}")
+                    else:
+                        try:
+                            generated_password = _generate_password_from_email_timestamp(user_email)
+                            account = client.register_accounting(user_email, generated_password)
+                            client.save_credentials()
+                            print(f"Generated password: {generated_password}")
+                            print("⚠️ Save the password, this won't be shown again!")
+                            self._account_configured = True
+                            logger.info(f"Successfully created accounting account for {user_email}")
+                        except Exception as e:
+                            raise RuntimeError(f"Failed to create accounting account: {e}")
                 
                 self.accounting_client = client
             else:
