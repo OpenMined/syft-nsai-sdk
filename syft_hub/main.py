@@ -1250,9 +1250,7 @@ class Client:
             f"Common operations:",
             f"  client.list_services()                    — Discover available services",
             f"  client.chat('datasite/service', messages=[])       — Chat with a service",
-            f"  client.search('datasite/service', 'message')       — Search with a service",
-            f"  client.register_accounting(email)         — Register account",
-            f"  client.connect_accounting(email, password) — Connect account"
+            f"  client.search('datasite/service', 'message')       — Search with a service"
         ]
         
         return "\n".join(lines)
