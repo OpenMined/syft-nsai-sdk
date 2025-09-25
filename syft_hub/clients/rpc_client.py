@@ -197,7 +197,12 @@ class SyftBoxRPCClient(SyftBoxAPIClient):
                     error_data = response.json()
                     logger.debug(f"Error response data: {error_data}")
                     error_msg = error_data.get("message", f"HTTP {response.status_code}")
-                    logger.error(f"Got error response from {error_msg}")
+
+                    # Don't log "Permission denied" as ERROR - it's often expected for non-existent services
+                    if error_msg == "Permission denied.":
+                        logger.debug(f"Got expected permission denied response from {syft_url}")
+                    else:
+                        logger.error(f"Got error response from {error_msg}")
                 except:
                     error_msg = f"HTTP {response.status_code}: {response.text}"
                     logger.error(f"Got error message from {error_msg}")
