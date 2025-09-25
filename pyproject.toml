@@ -4,11 +4,11 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "syft-hub"
-version = "0.1.0"
+version = "0.1.3"
 description = "Python SDK for discovering and using AI models across the SyftBox network"
 readme = "README.md"
 requires-python = ">=3.9"
-license = { file = "LICENSE" }
+license = { text = "MIT" }
 authors = [
     {name = "SyftBox Team", email = "info@openmined.org"},
     {name = "Irina B", email = "irina@openmined.org"},
@@ -33,7 +33,7 @@ dependencies = [
     "requests>=2.32.3",
     "sqlmodel>=0.0.24",
     "typer>=0.15.2",
-    "python-dotenv>=1.1.1",
+    "python-dotenv>=1.1.0",
     "pydantic-settings>=2.10.1",
     "syft-accounting-sdk @ git+https://github.com/OpenMined/accounting-sdk.git",
     "PyJWT>=2.10.1",
@@ -65,8 +65,10 @@ Repository = "https://github.com/OpenMined/syftbox-nsai-sdk"
 "Bug Tracker" = "https://github.com/OpenMined/syftbox-nsai-sdk/issues"
 Changelog = "https://github.com/OpenMined/syftbox-nsai-sdk/blob/main/CHANGELOG.md"
 
-[tool.setuptools]
-packages = ["syft_hub"]
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["syft_hub*"]
+exclude = ["syft_nsai_sdk*"]
 
 [project.scripts]
 syft-hub = "syft_hub.cli:main"
