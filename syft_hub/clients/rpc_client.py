@@ -377,14 +377,14 @@ class SyftBoxRPCClient(SyftBoxAPIClient):
 
         endpoints = ServiceEndpoints(service_info.datasite, service_info.name)
         syft_url = endpoints.health_url()
-        # Use 30 attempts for health checks with faster polling
+        # Use 15 attempts for health checks with faster polling
         return await self.call_rpc(
             syft_url, 
             payload=None, 
             method="GET", 
-            show_spinner=False, 
+            show_spinner=True,  # Show spinner for health check polling
             args=health_args,
-            max_poll_attempts=30,
+            max_poll_attempts=15,
             poll_interval=0.5
         )
     
