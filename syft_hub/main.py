@@ -139,7 +139,7 @@ class Client:
             elif set_accounting:
                 try:
                     generated_password = _generate_password_from_email_timestamp(user_email)
-                    account = client.register_accounting(user_email, generated_password)
+                    client.register_accounting(user_email, generated_password)
                     client.save_credentials()
                     self.accounting_client = client
 
@@ -149,9 +149,8 @@ class Client:
                     logger.info(f"Successfully created accounting account for {user_email}")
                 except Exception as e:
                     raise RuntimeError(f"Failed to create accounting account: {e}")
-                
-
             else:
+                self.accounting_client = None
                 print("⚠️  No SyftBox accounting registered for the user. You can only use free services.")
                 print("To register (and get free credits for paid services), run:")
                 print("   → Client(set_accounting=True)")
