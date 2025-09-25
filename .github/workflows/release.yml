@@ -41,6 +41,7 @@ jobs:
       with:
         token: ${{ secrets.GITHUB_TOKEN }}
         fetch-depth: 0
+        ref: ${{ github.ref }}
 
     - name: Install uv
       uses: astral-sh/setup-uv@v3
@@ -141,10 +142,11 @@ jobs:
 
     - name: Commit version bump
       run: |
-        git pull origin ${{ github.ref_name }} --rebase
+        git fetch origin
+        git rebase origin/${{ github.ref_name }}
         git add pyproject.toml
         git commit -m "🔖 Bump version to ${{ steps.version.outputs.new_version }}"
-        git push origin ${{ github.ref_name }}
+        git push origin HEAD:${{ github.ref_name }}
         echo "✅ Version bump committed and pushed"
 
     - name: Create Git tag
