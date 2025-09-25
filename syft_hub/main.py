@@ -31,6 +31,7 @@ from .services import ChatService, SearchService, HealthMonitor, check_service_h
 from .models import ChatResponse, SearchResponse, DocumentResult, ServicesList, ServiceInfo
 from .utils.formatting import format_services_table, format_service_details
 from .utils.async_utils import detect_async_context, run_async_in_thread
+from .utils.spinner import Spinner
 
 logger = logging.getLogger(__name__)
 
@@ -254,6 +255,7 @@ class Client:
                     max_cost: Optional[float] = None,
                     free_only: bool = False,
                     health_check: str = "auto",
+                    force_refresh: bool = False,
                     **filter_kwargs) -> List[ServiceInfo]:
         """Discover available services with filtering and optional health checking.
         
@@ -264,13 +266,14 @@ class Client:
             max_cost: Maximum cost per request
             free_only: Only return free services (cost = 0)
             health_check: Health checking mode ("auto", "always", "never")
+            force_refresh: Force fresh discovery (ignore cache)
             **filter_kwargs: Additional filter criteria
             
         Returns:
             List of discovered and filtered services
         """
         # Scan for metadata files
-        metadata_paths = self._scanner.scan_with_cache()
+        metadata_paths = self._scanner.scan_with_cache(force_refresh=force_refresh)
         
         # Parse services from metadata
         services = []
@@ -311,12 +314,25 @@ class Client:
         )
         
         if should_health_check:
-            # Use thread-based approach to avoid event loop conflicts
+            # Show spinner during health check
+            spinner = Spinner(f"Checking health of {len(filtered_services)} service(s)")
+            
             try:
+                print(f"Performing health check on {len(filtered_services)} service(s)...")
+                spinner.start()
+                
+                # Brief pause to show spinner activity
+                time.sleep(0.3)
+                
+                # Stop spinner before health check output to prevent interference
+                spinner.stop()
+                
+                # Use thread-based approach to avoid event loop conflicts
                 filtered_services = run_async_in_thread(
                     self._add_health_status(filtered_services)
                 )
             except Exception as e:
+                spinner.stop()
                 logger.warning(f"Health check failed: {e}. Continuing without health status.")
         
         logger.debug(f"Discovered {len(filtered_services)} services (health_check={should_health_check})")
@@ -1070,14 +1086,15 @@ class Client:
         return run_async_in_thread(self._get_accounting_status_async())
     
     # Display Methods
-    def show_services(self, health_check: str = "always", **kwargs) -> None:
-        """Display available services using ServicesList's show_services method.
+    def show_services(self, health_check: str = "always", force_refresh: bool = True, **kwargs) -> None:
+        """Display available services with fresh discovery and health checking.
         
         Args:
             health_check: Health checking mode ("auto", "always", "never")
                 - "always": Always check health status (shows real availability)
                 - "never": Skip health checks (faster, shows Unknown)
                 - "auto": Check only if ≤10 services (default threshold)
+            force_refresh: Force fresh service discovery (default: True)
             **kwargs: Arguments to pass to ServicesList.show_services()
                 page: Starting page number
                 items_per_page: Services per page
@@ -1087,7 +1104,25 @@ class Client:
                 open_in_browser: Force open in browser even in Jupyter notebooks
         """
         try:
-            services_list = self.list_services(health_check=health_check)
+            # Show discovery progress
+            if force_refresh:
+                discovery_spinner = Spinner("Discovering services")
+                print("🔍 Discovering available services...")
+                discovery_spinner.start()
+                
+                # Brief pause to show discovery activity
+                time.sleep(0.5)
+                discovery_spinner.stop()
+            
+            services_list = self.list_services(health_check=health_check, force_refresh=force_refresh)
+            
+            # Show discovery results
+            if force_refresh:
+                service_count = len(services_list)
+                print(f"✓ Discovery complete. Found {service_count} service(s)")
+                if service_count > 0:
+                    print()  # Add spacing before health check output
+            
             # ServicesList has its own show_services method
             services_list.show_services(**kwargs)
         except Exception as e:
@@ -1225,10 +1260,10 @@ class Client:
             
             <div class="docs-section">
                 <div style="margin-bottom: 8px; font-weight: 500;">Account:</div>
-                <div style="font-size: 11px; color: #e67e22; background: #fef9e7; padding: 8px; border-radius: 4px; margin-bottom: 8px;">
+                <div style=""line-height: 1.8;">
                     ⚠️ No accounting registered - free services only.<br>
-                    <span style="font-family: monospace; font-weight: 600;">Client(set_accounting=True)</span> — Register for paid services<br>
-                    <span style="font-family: monospace; font-weight: 600;">Client(accounting_pass=password)</span> — Connect existing account
+                    <span class="command-code">Client(set_accounting=True)</span> — Register for paid services<br>
+                    <span class="command-code">Client(accounting_pass=password)</span> — Connect existing account
                 </div>
             </div>
         </div>
@@ -1497,13 +1532,62 @@ class Client:
             raise ValueError(f"Invalid health_check value: {health_check}")
     
     async def _add_health_status(self, services: List[ServiceInfo]) -> List[ServiceInfo]:
-        """Add health status to services."""
-        health_status = await batch_health_check(services, self.rpc_client, timeout=2.0)
+        """Add health status to services with progress feedback."""
+        health_status = await self._batch_health_check_with_progress(services, self.rpc_client, timeout=2.0)
         
         for service in services:
             service.health_status = health_status.get(service.name, HealthStatus.UNKNOWN)
         
         return services
+    
+    async def _batch_health_check_with_progress(
+        self, 
+        services: List[ServiceInfo], 
+        rpc_client: SyftBoxRPCClient,
+        timeout: float = 2.0,
+        max_concurrent: int = 10
+    ) -> Dict[str, HealthStatus]:
+        """Check health of multiple services with progress feedback and online service display."""
+        if not services:
+            return {}
+
+        online_services = []
+        
+        # Import semaphore for concurrent control
+        semaphore = asyncio.Semaphore(max_concurrent)
+        
+        async def check_single_service_with_feedback(service: ServiceInfo) -> tuple[str, HealthStatus]:
+            async with semaphore:
+                health = await check_service_health(service, rpc_client, timeout)
+                
+                # If service is online, add to our list and display immediately
+                if health == HealthStatus.ONLINE:
+                    service_name = f"{service.datasite}/{service.name}"
+                    online_services.append(service_name)
+                    print(f"<{service_name}>")
+                
+                return service.name, health
+        
+        # Start all health checks concurrently
+        tasks = [check_single_service_with_feedback(service) for service in services]
+        
+        start_time = time.time()
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        end_time = time.time()
+        
+        logger.info(f"Batch health check completed in {end_time - start_time:.2f}s for {len(services)} services")
+        
+        # Process results
+        health_status = {}
+        for result in results:
+            if isinstance(result, Exception):
+                logger.error(f"Health check task failed: {result}")
+                continue
+            
+            service_name, status = result
+            health_status[service_name] = status
+        
+        return health_status
     
     def _service_to_dict(self, service: ServiceInfo) -> Dict[str, Any]:
         """Convert ServiceInfo to dictionary for JSON serialization."""
