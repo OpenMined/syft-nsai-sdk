@@ -141,6 +141,7 @@ jobs:
 
     - name: Commit version bump
       run: |
+        git pull origin ${{ github.ref_name }} --rebase
         git add pyproject.toml
         git commit -m "🔖 Bump version to ${{ steps.version.outputs.new_version }}"
         git push origin ${{ github.ref_name }}
