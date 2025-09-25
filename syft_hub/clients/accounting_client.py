@@ -9,7 +9,19 @@ from pathlib import Path
 from datetime import datetime
 from typing import Any, Dict, Optional
 
-from syft_accounting_sdk import UserClient, ServiceException
+try:
+    from syft_accounting_sdk import UserClient, ServiceException
+    HAS_ACCOUNTING_SDK = True
+except ImportError:
+    # Create stub classes when accounting SDK is not available
+    class UserClient:
+        def __init__(self, *args, **kwargs):
+            raise ImportError("syft-accounting-sdk is required for accounting features. Install with: pip install syft-accounting-sdk")
+    
+    class ServiceException(Exception):
+        pass
+    
+    HAS_ACCOUNTING_SDK = False
 
 from ..models.validation import UserAccountModel
 from ..core.types import APIException

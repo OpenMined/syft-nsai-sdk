@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.4] - 2025-09-25
+
+### Changed
+- Made syft-accounting-sdk an optional dependency to enable PyPI publication
+- Accounting features now require installing with `pip install syft-hub[accounting]`
+- Improved error handling when accounting SDK is not available
+
+### Fixed
+- Resolved PyPI publication issue with git dependencies
+
 ## [0.1.3] - 2025-09-25
 
 ### Added
