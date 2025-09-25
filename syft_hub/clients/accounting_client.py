@@ -61,6 +61,7 @@ class AccountingClient:
             # Account management
             'configure',
             'register_accounting',
+            'create_accounting_user',
             'connect_accounting',
             'save_credentials',
             'get_account_balance',
@@ -122,6 +123,19 @@ class AccountingClient:
 
     def register_accounting(self, email: str, password: Optional[str] = None, organization: Optional[str] = None) -> UserAccountModel:
         """Register a new accounting user account.
+        
+        Args:
+            email: User email
+            password: User password (optional, will be generated if not provided)
+            organization: Organization name (optional)
+            
+        Returns:
+            UserAccountModel with account details
+        """
+        return self._create_accounting_user(email, password, organization)
+    
+    async def create_accounting_user(self, email: str, password: Optional[str] = None, organization: Optional[str] = None) -> UserAccountModel:
+        """Create a new accounting user account (async version).
         
         Args:
             email: User email
