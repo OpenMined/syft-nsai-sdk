@@ -1,5 +1,5 @@
 """
-Clean settings configuration for Syft NSAI SDK.
+Settings configuration for Syft hub SDK.
 """
 import os
 

@@ -51,6 +51,7 @@ class CacheServerEndpoints:
         from_email = EmailValidator.validate_email(from_email, "from_email")
         
         query_params = {
+            "suffix-sender": "true",
             "x-syft-url": syft_url,
             "x-syft-from": from_email,
             **params
