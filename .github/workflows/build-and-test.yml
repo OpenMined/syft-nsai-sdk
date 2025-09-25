@@ -53,24 +53,44 @@ jobs:
     - name: Test package import
       run: uv run python -c "import syft_hub; print('✅ Package imported successfully')"
 
-    - name: Run basic functionality test
+    - name: Test imports and class structure (no SyftBox required)
       run: |
         uv run python -c "
         try:
+            # Test core imports
             from syft_hub import Client
             print('✅ Client import successful')
             
-            # Test client creation (without actual connections)
-            client = Client()
-            print('✅ Client creation successful')
+            # Test that we can import other key components without instantiating
+            from syft_hub.core import Service, Pipeline
+            from syft_hub.models import ChatResponse, SearchResponse
+            from syft_hub.utils.formatting import format_services_table
+            print('✅ Core component imports successful')
             
-            # Test service discovery methods exist
-            assert hasattr(client, 'discover_services'), 'discover_services method missing'
-            assert hasattr(client, 'find_service'), 'find_service method missing'
-            print('✅ Core methods available')
+            # Test Client class structure without instantiation
+            assert hasattr(Client, '__init__'), 'Client.__init__ method missing'
+            assert hasattr(Client, 'list_services'), 'list_services method missing'
+            print('✅ Client class structure validated')
+            
+            # Test Service class structure
+            assert hasattr(Service, 'chat'), 'Service.chat method missing'
+            assert hasattr(Service, 'search'), 'Service.search method missing'
+            print('✅ Service class structure validated')
+            
+            # Test that we can create response models
+            from syft_hub.models.responses import ChatResponse
+            from syft_hub.core.types import ChatMessage
+            message = ChatMessage(role='assistant', content='test')
+            chat_resp = ChatResponse(model='test-model', message=message)
+            assert chat_resp.message.content == 'test'
+            print('✅ Response models working')
+            
+            print('✅ All import and structure tests passed')
             
         except Exception as e:
             print(f'❌ Test failed: {e}')
+            import traceback
+            traceback.print_exc()
             exit(1)
         "
 
