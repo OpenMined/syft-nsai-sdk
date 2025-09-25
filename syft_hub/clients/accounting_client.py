@@ -9,7 +9,19 @@ from pathlib import Path
 from datetime import datetime
 from typing import Any, Dict, Optional
 
-from syft_accounting_sdk import UserClient, ServiceException
+try:
+    from syft_accounting_sdk import UserClient, ServiceException
+    HAS_ACCOUNTING_SDK = True
+except ImportError:
+    # Create stub classes when accounting SDK is not available
+    class UserClient:
+        def __init__(self, *args, **kwargs):
+            raise ImportError("syft-accounting-sdk is required for accounting features. Install with: pip install syft-accounting-sdk")
+    
+    class ServiceException(Exception):
+        pass
+    
+    HAS_ACCOUNTING_SDK = False
 
 from ..models.validation import UserAccountModel
 from ..core.types import APIException
@@ -47,8 +59,10 @@ class AccountingClient:
             'show',
             
             # Account management
+            'configure',
             'register_accounting',
             'connect_accounting',
+            'save_credentials',
             'get_account_balance',
             
             # Status and info
@@ -129,8 +143,18 @@ class AccountingClient:
         """
         self._configure(accounting_url, email, password)
     
-    def _configure(self, accounting_url: str, email: str, password: str):
+    def configure(self, accounting_url: str, email: str, password: str):
         """Configure accounting client.
+        
+        Args:
+            accounting_url: Accounting service URL
+            email: User email
+            password: User password
+        """
+        self._configure(accounting_url, email, password)
+    
+    def _configure(self, accounting_url: str, email: str, password: str):
+        """Internal configure method.
         
         Args:
             accounting_url: Accounting service URL
@@ -496,8 +520,19 @@ class AccountingClient:
         except ServiceException:
             return False
     
-    def _save_credentials(self, config_path: Optional[str] = None):
+    def save_credentials(self, config_path: Optional[str] = None):
         """Save credentials to a config file.
+        
+        WARNING: This saves sensitive credentials to disk. Only call this method
+        if you have explicit user consent to save credentials.
+        
+        Args:
+            config_path: Path to save config (default: ~/.syftbox/accounting.json)
+        """
+        self._save_credentials(config_path)
+    
+    def _save_credentials(self, config_path: Optional[str] = None):
+        """Internal save credentials method.
         
         WARNING: This saves sensitive credentials to disk. Only call this method
         if you have explicit user consent to save credentials.

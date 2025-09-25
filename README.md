@@ -2,6 +2,19 @@
 
 Python SDK for discovering and using SyftBox AI services with built-in payment handling and RAG coordination.
 
+## Installation
+
+```bash
+# Basic installation
+pip install syft-hub
+
+# With accounting features (for paid services)
+pip install syft-hub[accounting]
+
+# With all optional features
+pip install syft-hub[all]
+```
+
 ## Quick Start
 
 ```python
