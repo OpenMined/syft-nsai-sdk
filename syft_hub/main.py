@@ -7,6 +7,8 @@ import asyncio
 import concurrent.futures
 import logging
 import threading
+import hashlib
+import time
 
 from typing import List, Optional, Dict, Any, Union, Awaitable
 from pathlib import Path
@@ -35,6 +37,19 @@ logger = logging.getLogger(__name__)
 # Load environment variables
 load_dotenv()
 
+def _generate_password_from_email_timestamp(email: str) -> str:
+    """Generate a password using hash of current timestamp + email.
+    
+    Args:
+        email: User email
+        
+    Returns:
+        Generated password string
+    """
+    timestamp = str(int(time.time()))
+    combined = f"{timestamp}{email}"
+    return hashlib.sha256(combined.encode()).hexdigest()[:16]
+
 class Client:
     """Main client for discovering and using SyftBox AI services."""
     
@@ -43,6 +58,8 @@ class Client:
             syftbox_config_path: Optional[Path] = None,
             cache_server_url: Optional[str] = None,
             accounting_client: Optional[AccountingClient] = None,
+            set_accounting: bool = False,
+            accounting_pass: Optional[str] = None,
             _auto_setup_accounting: bool = True,
             _auto_health_check_threshold: int = 10
         ):
@@ -52,6 +69,8 @@ class Client:
             syftbox_config_path: Custom path to SyftBox config file
             cache_server_url: Override cache server URL
             accounting_client: Pre-configured AccountingClient instance
+            set_accounting: Whether to set up accounting (creates account if needed)
+            accounting_pass: Password for existing accounting account (required if set_accounting=True and account exists)
             _auto_setup_accounting: Whether to prompt for accounting setup when needed
             _auto_health_check_threshold: Max services for auto health checking
         """
@@ -80,38 +99,59 @@ class Client:
         else:
             logger.info("Using guest mode - no SyftBox authentication found")
 
-        # Set up accounting client - check for existing credentials
+        # Set up accounting client with new set_accounting logic
         if accounting_client:
             self.accounting_client = accounting_client
             if self.accounting_client.is_configured():
                 self._account_configured = True
         else:
-            # Inlined _setup_default_accounting logic
+            # Check for existing accounting credentials
             client, is_configured = AccountingClient.setup_accounting_discovery()
             
-            if is_configured:
-                self._account_configured = True
-                logger.info(f"Found existing accounting credentials for {client.get_email()}")
-            else:
-                """Display account setup instructions to user."""
-                print("SyftBox Account Setup:")
-                print("═" * 60)
-                print("⚠️  No Active Accounting Account Found")
-                print("")
-                print("You are currently on the SyftBox Free tier. As a new user, you receive:")
-                print("   → $20 in free credits to explore the network")
-                print("   → Credits are for trial use only (not a payment method)")
-                print("")
-                print("To continue, choose one of the options below:")
-                print("")
-                print("  🆕 Create a new account:")
-                print("      await client.register_accounting(email, password)")
-                print("")
-                print("  🔑 Connect an existing account:")
-                print("      await client.connect_accounting(email, password)")
-                print("")
+            if set_accounting:
+                if is_configured:
+                    # Accounting exists and set_accounting=True, require accounting_pass
+                    if accounting_pass is None:
+                        raise ValueError("Accounting account already exists. Please provide accounting_pass parameter.")
 
-            self.accounting_client = client
+                    # Verify the provided password works
+                    try:
+                        client.connect_accounting(client.accounting_url, client.get_email(), accounting_pass)
+                        self._account_configured = True
+                        logger.info(f"Connected to existing accounting account for {client.get_email()}")
+                    except Exception as e:
+                        raise AuthenticationError(f"Failed to connect with provided password: {e}")
+                    
+                else:
+                    # No accounting exists and set_accounting=True, create new account
+                    user_email = self.config.email
+                    generated_password = _generate_password_from_email_timestamp(user_email)
+                    
+                    try:
+                        account = client.register_accounting(user_email, generated_password)
+                        client.save_credentials()
+                        print(f"Generated password: {generated_password}")
+                        print("⚠️ Save the password, this won't be shown again!")
+                        self._account_configured = True
+                        logger.info(f"Successfully created accounting account for {user_email}")
+                    except Exception as e:
+                        raise RuntimeError(f"Failed to create accounting account: {e}")
+                
+                self.accounting_client = client
+            else:
+                # set_accounting=False, just show current status
+                if is_configured:
+                    self._account_configured = True
+                    logger.info(f"Found existing accounting credentials for {client.get_email()}")
+                else:
+                    print("⚠️  No SyftBox accounting registered for the user. You can only use free services.")
+                    print("To register (and get free credits for paid services), run:")
+                    print("   → Client(set_accounting=True)")
+                    print("If you already have an account, run:")
+                    print("   → Client(set_accounting=True, accounting_pass=password)")
+                    print("In case of forgotten password, reach out to support@openmined.org.")
+                
+                self.accounting_client = client
         
         # Set up RPC client
         server_url = cache_server_url or self.config.cache_server_url
@@ -1210,9 +1250,7 @@ class Client:
             f"Common operations:",
             f"  client.list_services()                    — Discover available services",
             f"  client.chat('datasite/service', messages=[])       — Chat with a service",
-            f"  client.search('datasite/service', 'message')       — Search with a service",
-            f"  client.register_accounting(email)         — Register account",
-            f"  client.connect_accounting(email, password) — Connect account"
+            f"  client.search('datasite/service', 'message')       — Search with a service"
         ]
         
         return "\n".join(lines)
