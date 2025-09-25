@@ -55,6 +55,9 @@ from .services.chat import ChatService
 from .services.search import SearchService
 from .services.health import HealthMonitor
 
+# Client components (for advanced usage)
+from .clients import SyftBoxAuthClient
+
 # Filtering utilities
 from .discovery.filters import (
     ServiceFilter,
@@ -244,6 +247,9 @@ __all__ = [
     "SearchService",
     "BatchSearchService", 
     "HealthMonitor",
+    
+    # Client components
+    "SyftBoxAuthClient",
     
     # Filtering
     "ServiceFilter",

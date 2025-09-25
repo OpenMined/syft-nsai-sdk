@@ -10,6 +10,7 @@ from typing import Dict, Any, Optional, Union
 from urllib.parse import quote, urljoin
 
 from ..core.exceptions import NetworkError, RPCError, PollingTimeoutError, PollingError, TransactionTokenCreationError
+from ..core.types import ServiceType
 from ..models.service_info import ServiceInfo
 from ..utils.spinner import AsyncSpinner
 from .accounting_client import AccountingClient
@@ -381,8 +382,12 @@ class SyftBoxRPCClient(SyftBoxAPIClient):
             request_data = request_data.copy()
             request_data["model"] = "tinyllama:latest"
 
+        # Check if this is a free service to avoid payment validation errors
+        chat_service = service_info.get_service_info(ServiceType.CHAT)
+        is_free_service = chat_service and chat_service.pricing == 0.0
+        
         chat_args = RequestArgs(
-            is_accounting=True,  # Enable accounting for chat
+            is_accounting=not is_free_service,  # Disable accounting for free services
             # timeout=60.0,        # Longer timeout for chat
             # skip_loader=False    # Show spinner
             # email=self.accounting_client.get_email() if self.accounting_client.is_configured() else None
@@ -407,8 +412,12 @@ class SyftBoxRPCClient(SyftBoxAPIClient):
             request_data = request_data.copy()
             request_data["model"] = "tinyllama:latest"
 
+        # Check if this is a free service to avoid payment validation errors
+        search_service = service_info.get_service_info(ServiceType.SEARCH)
+        is_free_service = search_service and search_service.pricing == 0.0
+
         search_args = RequestArgs(
-            is_accounting=True,  # Enable accounting for search
+            is_accounting=not is_free_service,  # Disable accounting for free services
         )
 
         endpoints = ServiceEndpoints(service_info.datasite, service_info.name)

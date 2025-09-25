@@ -4,11 +4,11 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "syft-hub"
-version = "0.1.2"
+version = "0.1.6"
 description = "Python SDK for discovering and using AI models across the SyftBox network"
 readme = "README.md"
 requires-python = ">=3.9"
-license = { file = "LICENSE" }
+license = { text = "MIT" }
 authors = [
     {name = "SyftBox Team", email = "info@openmined.org"},
     {name = "Irina B", email = "irina@openmined.org"},
@@ -22,18 +22,16 @@ maintainers = [
 
 dependencies = [
     "httpx>=0.24.0",
-    "pydantic>=2.0.0",
     "rich>=13.0.0",
-    "typer>=0.9.0",
     "syft-core>=0.2.7",
     "fastsyftbox>=0.1.19",
-    "ipython>=7.34.0",
+    "ipython==7.34.0",
     "jinja2>=3.1.6",
     "pydantic>=2.11.2",
     "requests>=2.32.3",
     "sqlmodel>=0.0.24",
     "typer>=0.15.2",
-    "python-dotenv>=1.1.0",
+    "python-dotenv>=1.1.1",
     "pydantic-settings>=2.10.1",
     "syft-accounting-sdk",
     "PyJWT>=2.10.1",
@@ -42,7 +40,6 @@ dependencies = [
     "colorama>=0.4.6",
     "fastapi>=0.104.0",
     "uvicorn>=0.24.0",
-    "pandas>=2.0.0,<2.2.4",
     "asyncio>=4.0.0",
     "markdown2>=2.4.0",
 ]
