@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "syft-hub"
-version = "0.1.6"
+version = "0.1.7"
 description = "Python SDK for discovering and using AI models across the SyftBox network"
 readme = "README.md"
 requires-python = ">=3.9"
@@ -25,12 +25,14 @@ dependencies = [
     "rich>=13.0.0",
     "syft-core>=0.2.7",
     "fastsyftbox>=0.1.19",
-    "ipython==8.10.0",
+    "ipython==7.34.0",
     "jinja2>=3.1.6",
     "pydantic>=2.11.2",
-    "requests>=2.32.3",
+    "requests==2.32.4",
+    "click<9.0.0,>=8.1.8",
     "sqlmodel>=0.0.24",
     "typer>=0.15.2",
+    "cryptography<44,>=41.0.5",
     "python-dotenv>=1.1.0",
     "pydantic-settings>=2.10.1",
     "tabulate>=0.9.0",
