@@ -107,9 +107,12 @@ class Client:
         else:
             # Check for existing accounting credentials
             client, is_configured = AccountingClient.setup_accounting_discovery()
-            
+            user_email = self.config.email
+
+            # If credentials are configured, try to connect
             if is_configured:
-                existing_password = self.accounting_client.get_password()
+                # Get existing password from the configured client
+                existing_password = client._credentials["password"] if client._credentials else None
 
                 if existing_password is None:
                     raise ValueError("Accounting account already exists, but the password is not set.")
@@ -118,48 +121,44 @@ class Client:
                 try:
                     client.connect_accounting(client.accounting_url, client.get_email(), existing_password)
                     self._account_configured = True
+                    self.accounting_client = client
+
                     logger.info(f"Connected to existing accounting account for {client.get_email()}")
                 except Exception as e:
                     raise AuthenticationError(f"Failed to connect with provided password: {e}")
-                
-            elif set_accounting or accounting_pass:
-                    # No accounting exists and set_accounting=True, create new account
-                    user_email = self.config.email
-
-                    if accounting_pass:
-                        try:
-                            client.connect_accounting(client.accounting_url, client.get_email(), accounting_pass)
-                            self._account_configured = True
-                            logger.info(f"Connected to existing accounting account for {client.get_email()}")
-                        except Exception as e:
-                            raise AuthenticationError(f"Failed to connect with provided password: {e}")
-                    else:
-                        try:
-                            generated_password = _generate_password_from_email_timestamp(user_email)
-                            account = client.register_accounting(user_email, generated_password)
-                            client.save_credentials()
-                            print(f"Generated password: {generated_password}")
-                            print("⚠️ Save the password, this won't be shown again!")
-                            self._account_configured = True
-                            logger.info(f"Successfully created accounting account for {user_email}")
-                        except Exception as e:
-                            raise RuntimeError(f"Failed to create accounting account: {e}")
-                
-                self.accounting_client = client
-            else:
-                # set_accounting=False, just show current status
-                if is_configured:
+            # If accounting_pass is provided, try connect
+            elif accounting_pass:
+                try:
+                    client.connect_accounting(client.accounting_url, user_email, accounting_pass)
                     self._account_configured = True
-                    logger.info(f"Found existing accounting credentials for {client.get_email()}")
-                else:
-                    print("⚠️  No SyftBox accounting registered for the user. You can only use free services.")
-                    print("To register (and get free credits for paid services), run:")
-                    print("   → Client(set_accounting=True)")
-                    print("If you already have an account, run:")
-                    print("   → Client(set_accounting=True, accounting_pass=password)")
-                    print("In case of forgotten password, reach out to support@openmined.org.")
+                    self.accounting_client = client
+
+                    logger.info(f"Connected to existing accounting account for {user_email}")
+                except Exception as e:
+                    raise AuthenticationError(f"Failed to connect with provided password: {e}")
+            elif set_accounting:
+                try:
+                    generated_password = _generate_password_from_email_timestamp(user_email)
+                    account = client.register_accounting(user_email, generated_password)
+                    client.save_credentials()
+                    self.accounting_client = client
+
+                    print(f"Generated password: {generated_password}")
+                    print("⚠️ Save the password, this won't be shown again!")
+                    self._account_configured = True
+                    logger.info(f"Successfully created accounting account for {user_email}")
+                except Exception as e:
+                    raise RuntimeError(f"Failed to create accounting account: {e}")
                 
-                self.accounting_client = client
+
+            else:
+                print("⚠️  No SyftBox accounting registered for the user. You can only use free services.")
+                print("To register (and get free credits for paid services), run:")
+                print("   → Client(set_accounting=True)")
+                print("If you already have an account, run:")
+                print("   → Client(set_accounting=True, accounting_pass=password)")
+                print("In case of forgotten password, reach out to support@openmined.org.")
+                
         
         # Set up RPC client
         server_url = cache_server_url or self.config.cache_server_url
