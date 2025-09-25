@@ -208,7 +208,8 @@ class HealthMonitor:
 async def check_service_health(
         service_info: ServiceInfo,
         rpc_client: SyftBoxRPCClient,
-        timeout: float = 2.0
+        timeout: float = 2.0,
+        show_spinner: bool = True
     ) -> HealthStatus:
     """Check health of a single service.
     
@@ -230,7 +231,23 @@ async def check_service_health(
         )
         
         try:
-            response = await health_client.call_health(service_info)
+            # Create custom health call to control spinner display
+            from ..clients.endpoint_client import ServiceEndpoints
+            from ..clients.request_client import RequestArgs
+            
+            health_args = RequestArgs(is_accounting=False)
+            endpoints = ServiceEndpoints(service_info.datasite, service_info.name)
+            syft_url = endpoints.health_url()
+            
+            response = await health_client.call_rpc(
+                syft_url, 
+                payload=None, 
+                method="GET", 
+                show_spinner=show_spinner,  # Use the parameter to control spinner
+                args=health_args,
+                max_poll_attempts=15,
+                poll_interval=0.5
+            )
             
             # Parse health response
             if isinstance(response, dict):
