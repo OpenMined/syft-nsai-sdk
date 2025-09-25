@@ -1219,9 +1219,16 @@ class Client:
                 <div style="line-height: 1.8;">
                     <span class="command-code">client.list_services()</span> — Discover available services<br>
                     <span class="command-code">client.chat("service", messages=[])</span> — Chat with a service<br>
-                    <span class="command-code">client.search("service", "message")</span> — Search with a service<br>
-                    <span class="command-code">client.register_accounting(email)</span> — Register accounting<br>
-                    <span class="command-code">client.connect_accounting(email, password)</span> — Connect accounting
+                    <span class="command-code">client.search("service", "message")</span> — Search with a service
+                </div>
+            </div>
+            
+            <div class="docs-section">
+                <div style="margin-bottom: 8px; font-weight: 500;">Account:</div>
+                <div style="font-size: 11px; color: #e67e22; background: #fef9e7; padding: 8px; border-radius: 4px; margin-bottom: 8px;">
+                    ⚠️ No accounting registered - free services only.<br>
+                    <span style="font-family: monospace; font-weight: 600;">Client(set_accounting=True)</span> — Register for paid services<br>
+                    <span style="font-family: monospace; font-weight: 600;">Client(accounting_pass=password)</span> — Connect existing account
                 </div>
             </div>
         </div>
@@ -1374,9 +1381,16 @@ class Client:
                 <div style="line-height: 1.8;">
                     <span class="command-code">client.list_services()</span> — Discover available services<br>
                     <span class="command-code">client.chat("datasite/service", "message")</span> — Chat with a service<br>
-                    <span class="command-code">client.search("datasite/service", "message")</span> — Search with a service<br>
-                    <span class="command-code">client.register_accounting(email)</span> — Register account<br>
-                    <span class="command-code">client.connect_accounting(email, password)</span> — Connect account
+                    <span class="command-code">client.search("datasite/service", "message")</span> — Search with a service
+                </div>
+            </div>
+            
+            <div class="docs-section">
+                <div style="margin-bottom: 8px; font-weight: 500;">Account:</div>
+                <div style="font-size: 11px; color: #e67e22; background: #fef9e7; padding: 8px; border-radius: 4px; margin-bottom: 8px;">
+                    ⚠️ No accounting registered. Free services only.<br>
+                    <span style="font-family: monospace; font-weight: 600;">Client(set_accounting=True)</span> — Register for paid services<br>
+                    <span style="font-family: monospace; font-weight: 600;">Client(accounting_pass=password)</span> — Connect existing account
                 </div>
             </div>
         </div>

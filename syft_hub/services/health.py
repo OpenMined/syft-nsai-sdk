@@ -225,7 +225,7 @@ async def check_service_health(
         health_client = SyftBoxRPCClient(
             cache_server_url=rpc_client.base_url,
             timeout=timeout,
-            max_poll_attempts=3,  # Fewer attempts for health checks
+            max_poll_attempts=3,  # Quick attempts for immediate responses (non-202)
             poll_interval=0.5  # Faster polling for health checks
         )
         

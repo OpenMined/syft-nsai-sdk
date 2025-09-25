@@ -26,7 +26,7 @@ class SyftBoxRPCClient(SyftBoxAPIClient):
     def __init__(self, 
             cache_server_url: str = "https://syftbox.net",
             timeout: float = 30.0,
-            max_poll_attempts: int = 30,
+            max_poll_attempts: int = 50,
             poll_interval: float = 3.0,
             accounting_client: Optional[AccountingClient] = None,
             syftbox_auth_client: Optional[SyftBoxAuthClient] = None,
@@ -37,7 +37,7 @@ class SyftBoxRPCClient(SyftBoxAPIClient):
         Args:
             cache_server_url: URL of the SyftBox cache server
             timeout: Request timeout in seconds
-            max_poll_attempts: Maximum polling attempts for async responses
+            max_poll_attempts: Maximum polling attempts for async responses (default 50 for regular operations)
             poll_interval: Seconds between polling attempts
             accounting_client: Optional accounting client for payments
             syftbox_auth_client: Optional SyftBox auth client for authentication
@@ -72,6 +72,8 @@ class SyftBoxRPCClient(SyftBoxAPIClient):
                     method: str = "POST",
                     show_spinner: bool = True,
                     args: Optional[RequestArgs] = None,
+                    max_poll_attempts: Optional[int] = None,
+                    poll_interval: Optional[float] = None,
                     ) -> Dict[str, Any]:
         """Make an RPC call to a SyftBox service.
         
@@ -83,6 +85,8 @@ class SyftBoxRPCClient(SyftBoxAPIClient):
             method: HTTP method to use (GET or POST)
             show_spinner: Whether to show spinner during polling
             args: Additional request arguments
+            max_poll_attempts: Override max polling attempts for this call
+            poll_interval: Override polling interval for this call
             
         Returns:
             Response data from the service
@@ -190,7 +194,7 @@ class SyftBoxRPCClient(SyftBoxAPIClient):
                     raise RPCError("Async response but no poll URL found", syft_url)
                 
                 # Poll for the actual response
-                return await self._poll_for_response(poll_url_path, syft_url, request_id, show_spinner)
+                return await self._poll_for_response(poll_url_path, syft_url, request_id, show_spinner, max_poll_attempts, poll_interval)
 
             else:
                 # Error response
@@ -225,6 +229,8 @@ class SyftBoxRPCClient(SyftBoxAPIClient):
                                  syft_url: str, 
                                  request_id: str,
                                  show_spinner: bool = True,
+                                 max_attempts: Optional[int] = None,
+                                 poll_interval: Optional[float] = None,
                                 ) -> Dict[str, Any]:
         """Poll for an async RPC response.
         
@@ -233,6 +239,8 @@ class SyftBoxRPCClient(SyftBoxAPIClient):
             syft_url: Original syft URL for error context
             request_id: Request ID for logging
             show_spinner: Whether to show spinner during polling
+            max_attempts: Override max polling attempts (uses instance default if None)
+            poll_interval: Override polling interval (uses instance default if None)
             
         Returns:
             Final response data
@@ -241,6 +249,10 @@ class SyftBoxRPCClient(SyftBoxAPIClient):
             PollingTimeoutError: When max attempts reached
             PollingError: For polling-specific errors
         """
+        # Use provided values or fallback to instance defaults
+        effective_max_attempts = max_attempts if max_attempts is not None else self.max_poll_attempts
+        effective_poll_interval = poll_interval if poll_interval is not None else self.poll_interval
+        
         # Build full poll URL
         poll_url = urljoin(self.base_url, poll_url_path.lstrip('/'))
 
@@ -250,7 +262,7 @@ class SyftBoxRPCClient(SyftBoxAPIClient):
             spinner = AsyncSpinner("Waiting for service response")
             await spinner.start_async()
         try:
-            for attempt in range(1, self.max_poll_attempts + 1):
+            for attempt in range(1, effective_max_attempts + 1):
                 try:
                     # Prepare polling headers (include auth if available)
                     poll_headers = {
@@ -331,20 +343,20 @@ class SyftBoxRPCClient(SyftBoxAPIClient):
                         raise PollingError(f"Polling failed with status {response.status_code}", syft_url, poll_url)
                     
                     # Wait before next attempt
-                    if attempt < self.max_poll_attempts:
-                        await asyncio.sleep(self.poll_interval)
+                    if attempt < effective_max_attempts:
+                        await asyncio.sleep(effective_poll_interval)
                 
                 except httpx.TimeoutException:
                     logger.warning(f"Polling timeout on attempt {attempt} for {request_id}")
-                    if attempt == self.max_poll_attempts:
-                        raise PollingTimeoutError(syft_url, attempt, self.max_poll_attempts)
+                    if attempt == effective_max_attempts:
+                        raise PollingTimeoutError(syft_url, attempt, effective_max_attempts)
                 except httpx.RequestError as e:
                     logger.warning(f"Polling request error on attempt {attempt}: {e}")
-                    if attempt == self.max_poll_attempts:
+                    if attempt == effective_max_attempts:
                         raise PollingError(f"Network error during polling: {e}", syft_url, poll_url)
             
             # Max attempts reached
-            raise PollingTimeoutError(syft_url, self.max_poll_attempts, self.max_poll_attempts)
+            raise PollingTimeoutError(syft_url, effective_max_attempts, effective_max_attempts)
         finally:
             # Always stop spinner, even if an exception occurs
             if spinner:
@@ -365,7 +377,16 @@ class SyftBoxRPCClient(SyftBoxAPIClient):
 
         endpoints = ServiceEndpoints(service_info.datasite, service_info.name)
         syft_url = endpoints.health_url()
-        return await self.call_rpc(syft_url, payload=None, method="GET", show_spinner=False, args=health_args)
+        # Use 30 attempts for health checks with faster polling
+        return await self.call_rpc(
+            syft_url, 
+            payload=None, 
+            method="GET", 
+            show_spinner=False, 
+            args=health_args,
+            max_poll_attempts=30,
+            poll_interval=0.5
+        )
     
     async def call_chat(self, service_info: ServiceInfo, request_data: Dict[str, Any]) -> Dict[str, Any]:
         """Call the chat endpoint of a service.
