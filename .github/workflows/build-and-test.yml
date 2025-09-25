@@ -10,6 +10,9 @@ on:
 jobs:
   test:
     runs-on: ${{ matrix.os }}
+    env:
+      PYTHONIOENCODING: utf-8
+      PYTHONUTF8: 1
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
@@ -51,31 +54,31 @@ jobs:
       run: uv run python -m py_compile syft_hub/__init__.py
 
     - name: Test package import
-      run: uv run python -c "import syft_hub; print('✅ Package imported successfully')"
+      run: uv run python -X utf8 -c "import syft_hub; print('[OK] Package imported successfully')"
 
     - name: Test imports and class structure (no SyftBox required)
       run: |
-        uv run python -c "
+        uv run python -X utf8 -c "
         try:
             # Test core imports
             from syft_hub import Client
-            print('✅ Client import successful')
+            print('[OK] Client import successful')
             
             # Test that we can import other key components without instantiating
             from syft_hub.core import Service, Pipeline
             from syft_hub.models import ChatResponse, SearchResponse
             from syft_hub.utils.formatting import format_services_table
-            print('✅ Core component imports successful')
+            print('[OK] Core component imports successful')
             
             # Test Client class structure without instantiation
             assert hasattr(Client, '__init__'), 'Client.__init__ method missing'
             assert hasattr(Client, 'list_services'), 'list_services method missing'
-            print('✅ Client class structure validated')
+            print('[OK] Client class structure validated')
             
             # Test Service class structure
             assert hasattr(Service, 'chat'), 'Service.chat method missing'
             assert hasattr(Service, 'search'), 'Service.search method missing'
-            print('✅ Service class structure validated')
+            print('[OK] Service class structure validated')
             
             # Test that we can create response models
             from syft_hub.models.responses import ChatResponse
@@ -83,12 +86,12 @@ jobs:
             message = ChatMessage(role='assistant', content='test')
             chat_resp = ChatResponse(model='test-model', message=message)
             assert chat_resp.message.content == 'test'
-            print('✅ Response models working')
+            print('[OK] Response models working')
             
-            print('✅ All import and structure tests passed')
+            print('[OK] All import and structure tests passed')
             
         except Exception as e:
-            print(f'❌ Test failed: {e}')
+            print(f'[ERROR] Test failed: {e}')
             import traceback
             traceback.print_exc()
             exit(1)
@@ -98,7 +101,7 @@ jobs:
       run: |
         if uv pip list | grep -q black; then
           echo "Running black check..."
-          uv run black --check --diff syft_hub/ || echo "⚠️  Black formatting check failed (non-critical)"
+          uv run black --check --diff syft_hub/ || echo "[WARNING] Black formatting check failed (non-critical)"
         else
           echo "Black not installed, skipping formatting check"
         fi
@@ -144,11 +147,11 @@ jobs:
 
     - name: Display package info
       run: |
-        echo "📦 Built packages:"
+        echo "[PACKAGES] Built packages:"
         ls -la dist/
         echo ""
-        echo "📋 Package contents:"
-        uv run python -c "
+        echo "[INFO] Package contents:"
+        uv run python -X utf8 -c "
         import os
         for file in os.listdir('dist'):
             if file.endswith('.whl'):
@@ -182,7 +185,7 @@ jobs:
       run: uv pip install safety bandit
 
     - name: Run safety check
-      run: uv run safety check --json || echo "⚠️  Safety check found issues (non-critical for CI)"
+      run: uv run safety check --json || echo "[WARNING] Safety check found issues (non-critical for CI)"
 
     - name: Run bandit security scan
-      run: uv run bandit -r syft_hub/ -f json || echo "⚠️  Bandit found security issues (non-critical for CI)"
+      run: uv run bandit -r syft_hub/ -f json || echo "[WARNING] Bandit found security issues (non-critical for CI)"
