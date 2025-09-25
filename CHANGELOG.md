@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.5] - 2025-09-25
+
+### Fixed
+- Resolved dependency conflicts with Google Colab and other environments
+- Relaxed ipython constraint from >=8.18.1 to >=7.34.0 for Colab compatibility  
+- Relaxed pandas constraint from >=2.3.1 to >=2.0.0 for broader compatibility
+- Added cryptography version constraint (<44.0.0) to avoid conflicts
+- Removed duplicate pydantic and typer entries
+- Removed asyncio dependency (part of Python standard library)
+
+### Changed
+- Improved dependency compatibility across different Python environments
+
 ## [0.1.4] - 2025-09-25
 
 ### Changed
