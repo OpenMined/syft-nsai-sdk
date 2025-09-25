@@ -300,10 +300,7 @@ class PipelineResult:
         # Cost
         cost_class = "free" if self.cost == 0 else "paid"
         execution_details.append(f'<span class="pipeline-cost {cost_class}">Cost: ${self.cost:.4f}</span>')
-        
-        # Model
-        if self.response and hasattr(self.response, 'model') and self.response.model:
-            execution_details.append(f'<span class="pipeline-model">Model: {self.response.model}</span>')
+
         
         # Token usage
         if self.response and hasattr(self.response, 'usage') and self.response.usage:

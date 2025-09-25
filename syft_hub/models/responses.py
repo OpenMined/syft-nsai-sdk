@@ -234,11 +234,6 @@ class ChatResponse(BaseResponse):
             </div>
             
             <div class="status-line">
-                <span class="status-label">Model:</span>
-                <span class="status-value">{self.model}</span>
-            </div>
-            
-            <div class="status-line">
                 <span class="status-label">Content:</span>
             </div>
             <div class="content-preview">{content_preview}</div>
