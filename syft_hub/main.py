@@ -152,12 +152,6 @@ class Client:
                     raise RuntimeError(f"Failed to create accounting account: {e}")
             else:
                 self.accounting_client = None
-                print("⚠️  No SyftBox accounting registered for the user. You can only use free services.")
-                print("To register (and get free credits for paid services), run:")
-                print("   → Client(set_accounting=True)")
-                print("If you already have an account, run:")
-                print("   → Client(set_accounting=True, accounting_pass=password)")
-                print("In case of forgotten password, reach out to support@openmined.org.")
                 
         
         # Set up RPC client
@@ -314,25 +308,13 @@ class Client:
         )
         
         if should_health_check:
-            # Show spinner during health check
-            spinner = Spinner(f"Checking health of {len(filtered_services)} service(s)")
-            
             try:
-                print(f"Performing health check on {len(filtered_services)} service(s)...")
-                spinner.start()
-                
-                # Brief pause to show spinner activity
-                time.sleep(0.3)
-                
-                # Stop spinner before health check output to prevent interference
-                spinner.stop()
-                
                 # Use thread-based approach to avoid event loop conflicts
+                # The spinner is now handled inside _batch_health_check_with_progress
                 filtered_services = run_async_in_thread(
                     self._add_health_status(filtered_services)
                 )
             except Exception as e:
-                spinner.stop()
                 logger.warning(f"Health check failed: {e}. Continuing without health status.")
         
         logger.debug(f"Discovered {len(filtered_services)} services (health_check={should_health_check})")
@@ -1151,7 +1133,7 @@ class Client:
         
         # Count available services
         try:
-            services = self.list_services()
+            services = self.list_services(health_check="never")
             service_count = len(services) if services else 0
         except:
             service_count = 0
@@ -1281,7 +1263,7 @@ class Client:
         
         # Count available services
         try:
-            services = self.list_services()
+            services = self.list_services(health_check="never")
             service_count = len(services) if services else 0
         except:
             service_count = 0
@@ -1313,7 +1295,7 @@ class Client:
         
         # Count available services
         try:
-            services = self.list_services()
+            services = self.list_services(health_check="never")
             service_count = len(services) if services else 0
         except:
             service_count = 0
@@ -1552,19 +1534,32 @@ class Client:
             return {}
 
         online_services = []
+        spinner_stopped = False
+        
+        # Start a spinner for the health check process
+        from .utils.spinner import Spinner
+        spinner = Spinner("Waiting for service response")
+        spinner.start()
         
         # Import semaphore for concurrent control
         semaphore = asyncio.Semaphore(max_concurrent)
         
         async def check_single_service_with_feedback(service: ServiceInfo) -> tuple[str, HealthStatus]:
+            nonlocal spinner_stopped
             async with semaphore:
-                health = await check_service_health(service, rpc_client, timeout)
+                # Check health without individual spinners
+                health = await check_service_health(service, rpc_client, timeout, show_spinner=False)
                 
-                # If service is online, add to our list and display immediately
+                # Display status message based on health result
+                service_name = f"{service.datasite}/{service.name}"
                 if health == HealthStatus.ONLINE:
-                    service_name = f"{service.datasite}/{service.name}"
+                    # Stop spinner on first output if not already stopped
+                    if not spinner_stopped:
+                        spinner.stop()
+                        spinner_stopped = True
+                    
                     online_services.append(service_name)
-                    print(f"<{service_name}>")
+                    print(f"Service \"{service_name}\" is online!")
                 
                 return service.name, health
         
@@ -1574,6 +1569,10 @@ class Client:
         start_time = time.time()
         results = await asyncio.gather(*tasks, return_exceptions=True)
         end_time = time.time()
+        
+        # Ensure spinner is stopped even if no services were online
+        if not spinner_stopped:
+            spinner.stop()
         
         logger.info(f"Batch health check completed in {end_time - start_time:.2f}s for {len(services)} services")
         
