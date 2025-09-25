@@ -40,19 +40,10 @@ dependencies = [
     "cryptography>=41.0.5,<44.0.0",
     "fastapi>=0.104.0",
     "uvicorn>=0.24.0",
-    "pandas>=2.0.0",
-]
-
-[project.optional-dependencies]
-chat = [
-    "aiohttp>=3.8.0",
-]
-search = [
-    "httpx>=0.24.0",
-]
-accounting = [
+    "pandas>=2.0.0,<2.2.4dev0",
     "syft-accounting-sdk>=0.1.0",
 ]
+
 all = [
     "aiohttp>=3.8.0",
     "httpx>=0.24.0",
