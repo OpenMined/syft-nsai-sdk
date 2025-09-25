@@ -57,8 +57,10 @@ class AccountingClient:
             'show',
             
             # Account management
+            'configure',
             'register_accounting',
             'connect_accounting',
+            'save_credentials',
             'get_account_balance',
             
             # Status and info
@@ -184,8 +186,18 @@ class AccountingClient:
         """
         self._configure(accounting_url, email, password)
     
-    def _configure(self, accounting_url: str, email: str, password: str):
+    def configure(self, accounting_url: str, email: str, password: str):
         """Configure accounting client.
+        
+        Args:
+            accounting_url: Accounting service URL
+            email: User email
+            password: User password
+        """
+        self._configure(accounting_url, email, password)
+    
+    def _configure(self, accounting_url: str, email: str, password: str):
+        """Internal configure method.
         
         Args:
             accounting_url: Accounting service URL
@@ -551,8 +563,19 @@ class AccountingClient:
         except ServiceException:
             return False
     
-    def _save_credentials(self, config_path: Optional[str] = None):
+    def save_credentials(self, config_path: Optional[str] = None):
         """Save credentials to a config file.
+        
+        WARNING: This saves sensitive credentials to disk. Only call this method
+        if you have explicit user consent to save credentials.
+        
+        Args:
+            config_path: Path to save config (default: ~/.syftbox/accounting.json)
+        """
+        self._save_credentials(config_path)
+    
+    def _save_credentials(self, config_path: Optional[str] = None):
+        """Internal save credentials method.
         
         WARNING: This saves sensitive credentials to disk. Only call this method
         if you have explicit user consent to save credentials.
