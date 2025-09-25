@@ -156,6 +156,32 @@ class Service:
             ]
         
         
+        # Create HTML example strings with proper newlines
+        chat_example_html = '''
+<span style="color: #6c757d;"># Chat with parameters</span>
+response = service.chat(
+    messages=[
+        {"role": "user", "content": "Write a short story about AI"}
+    ],
+    temperature=0.7,
+    max_tokens=200
+)
+print(response.content)'''
+
+        search_example_html = '''
+
+<span style="color: #6c757d;"># Search with the service</span>
+results = service.search("machine learning")
+for result in results:
+    print(result.content, result.score)
+
+<span style="color: #6c757d;"># Search with parameters</span>
+results = service.search(
+    message="latest AI research", 
+    topK=10,
+    similarity_threshold=0.8
+)'''
+        
         # Build comprehensive HTML widget reusing existing CSS classes
         html = f'''
         <style>
@@ -354,7 +380,7 @@ class Service:
                 
                 <div class="service-obj-command-code" style="white-space: pre-wrap; line-height: 1.4; padding: 16px; font-size: 12px; margin-bottom: 16px;"><span style="color: #6c757d;"># Load the service</span>
 service = client.load_service('{datasite}/{service_name}')
-{('<span style="color: #6c757d;"># Chat with parameters</span>\nresponse = service.chat(\n    messages=[\n        {"role": "user", "content": "Write a short story about AI"}\n    ],\n    temperature=0.7,\n    max_tokens=200\n)\nprint(response.content)' if self.supports_chat else '') + ('\n\n<span style="color: #6c757d;"># Search with the service</span>\nresults = service.search("machine learning")\nfor result in results:\n    print(result.content, result.score)\n\n<span style="color: #6c757d;"># Search with parameters</span>\nresults = service.search(\n    message="latest AI research", \n    topK=10,\n    similarity_threshold=0.8\n)' if self.supports_search else '')}</div>
+{chat_example_html if self.supports_chat else ''}{search_example_html if self.supports_search else ''}</div>
 
                 <div style="margin-top: 20px; font-size: 12px; color: #666;">
                     <div style="font-weight: 500; margin-bottom: 8px;">Available operations:</div>
