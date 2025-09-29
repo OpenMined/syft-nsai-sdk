@@ -209,7 +209,9 @@ async def check_service_health(
         service_info: ServiceInfo,
         rpc_client: SyftBoxRPCClient,
         timeout: float = 1.5,
-        show_spinner: bool = True
+        show_spinner: bool = True,
+        max_poll_attempts: int = 15,
+        poll_interval: float = 0.25
     ) -> HealthStatus:
     """Check health of a single service.
     
@@ -226,8 +228,8 @@ async def check_service_health(
         health_client = SyftBoxRPCClient(
             cache_server_url=rpc_client.base_url,
             timeout=timeout,
-            max_poll_attempts=15,  # Updated to 15 attempts for health checks
-            poll_interval=0.25  # Updated to 0.25s polling interval
+            max_poll_attempts=max_poll_attempts,  # Updated to 15 attempts for health checks
+            poll_interval=poll_interval  # Updated to 0.25s polling interval
         )
         
         try:

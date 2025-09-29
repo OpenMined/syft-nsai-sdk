@@ -376,32 +376,91 @@ def generate_adaptive_css(class_prefix: str, additional_styles: dict = None) -> 
     <script>
     (function() {
         function detectAndApplyTheme() {
-            const isDark = document.querySelector('body[theme="dark"]') ||
-                          document.querySelector('.theme-dark') ||
-                          document.querySelector('[data-theme="dark"]') ||
-                          document.querySelector('body.dark-theme') ||
-                          document.querySelector('body[data-jp-theme-name*="dark"]') ||
-                          document.querySelector('.jp-mod-dark');
+            // Check for dark theme using multiple methods
+            let isDark = false;
             
+            // Method 1: Check body/html attributes
+            isDark = isDark || document.querySelector('body[theme="dark"]') !== null;
+            isDark = isDark || document.querySelector('.theme-dark') !== null;
+            isDark = isDark || document.querySelector('[data-theme="dark"]') !== null;
+            isDark = isDark || document.querySelector('body.dark-theme') !== null;
+            isDark = isDark || document.querySelector('body[data-jp-theme-name*="dark"]') !== null;
+            isDark = isDark || document.querySelector('.jp-mod-dark') !== null;
+            isDark = isDark || document.querySelector('body[data-vscode-theme-kind*="dark"]') !== null;
+            isDark = isDark || document.querySelector('body.vscode-dark') !== null;
+            
+            // Method 2: Check CSS media query (prefers-color-scheme)
+            if (!isDark && window.matchMedia) {
+                isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+            }
+            
+            // Method 3: For Colab - check computed background color of body
+            if (!isDark) {
+                try {
+                    const bodyBg = window.getComputedStyle(document.body).backgroundColor;
+                    if (bodyBg && bodyBg !== 'rgba(0, 0, 0, 0)' && bodyBg !== 'transparent') {
+                        const rgb = bodyBg.match(/\\d+/g);
+                        if (rgb && rgb.length >= 3) {
+                            const r = parseInt(rgb[0]);
+                            const g = parseInt(rgb[1]);
+                            const b = parseInt(rgb[2]);
+                            const brightness = (r * 299 + g * 587 + b * 114) / 1000;
+                            isDark = brightness < 128;
+                        }
+                    }
+                } catch (e) {
+                    // Ignore errors
+                }
+            }
+            
+            // Apply theme to all widgets
             const widgets = document.querySelectorAll('.syft-widget');
             widgets.forEach(widget => {
                 widget.setAttribute('data-theme', isDark ? 'dark' : 'light');
+            });
+            
+            // Also set a CSS class for easier styling
+            widgets.forEach(widget => {
+                if (isDark) {
+                    widget.classList.add('syft-dark-mode');
+                } else {
+                    widget.classList.remove('syft-dark-mode');
+                }
             });
         }
         
         // Apply theme immediately
         detectAndApplyTheme();
         
+        // Apply again after a short delay (for Colab compatibility)
+        setTimeout(detectAndApplyTheme, 100);
+        setTimeout(detectAndApplyTheme, 500);
+        
+        // Apply when DOM is fully loaded
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', detectAndApplyTheme);
+        }
+        
         // Watch for theme changes
-        const observer = new MutationObserver(detectAndApplyTheme);
-        observer.observe(document.body, {
-            attributes: true,
-            attributeFilter: ['theme', 'data-jp-theme-name', 'class']
-        });
-        observer.observe(document.documentElement, {
-            attributes: true,
-            attributeFilter: ['theme', 'data-jp-theme-name', 'class']
-        });
+        try {
+            const observer = new MutationObserver(detectAndApplyTheme);
+            observer.observe(document.body, {
+                attributes: true,
+                attributeFilter: ['theme', 'data-jp-theme-name', 'class', 'data-theme', 'data-vscode-theme-kind']
+            });
+            observer.observe(document.documentElement, {
+                attributes: true,
+                attributeFilter: ['theme', 'data-jp-theme-name', 'class', 'data-theme']
+            });
+        } catch (e) {
+            // If MutationObserver fails, fall back to periodic checking
+            setInterval(detectAndApplyTheme, 1000);
+        }
+        
+        // Listen for system theme changes
+        if (window.matchMedia) {
+            window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', detectAndApplyTheme);
+        }
     })();
     </script>
     '''
@@ -610,8 +669,49 @@ def generate_adaptive_css(class_prefix: str, additional_styles: dict = None) -> 
             background: rgba(0, 0, 0, 0.15);
         }}
         
-        /* Dark theme */
+        /* Dark theme - primary selectors for Colab compatibility */
+        .syft-widget.syft-dark-mode .{class_prefix}-widget {{
+            color: {dark['text_primary']} !important;
+            background: {dark['primary_bg']} !important;
+            border-color: {dark['border_color']} !important;
+        }}
+        .syft-widget.syft-dark-mode .widget-title {{
+            color: {dark['text_primary']} !important;
+        }}
+        .syft-widget.syft-dark-mode .status-label {{
+            color: {dark['text_secondary']} !important;
+        }}
+        .syft-widget.syft-dark-mode .status-value {{
+            color: #ffffff !important;
+            font-weight: 500 !important;
+        }}
+        .syft-widget.syft-dark-mode .markdown-content {{
+            color: {dark['text_primary']} !important;
+        }}
+        .syft-widget.syft-dark-mode .command-code {{
+            color: {dark['text_primary']} !important;
+        }}
+        .syft-widget.syft-dark-mode .badge-ready,
+        .syft-widget.syft-dark-mode .badge-complete {{
+            background: {dark['badge_success_bg']} !important;
+            color: {dark['badge_success_text']} !important;
+        }}
+        .syft-widget.syft-dark-mode .badge-not-ready {{
+            background: {dark['badge_danger_bg']} !important;
+            color: {dark['badge_danger_text']} !important;
+        }}
+        .syft-widget.syft-dark-mode .badge-online {{
+            background: {dark['badge_success_bg']} !important;
+            color: {dark['badge_success_text']} !important;
+        }}
+        .syft-widget.syft-dark-mode .badge-offline {{
+            background: {dark['badge_danger_bg']} !important;
+            color: {dark['badge_danger_text']} !important;
+        }}
+        
+        /* Dark theme - fallback selectors for other environments */
         .syft-widget[data-theme="dark"] .{class_prefix}-widget,
+        .syft-widget.syft-dark-mode .{class_prefix}-widget,
         .theme-dark .{class_prefix}-widget,
         body[theme="dark"] .{class_prefix}-widget,
         body[data-jp-theme-name*="dark"] .{class_prefix}-widget,
@@ -627,6 +727,7 @@ def generate_adaptive_css(class_prefix: str, additional_styles: dict = None) -> 
             border-color: {dark['border_color']};
         }}
         .syft-widget[data-theme="dark"] .widget-title,
+        .syft-widget.syft-dark-mode .widget-title,
         .theme-dark .widget-title,
         body[theme="dark"] .widget-title,
         body[data-jp-theme-name*="dark"] .widget-title,
@@ -640,6 +741,7 @@ def generate_adaptive_css(class_prefix: str, additional_styles: dict = None) -> 
             color: {dark['text_primary']};
         }}
         .syft-widget[data-theme="dark"] .status-label,
+        .syft-widget.syft-dark-mode .status-label,
         .theme-dark .status-label,
         body[theme="dark"] .status-label,
         body[data-jp-theme-name*="dark"] .status-label,
@@ -647,6 +749,7 @@ def generate_adaptive_css(class_prefix: str, additional_styles: dict = None) -> 
             color: {dark['text_secondary']};
         }}
         .syft-widget[data-theme="dark"] .status-value,
+        .syft-widget.syft-dark-mode .status-value,
         .theme-dark .status-value,
         body[theme="dark"] .status-value,
         body[data-jp-theme-name*="dark"] .status-value,

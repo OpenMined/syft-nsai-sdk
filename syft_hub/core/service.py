@@ -423,7 +423,7 @@ results = service.search(
                 from ..utils.async_utils import run_async_in_thread
                 # Use longer timeout for chat health checks as chat services may take longer to respond
                 health_status = run_async_in_thread(
-                    check_service_health(self._service_info, self._client.rpc_client, timeout=5.0)
+                    check_service_health(self._service_info, self._client.rpc_client, timeout=5.0, max_poll_attempts=30, poll_interval=0.5)
                 )
                 self._service_info.health_status = health_status
                 
@@ -460,7 +460,7 @@ results = service.search(
             # Perform fresh health check to see if service came back online
             from ..services.health import check_service_health
             # Use longer timeout for chat health checks as chat services may take longer to respond
-            health_status = await check_service_health(self._service_info, self._client.rpc_client, timeout=5.0)
+            health_status = await check_service_health(self._service_info, self._client.rpc_client, timeout=5.0, max_poll_attempts=30, poll_interval=0.5)
             self._service_info.health_status = health_status
             
             # If still offline after fresh check, raise error
