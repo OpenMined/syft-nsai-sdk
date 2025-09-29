@@ -4,7 +4,7 @@
 
 LLMs often fail on domain-specific questions, not from lack of capability, but from missing access to expert data. RAG extends their reach with external context, but only if you already own the data. 
 
-![Uploading image.png…]()
+<img width="6424" height="3716" alt="image" src="https://github.com/user-attachments/assets/eeb886be-c3e0-4b96-ad69-f6cd13279adf" />
 
 ---
 
