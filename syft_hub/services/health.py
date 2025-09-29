@@ -78,7 +78,7 @@ class HealthMonitor:
         new_status = await batch_health_check(
             self.monitored_services,
             self.rpc_client,
-            timeout=2.0
+            timeout=1.5
         )
         
         # Check for status changes and trigger callbacks
@@ -208,7 +208,7 @@ class HealthMonitor:
 async def check_service_health(
         service_info: ServiceInfo,
         rpc_client: SyftBoxRPCClient,
-        timeout: float = 2.0,
+        timeout: float = 1.5,
         show_spinner: bool = True
     ) -> HealthStatus:
     """Check health of a single service.
@@ -226,8 +226,8 @@ async def check_service_health(
         health_client = SyftBoxRPCClient(
             cache_server_url=rpc_client.base_url,
             timeout=timeout,
-            max_poll_attempts=3,  # Quick attempts for immediate responses (non-202)
-            poll_interval=0.5  # Faster polling for health checks
+            max_poll_attempts=15,  # Updated to 15 attempts for health checks
+            poll_interval=0.25  # Updated to 0.25s polling interval
         )
         
         try:
@@ -246,7 +246,7 @@ async def check_service_health(
                 show_spinner=show_spinner,  # Use the parameter to control spinner
                 args=health_args,
                 max_poll_attempts=15,
-                poll_interval=0.5
+                poll_interval=0.25
             )
             
             # Parse health response
@@ -286,7 +286,7 @@ async def check_service_health(
 async def batch_health_check(
         services: List[ServiceInfo],
         rpc_client: SyftBoxRPCClient,
-        timeout: float = 2.0,
+        timeout: float = 1.5,
         max_concurrent: int = 10
     ) -> Dict[str, HealthStatus]:
     """Check health of multiple services concurrently.

@@ -4,6 +4,7 @@ Supports both inline and object-oriented RAG/FedRAG workflows
 """
 import asyncio
 import logging
+import sys
 from typing import List, Dict, Optional, Union, TYPE_CHECKING
 
 from .types import ServiceType, ServiceSpec
@@ -16,6 +17,40 @@ if TYPE_CHECKING:
     from .service import Service 
 
 logger = logging.getLogger(__name__)
+
+class PipelineOutputHandler:
+    """Handles output collection and display for pipeline execution."""
+    
+    def __init__(self):
+        self.messages = []
+        self.in_jupyter = self._detect_jupyter()
+    
+    def _detect_jupyter(self):
+        """Detect if we're running in Jupyter."""
+        try:
+            return 'ipykernel' in sys.modules or 'IPython' in sys.modules
+        except:
+            return False
+    
+    def print(self, *args, **kwargs):
+        """Context-aware print that works in both Jupyter and regular Python."""
+        message = ' '.join(str(arg) for arg in args)
+        self.messages.append(message)
+        
+        if not self.in_jupyter:
+            # In regular Python, print immediately
+            print(*args, **kwargs)
+    
+    def get_output(self):
+        """Get all collected output as a string."""
+        return '\n'.join(self.messages)
+
+# Global output handler for pipeline
+_pipeline_output = PipelineOutputHandler()
+
+def _jupyter_aware_print(*args, **kwargs):
+    """Print function that works correctly in both Jupyter notebooks and regular Python contexts."""
+    _pipeline_output.print(*args, **kwargs)
 
 class Pipeline:
     """Pipeline for structured RAG/FedRAG workflows.
@@ -90,78 +125,85 @@ class Pipeline:
     def _get_text_representation(self) -> str:
         """Get text representation of the pipeline."""
         # Determine pipeline status
-        status = "Configured" if self.data_sources and self.synthesizer else "Incomplete"
-        status_text = f" [{status}]"
+        is_configured = bool(self.data_sources and self.synthesizer)
+        status = "Configured" if is_configured else "Incomplete"
+        status_emoji = "✅" if is_configured else "⚠️"
+        
+        # Header with styling
+        header = f"🔗 RAG Pipeline {status_emoji} [{status}]"
+        separator = "=" * min(len(header.replace('🔗', '').replace(status_emoji, '').strip()), 60)
         
         lines = [
-            f"RAG Pipeline{status_text}",
+            header,
+            separator,
             "",
-            f"Data Sources:     {len(self.data_sources)} sources",
+            f"📊 Data Sources:   {len(self.data_sources)} sources",
         ]
         
-        # List data sources
+        # List data sources with better styling
         if self.data_sources:
             for i, source in enumerate(self.data_sources, 1):
                 params_str = ""
                 if source.params:
                     key_params = [f"{k}={v}" for k, v in list(source.params.items())[:2]]
                     params_str = f" ({', '.join(key_params)})"
-                lines.append(f"  {i}. {source.name}{params_str}")
+                lines.append(f"   {i}. 📄 {source.name}{params_str}")
         else:
-            lines.append("  None configured")
+            lines.append("   • None configured")
         
         lines.append("")
         
-        # Synthesizer info
-        synthesizer_info = f"Synthesizer:      {self.synthesizer.name if self.synthesizer else 'None configured'}"
+        # Synthesizer info with emoji
+        synthesizer_name = self.synthesizer.name if self.synthesizer else "None configured"
+        synthesizer_info = f"🤖 Synthesizer:    {synthesizer_name}"
         if self.synthesizer and self.synthesizer.params:
             key_params = [f"{k}={v}" for k, v in list(self.synthesizer.params.items())[:2]]
             synthesizer_info += f" ({', '.join(key_params)})"
         lines.append(synthesizer_info)
         
         lines.extend([
-            f"Context Format:   {self.context_format}",
+            f"📝 Context Format: {self.context_format}",
             "",
         ])
         
-        # Cost estimation
+        # Cost estimation with emoji
         try:
             estimated_cost = self.estimate_cost()
             cost_str = f"${estimated_cost:.4f}" if estimated_cost > 0 else "Free"
-            lines.append(f"Estimated Cost:   {cost_str} per execution")
+            lines.append(f"💰 Estimated Cost: {cost_str} per execution")
         except:
-            lines.append("Estimated Cost:   Unable to calculate")
+            lines.append("💰 Estimated Cost: Unable to calculate")
         
         lines.extend([
             "",
-            "Usage examples:",
+            "💡 Usage Examples:",
         ])
         
         if status == "Configured":
             lines.extend([
-                "  # Execute pipeline",
-                "  result = pipeline.run([",
-                "      {'role': 'user', 'content': 'Your question here'}",
-                "  ])",
+                "   ▶️  Execute pipeline:",
+                "      result = pipeline.run([",
+                "          {'role': 'user', 'content': 'Your question here'}",
+                "      ])",
                 "",
-                "  # Execute asynchronously", 
-                "  result = await pipeline.run_async([",
-                "      {'role': 'user', 'content': 'Your question here'}",
-                "  ])",
+                "   ⚡ Execute asynchronously:", 
+                "      result = await pipeline.run_async([",
+                "          {'role': 'user', 'content': 'Your question here'}",
+                "      ])",
                 "",
-                "  # Access results",
-                "  print(result.response.content)  # Synthesized response",
-                "  print(result.search_results)    # Source documents", 
-                "  print(f'Cost: ${result.cost}')  # Execution cost"
+                "   📤 Access results:",
+                "      print(result.response.content)  # Synthesized response",
+                "      print(result.search_results)    # Source documents", 
+                "      print(f'Cost: ${result.cost}')  # Execution cost"
             ])
         else:
             lines.extend([
-                "  # Add data sources first",
-                "  pipeline.add_source('alice@example.com/docs')",
-                "  pipeline.set_synthesizer('ai@openai.com/gpt-4')",
+                "   🔧 Add data sources first:",
+                "      pipeline.add_source('alice@example.com/docs')",
+                "      pipeline.set_synthesizer('ai@openai.com/gpt-4')",
                 "",
-                "  # Or create configured pipeline directly",
-                "  pipeline = client.pipeline(",
+                "   🚀 Or create configured pipeline directly:",
+                "      pipeline = client.pipeline(",
                 "      data_sources=['alice@example.com/docs'],",
                 "      synthesizer='ai@openai.com/gpt-4'",
                 "  )"
@@ -181,40 +223,34 @@ class Pipeline:
         status_text = "Configured" if is_configured else "Incomplete"
         status_class = "configured" if is_configured else "incomplete"
         
-        # Build data sources HTML
+        # Build data sources HTML with better structure
         sources_html = ""
         if self.data_sources:
+            sources_items = []
             for i, source in enumerate(self.data_sources, 1):
-                params_display = ""
+                params_str = ""
                 if source.params:
-                    params_list = [f"{k}: {v}" for k, v in source.params.items()]
-                    params_display = f"<div class='pipeline-params'>{', '.join(params_list[:3])}</div>"
-                
-                sources_html += f"""
-                <div class="pipeline-source">
-                    <div class="pipeline-source-name">{i}. {source.name}</div>
-                    {params_display}
-                </div>
-                """
+                    params_list = [f"{k}={v}" for k, v in list(source.params.items())[:2]]
+                    params_str = f" <span style='color: #666; font-size: 11px;'>({', '.join(params_list)})</span>"
+                sources_items.append(
+                    f'<div style="margin: 8px 0; padding: 12px; background: var(--syft-secondary-bg, #f8f9fa); border-radius: 4px; border-left: 3px solid var(--syft-border-color, #e1e1e1);">'
+                    f'<span style="font-weight: 500; color: var(--syft-text-primary, #333);">{i}. {source.name}</span>{params_str}'
+                    f'</div>'
+                )
+            sources_html = ''.join(sources_items)
         else:
-            sources_html = '<div class="pipeline-empty">No data sources configured</div>'
+            sources_html = '<div style="padding: 12px; color: var(--syft-text-secondary, #666); font-style: italic;">No data sources configured</div>'
         
         # Build synthesizer HTML
         synthesizer_html = ""
         if self.synthesizer:
-            params_display = ""
+            params_str = ""
             if self.synthesizer.params:
-                params_list = [f"{k}: {v}" for k, v in self.synthesizer.params.items()]
-                params_display = f"<div class='pipeline-params'>{', '.join(params_list[:3])}</div>"
-            
-            synthesizer_html = f"""
-            <div class="pipeline-synthesizer">
-                <div class="pipeline-synthesizer-name">{self.synthesizer.name}</div>
-                {params_display}
-            </div>
-            """
+                params_list = [f"{k}={v}" for k, v in list(self.synthesizer.params.items())[:2]]
+                params_str = f" <span style='color: #666; font-size: 11px;'>({', '.join(params_list)})</span>"
+            synthesizer_html = f'<div style="margin: 8px 0; padding: 12px; background: var(--syft-secondary-bg, #f8f9fa); border-radius: 4px; border-left: 3px solid var(--syft-border-color, #e1e1e1);"><span style="font-weight: 500; color: var(--syft-text-primary, #333);">{self.synthesizer.name}</span>{params_str}</div>'
         else:
-            synthesizer_html = '<div class="pipeline-empty">No synthesizer configured</div>'
+            synthesizer_html = '<div style="padding: 12px; color: var(--syft-text-secondary, #666); font-style: italic;">No synthesizer configured</div>'
         
         # Cost estimation
         try:
@@ -225,9 +261,7 @@ class Pipeline:
         
         # Usage examples based on configuration
         if is_configured:
-            usage_examples = """
-            <div class="pipeline-command-code">
-# Execute pipeline
+            usage_examples = """# Execute pipeline
 result = pipeline.run([
     {'role': 'user', 'content': 'Your question here'}
 ])
@@ -235,13 +269,9 @@ result = pipeline.run([
 # Access results  
 print(result.response.content)  # Synthesized response
 print(result.search_results)    # Source documents
-print(f'Cost: ${result.cost}')  # Execution cost
-            </div>
-            """
+print(f'Cost: ${result.cost}')  # Execution cost"""
         else:
-            usage_examples = """
-            <div class="pipeline-command-code">
-# Add components
+            usage_examples = """# Add components
 pipeline.add_source('alice@example.com/docs')
 pipeline.set_synthesizer('ai@openai.com/gpt-4')
 
@@ -249,148 +279,64 @@ pipeline.set_synthesizer('ai@openai.com/gpt-4')
 pipeline = client.pipeline(
     data_sources=['alice@example.com/docs'],
     synthesizer='ai@openai.com/gpt-4'
-)
-            </div>
-            """
+)"""
         
-        html = f'''
-        <style>
-            .pipeline-widget {{
-                font-family: system-ui, -apple-system, sans-serif;
-                padding: 16px 0;
-                color: #333;
-                line-height: 1.5;
-                max-width: 900px;
-            }}
-            .pipeline-title {{
-                font-size: 16px;
-                font-weight: 600;
-                margin-bottom: 8px;
-                color: #333;
-                display: flex;
-                align-items: center;
-                gap: 12px;
-            }}
-            .pipeline-status-badge {{
-                display: inline-block;
-                padding: 3px 8px;
-                border-radius: 12px;
-                font-size: 11px;
-                font-weight: 500;
-            }}
-            .pipeline-status-badge.configured {{
-                background: #d4edda;
-                color: #155724;
-            }}
-            .pipeline-status-badge.incomplete {{
-                background: #fff3cd;
-                color: #856404;
-            }}
-            .pipeline-status-line {{
-                display: flex;
-                align-items: center;
-                margin: 6px 0;
-                font-size: 13px;
-            }}
-            .pipeline-status-label {{
-                color: #666;
-                min-width: 140px;
-                margin-right: 12px;
-                font-weight: 500;
-            }}
-            .pipeline-status-value {{
-                font-family: monospace;
-                color: #333;
-                font-size: 12px;
-            }}
-            .pipeline-source, .pipeline-synthesizer {{
-                margin: 4px 0;
-                padding: 8px;
-                background: #f8f9fa;
-                border-radius: 4px;
-                border-left: 3px solid #007bff;
-            }}
-            .pipeline-source-name, .pipeline-synthesizer-name {{
-                font-weight: 500;
-                color: #495057;
-            }}
-            .pipeline-params {{
-                font-size: 11px;
-                color: #6c757d;
-                margin-top: 2px;
-            }}
-            .pipeline-empty {{
-                color: #6c757d;
-                font-style: italic;
-                font-size: 12px;
-            }}
-            .pipeline-docs-section {{
-                margin-top: 20px;
-                padding: 16px;
-                border-top: 1px solid #e0e0e0;
-                font-size: 12px;
-                color: #666;
-            }}
-            .pipeline-section-header {{
-                font-size: 13px;
-                font-weight: 600;
-                margin-bottom: 12px;
-                color: #495057;
-                text-transform: uppercase;
-                letter-spacing: 0.5px;
-            }}
-            .pipeline-command-code {{
-                font-family: Monaco, 'Courier New', monospace;
-                background: #f5f5f5;
-                padding: 16px;
-                border-radius: 4px;
-                color: #0066cc;
-                margin: 8px 0;
-                border-left: 3px solid #007bff;
-                white-space: pre-wrap;
-                line-height: 1.4;
-                font-size: 12px;
-            }}
-        </style>
-        <div class="pipeline-widget">
-            <div class="pipeline-title">
-                RAG Pipeline <span class="pipeline-status-badge {status_class}">{status_text}</span>
-            </div>
-            
-            <div class="pipeline-status-line">
-                <span class="pipeline-status-label">Data Sources:</span>
-                <span class="pipeline-status-value">{len(self.data_sources)} configured</span>
-            </div>
-            <div style="margin-left: 140px; margin-bottom: 12px;">
-                {sources_html}
-            </div>
-            
-            <div class="pipeline-status-line">
-                <span class="pipeline-status-label">Synthesizer:</span>
-                <span class="pipeline-status-value">{"Configured" if self.synthesizer else "Not configured"}</span>
-            </div>
-            <div style="margin-left: 140px; margin-bottom: 12px;">
-                {synthesizer_html}
-            </div>
-            
-            <div class="pipeline-status-line">
-                <span class="pipeline-status-label">Context Format:</span>
-                <span class="pipeline-status-value">{self.context_format}</span>
-            </div>
-            
-            <div class="pipeline-status-line">
-                <span class="pipeline-status-label">Estimated Cost:</span>
-                <span class="pipeline-status-value" style="color: {'#28a745' if 'Free' in cost_display else '#dc3545'}; font-weight: 600;">{cost_display} per execution</span>
-            </div>
-            
-            <div class="pipeline-docs-section">
-                <div class="pipeline-section-header">Usage Examples</div>
-                {usage_examples}
+        from ..utils.theme import generate_adaptive_css
+        
+        html = generate_adaptive_css('pipeline')
+        html += f'''
+        <div class="syft-widget">
+            <div class="pipeline-widget">
+                <div class="widget-title">
+                    RAG Pipeline <span class="status-badge {status_class}">{status_text}</span>
+                </div>
+                
+                <div class="status-line" style="margin: 8px 16px;">
+                    <span class="status-label">Context Format:</span>
+                    <span class="status-value">{self.context_format}</span>
+                </div>
+                
+                <div class="status-line" style="margin: 8px 16px;">
+                    <span class="status-label">Estimated Cost:</span>
+                    <span class="status-value" style="color: {'#28a745' if 'Free' in cost_display else '#1976d2'}; font-weight: 600;">{cost_display} per execution</span>
+                </div>
+                
+                <div class="status-line" style="margin: 8px 16px;">
+                    <span class="status-label">Data Sources:</span>
+                    <span class="status-value">{len(self.data_sources)} configured</span>
+                </div>
+                <div style="margin: 0 16px;">
+                    {sources_html}
+                </div>
+                
+                <div class="status-line" style="margin: 8px 16px;">
+                    <span class="status-label">Synthesizer:</span>
+                    <span class="status-value">{"Configured" if self.synthesizer else "Not configured"}</span>
+                </div>
+                <div style="margin: 0 16px;">
+                    {synthesizer_html}
+                </div>
+                
+                <div class="widget-title" style="margin: 16px 0 12px 0;">
+                    Usage Examples
+                </div>
+                {self._build_usage_examples_html(usage_examples)}
             </div>
         </div>
         '''
         
         display(HTML(html))
+    
+    def _build_usage_examples_html(self, usage_examples: str) -> str:
+        """Build HTML for usage examples with copy button."""
+        # Split examples into lines
+        lines = usage_examples.strip().split('\n')
+        code_display = "<br>".join(lines)
+        
+        
+        return f'''<div class="code-block" style="padding: 12px; margin: 0;">
+    <span class="command-code" style="font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace; font-size: 12px; line-height: 1.5; color: var(--syft-text-primary, inherit);">{code_display}</span>
+</div>'''
     
     def add_source(self, service_name: str, **params) -> 'Pipeline':
         """Add a data source service with parameters"""
@@ -472,8 +418,19 @@ pipeline = client.pipeline(
         from ..utils.async_utils import detect_async_context, run_async_in_thread
         
         if detect_async_context():
-            # In Jupyter or other async context, use run_async_in_thread
-            return run_async_in_thread(self.run_async(messages, continue_without_results))
+            # In Jupyter or other async context, capture output and display it properly
+            _pipeline_output.messages.clear()  # Clear previous messages
+            result = run_async_in_thread(self.run_async(messages, continue_without_results))
+            
+            # Display captured output in current Jupyter cell
+            if _pipeline_output.in_jupyter and _pipeline_output.messages:
+                try:
+                    output_text = _pipeline_output.get_output()
+                    print(output_text)  # Use regular print to display in current cell
+                except:
+                    pass
+            
+            return result
         else:
             # In regular sync context, use asyncio.run
             return asyncio.run(self.run_async(messages, continue_without_results))
@@ -517,14 +474,14 @@ pipeline = client.pipeline(
         total_cost = 0.0
         
         # Print search progress header
-        print(f"\n📊 Searching {len(self.data_sources)} data source(s)...")
+        _jupyter_aware_print(f"\n📊 Searching {len(self.data_sources)} data source(s)...")
         
         for i, result in enumerate(search_results_list):
             source_name = self.data_sources[i].name
             
             if isinstance(result, Exception):
                 logger.warning(f"Search failed for source {source_name}: {result}")
-                print(f"❌ {source_name}: Search failed - {result}")
+                _jupyter_aware_print(f"❌ {source_name}: Search failed - {result}")
                 continue
             
             search_response, cost = result
@@ -532,13 +489,13 @@ pipeline = client.pipeline(
             
             # Print summary for this source
             if num_results > 0:
-                print(f"✅ {source_name}: Found {num_results} result(s)")
+                _jupyter_aware_print(f"✅ {source_name}: Found {num_results} result(s)")
                 # Show top result preview
                 if search_response.results:
                     top_result = search_response.results[0]
                     preview = top_result.content[:100] + "..." if len(top_result.content) > 100 else top_result.content
             else:
-                print(f"⚠️  {source_name}: No results found")
+                _jupyter_aware_print(f"⚠️  {source_name}: No results found")
             
             all_search_results.extend(search_response.results)
             total_cost += cost
@@ -546,26 +503,26 @@ pipeline = client.pipeline(
         if not all_search_results:
             if not continue_without_results:
                 # Interactive prompt
-                print("\n⚠️  No search results found from data sources")
-                print("Options: Continue with predictions without sources or cancel")
+                _jupyter_aware_print("\n⚠️  No search results found from data sources")
+                _jupyter_aware_print("Options: Continue with predictions without sources or cancel")
                 
                 try:
                     response = input("Continue without search results? (y/n): ").lower().strip()
                     if response not in ['y', 'yes']:
-                        print("Pipeline cancelled.")
+                        _jupyter_aware_print("Pipeline cancelled.")
                         raise ValidationError("Pipeline cancelled by user - no search results available")
                 except (EOFError, KeyboardInterrupt):
-                    print("\nPipeline cancelled.")
+                    _jupyter_aware_print("\nPipeline cancelled.")
                     raise ValidationError("Pipeline cancelled by user - no search results available")
             
-            print("Continuing with synthesis without search context...")
+            _jupyter_aware_print("Continuing with synthesis without search context...")
             logger.warning("All data source searches failed or returned empty results")
         
         # Remove duplicate results
         unique_results = self.client.remove_duplicate_results(all_search_results)
         
         # Print search summary
-        print(f"📋 Search Summary: {len(unique_results)} result(s)")
+        _jupyter_aware_print(f"📋 Search Summary: {len(unique_results)} result(s)")
         
         # Format search context for synthesizer
         context = self.client.format_search_context(unique_results, self.context_format)
@@ -574,7 +531,7 @@ pipeline = client.pipeline(
         enhanced_messages = self._prepare_enhanced_messages(messages, context)
         
         # Print synthesis start
-        print(f"\n🤖 Synthesizing response with {self.synthesizer.name}...")
+        _jupyter_aware_print(f"\n🤖 Synthesizing response with {self.synthesizer.name}...")
         
         # Execute synthesis
         synthesizer_cost, chat_response = await self._execute_synthesis(enhanced_messages)
@@ -585,9 +542,9 @@ pipeline = client.pipeline(
             # Show preview of the response
             content = chat_response.message.content
             preview = content[:200] + "..." if len(content) > 200 else content
-            print(f"✅ Response generated ({len(content)} chars)")
+            _jupyter_aware_print(f"✅ Response generated ({len(content)} chars)")
         else:
-            print(f"⚠️  No response generated")
+            _jupyter_aware_print(f"⚠️  No response generated")
         
         # Print cost summary
         

@@ -322,15 +322,27 @@ class ServiceInfo:
         summary = self.summary
         status = self.config_status.value
         
-        # Get enabled services
+        # Get enabled services with detailed info
         enabled_services = []
         total_cost = 0
         for service_item in self.services:
             if service_item.enabled:
-                enabled_services.append(service_item.type.value.title())
+                service_type = service_item.type.value
+                pricing = f"${service_item.pricing:.3f}" if service_item.pricing > 0 else "Free"
+                
+                # Get available parameters for this service type
+                params = []
+                if service_type == "chat":
+                    params = ["messages", "temperature", "max_tokens", "top_p"]
+                elif service_type == "search":
+                    params = ["message", "topK", "similarity_threshold"]
+                
+                param_str = f"({', '.join(params)})" if params else ""
+                service_str = f"{service_type}{param_str} - {pricing}"
+                enabled_services.append(service_str)
                 total_cost += service_item.pricing
         
-        services_str = ", ".join(enabled_services) if enabled_services else "None"
+        services_str = "\n                  ".join(enabled_services) if enabled_services else "None"
         
         # Health status
         health_str = ""
@@ -354,24 +366,55 @@ class ServiceInfo:
             if len(self.tags) > 4:
                 tags_display += f" (+{len(self.tags) - 4} more)"
         
-        # Build lines in client's __repr__ format (exactly matching spacing)
+        # Build enhanced representation with better styling
+        status_emoji = "✅" if status == "active" else "⚠️" if status == "inactive" else "📋"
+        health_emoji = ""
+        if self.health_status:
+            health_emojis = {
+                HealthStatus.ONLINE: "🟢",
+                HealthStatus.OFFLINE: "🔴", 
+                HealthStatus.TIMEOUT: "🟡",
+                HealthStatus.UNKNOWN: "⚪"
+            }
+            health_emoji = health_emojis.get(self.health_status, "⚪")
+        
+        # Header with emojis and styling
+        header = f"🔧 {service_name} Service {status_emoji} [{status}]{health_str} {health_emoji}".strip()
+        
+        # Add separator line
+        separator = "=" * min(len(header.replace('🔧', '').replace(status_emoji, '').replace(health_emoji, '').strip()), 60)
+        
         lines = [
-            f"{service_name} Service [{status}]{health_str}",
+            header,
+            separator,
             "",
-            f"Datasite:         {datasite}",
-            f"Summary:          {summary}",
-            f"Services:         {services_str}",
-            f"Pricing:          {pricing_str}",
+            f"📍 Datasite:       {datasite}",
+            f"📝 Summary:        {summary}",
+            "",
+            "⚡ Available Services:",
         ]
         
-        if tags_display:
-            lines.append(f"Tags:             {tags_display}")
+        # Add each service with proper indentation and styling
+        if enabled_services:
+            for service in enabled_services:
+                lines.append(f"   • {service}")
+        else:
+            lines.append("   • None")
         
         lines.extend([
             "",
-            "Available operations:",
-            f"  client.chat('{datasite}/{service_name}', messages=[...])   — Chat with service{'✅' if self.is_healthy else '❌' if self.health_status and not self.is_healthy else ''}",
-            f"  client.search('{datasite}/{service_name}', 'message')     — Search with service{'✅' if self.is_healthy else '❌' if self.health_status and not self.is_healthy else ''}",
+            f"💰 Total Pricing:  {pricing_str}",
+        ])
+        
+        if tags_display:
+            lines.extend([
+                f"🏷️  Tags:           {tags_display}",
+            ])
+        
+        lines.extend([
+            "",
+            "💡 Quick Usage:",
+            f"   service = client.load_service(\"{datasite}/{service_name}\")",
         ])
         
         return "\n".join(lines)
@@ -427,125 +470,55 @@ class ServiceInfo:
             if len(self.tags) > 4:
                 tags_display += f" (+{len(self.tags) - 4} more)"
         
-        # Build HTML widget with styling similar to client's show()
-        html = f'''
-        <style>
-            .serviceinfo-widget {{
-                font-family: system-ui, -apple-system, sans-serif;
-                padding: 12px 0;
-                color: #333;
-                line-height: 1.5;
-            }}
-            .serviceinfo-title {{
-                font-size: 14px;
-                font-weight: 600;
-                margin-bottom: 12px;
-                color: #333;
-            }}
-            .serviceinfo-status-line {{
-                display: flex;
-                justify-content: space-between;
-                align-items: center;
-                margin-bottom: 8px;
-            }}
-            .serviceinfo-status {{
-                font-size: 12px;
-                padding: 2px 6px;
-                border-radius: 3px;
-                background: #e8f5e8;
-                color: #2d5a2d;
-            }}
-            .serviceinfo-status.online {{
-                background: #e8f5e8;
-                color: #2d5a2d;
-            }}
-            .serviceinfo-status.offline {{
-                background: #ffe6e6;
-                color: #cc0000;
-            }}
-            .serviceinfo-status.timeout {{
-                background: #fff3cd;
-                color: #856404;
-            }}
-            .serviceinfo-status.unknown {{
-                background: #e2e3e5;
-                color: #6c757d;
-            }}
-            .serviceinfo-info {{
-                display: grid;
-                grid-template-columns: 100px 1fr;
-                gap: 8px 12px;
-                margin: 12px 0;
-                font-size: 12px;
-            }}
-            .serviceinfo-label {{
-                font-weight: 500;
-                color: #666;
-            }}
-            .serviceinfo-value {{
-                color: #333;
-            }}
-            .serviceinfo-pricing {{
-                font-weight: 500;
-            }}
-            .serviceinfo-pricing.free {{
-                color: #2d5a2d;
-            }}
-            .serviceinfo-pricing.paid {{
-                color: #d63384;
-            }}
-            .serviceinfo-operations {{
-                margin-top: 16px;
-                padding-top: 12px;
-                border-top: 1px solid #e0e0e0;
-            }}
-            .serviceinfo-operations-title {{
-                font-size: 12px;
-                font-weight: 500;
-                margin-bottom: 8px;
-                color: #666;
-            }}
-            .serviceinfo-command-code {{
-                font-family: Monaco, 'Courier New', monospace;
-                background: #f5f5f5;
-                padding: 1px 4px;
-                border-radius: 2px;
-                color: #0066cc;
-                font-size: 11px;
-            }}
-            .command-code {{
-                font-family: Monaco, 'Courier New', monospace;
-                background: #f5f5f5;
-                padding: 1px 4px;
-                border-radius: 2px;
-                color: #0066cc;
-                font-size: 11px;
-            }}
-        </style>
-        <div class="serviceinfo-widget">
-            <div class="serviceinfo-title">{service_name} Service</div>
-            <div class="serviceinfo-status-line">
-                <span>Status: {status}</span>
-                {f'<span class="serviceinfo-status {health_class}">Health: {health_text.strip("[] ")}</span>' if health_text else ''}
-            </div>
-            <div class="serviceinfo-info">
-                <div class="serviceinfo-label">Datasite:</div>
-                <div class="serviceinfo-value">{datasite}</div>
-                <div class="serviceinfo-label">Summary:</div>
-                <div class="serviceinfo-value">{summary}</div>
-                <div class="serviceinfo-label">Services:</div>
-                <div class="serviceinfo-value">{services_str}</div>
-                <div class="serviceinfo-label">Pricing:</div>
-                <div class="serviceinfo-value serviceinfo-pricing {pricing_class}">{pricing_str}</div>
-                {f'<div class="serviceinfo-label">Tags:</div><div class="serviceinfo-value">{tags_display}</div>' if tags_display else ''}
-            </div>
-            {f'<div style="margin: 12px 0; padding: 12px; background: #fff; border-radius: 4px; border: 1px solid #e9ecef; font-size: 13px; line-height: 1.6; color: #555;"><strong>Description:</strong><br>{description}</div>' if description else ''}
-            <div class="serviceinfo-operations">
-                <div class="serviceinfo-operations-title">Available operations:</div>
-                <div style="line-height: 1.8;">
-                    <span class="serviceinfo-command-code">client.chat('{datasite}/{service_name}', messages=[])</span> — Chat with service {"✅" if self.is_healthy else "❌" if self.health_status and not self.is_healthy else ""}<br>
-                    <span class="serviceinfo-command-code">client.search('{datasite}/{service_name}', 'message')</span> — Search with service {"✅" if self.is_healthy else "❌" if self.health_status and not self.is_healthy else ""}
+        # Build HTML widget with adaptive theming
+        from ..utils.theme import generate_adaptive_css
+        
+        html = generate_adaptive_css('serviceinfo')
+        html += f'''
+        <div class="syft-widget">
+            <div class="serviceinfo-widget">
+                <div class="widget-title">
+                    {service_name} Service {f'<span class="status-badge badge-{health_class}">{health_text.strip("[] ")}</span>' if health_text else ''}
                 </div>
+                
+                <div class="status-line" style="margin: 8px 16px;">
+                    <span class="status-label">Status:</span>
+                    <span class="status-value">{status}</span>
+                </div>
+                
+                <div class="status-line" style="margin: 8px 16px;">
+                    <span class="status-label">Datasite:</span>
+                    <span class="status-value">{datasite}</span>
+                </div>
+                
+                <div class="status-line" style="margin: 8px 16px;">
+                    <span class="status-label">Summary:</span>
+                    <span class="status-value">{summary}</span>
+                </div>
+                
+                <div class="status-line" style="margin: 8px 16px;">
+                    <span class="status-label">Services:</span>
+                    <span class="status-value">{services_str}</span>
+                </div>
+                
+                <div class="status-line" style="margin: 8px 16px;">
+                    <span class="status-label">Pricing:</span>
+                    <span class="status-value {pricing_class}">{pricing_str}</span>
+                </div>
+                
+                {f'<div class="status-line" style="margin: 8px 16px;"><span class="status-label">Tags:</span><span class="status-value">{tags_display}</span></div>' if tags_display else ''}
+                
+                {f'<div class="status-line" style="margin: 8px 16px;"><span class="status-label">Description:</span></div>{self._render_description_as_markdown(description)}' if description else ''}
+                
+                <div class="widget-title" style="margin: 16px 0 12px 0;">
+                    Available Services
+                </div>
+                {self._get_available_services_html()}
+                
+                <div class="widget-title" style="margin: 16px 0 12px 0;">
+                    Quick Start
+                </div>
+                {self._get_quickstart_html()}
             </div>
         </div>
         '''
@@ -567,6 +540,243 @@ class ServiceInfo:
         pricing = f"${self.min_pricing}" if self.min_pricing > 0 else "Free"
         
         return f"{self.name} by {self.datasite} ({pricing}){health_indicator}"
+    
+    def _get_usage_examples_html(self) -> str:
+        """Get HTML-formatted usage examples for this service."""
+        examples = []
+        
+        # Service object loading
+        examples.append(f'<span class="command-code">service = client.load_service("{self.datasite}/{self.name}")</span>')
+        examples.append("")
+        
+        # Add chat examples if supported
+        if any(service.type.value == 'chat' and service.enabled for service in self.services):
+            examples.extend([
+                '<span class="comment"># Basic chat</span>',
+                '<span class="command-code">response = service.chat(messages=[{"role": "user", "content": "Hello!"}])</span>',
+                "",
+                '<span class="comment"># Chat with parameters</span>',
+                '<span class="command-code">response = service.chat(',
+                '    messages=[{"role": "system", "content": "You are helpful"}],',
+                '    temperature=0.7,',
+                '    max_tokens=200',
+                ')</span>',
+                ""
+            ])
+        
+        # Add search examples if supported
+        if any(service.type.value == 'search' and service.enabled for service in self.services):
+            examples.extend([
+                '<span class="comment"># Basic search</span>',
+                '<span class="command-code">results = service.search("machine learning")</span>',
+                "",
+                '<span class="comment"># Search with parameters</span>',
+                '<span class="command-code">results = service.search(',
+                '    message="latest AI research",',
+                '    topK=10,',
+                '    similarity_threshold=0.8',
+                ')</span>',
+                ""
+            ])
+        
+        # Direct client usage
+        examples.append('<span class="comment"># Using client directly</span>')
+        
+        if any(service.type.value == 'chat' and service.enabled for service in self.services):
+            examples.extend([
+                f'<span class="command-code">response = await client.chat(',
+                f'    service_name="{self.datasite}/{self.name}",',
+                f'    messages=[{{"role": "user", "content": "Hello!"}}]',
+                f')</span>'
+            ])
+        
+        if any(service.type.value == 'search' and service.enabled for service in self.services):
+            if examples[-1] != '<span class="comment"># Using client directly</span>':
+                examples.append("")
+            examples.extend([
+                f'<span class="command-code">results = await client.search(',
+                f'    service_name="{self.datasite}/{self.name}",',
+                f'    message="machine learning"',
+                f')</span>'
+            ])
+        
+        return '\n'.join(examples)
+    
+    def _get_available_services_html(self) -> str:
+        """Get HTML-formatted available services display."""
+        if not self.services:
+            return '<div style="color: var(--syft-text-secondary, inherit); font-style: italic; opacity: 0.7;">No services configured</div>'
+        
+        enabled_services = [s for s in self.services if s.enabled]
+        if not enabled_services:
+            return '<div style="color: var(--syft-text-secondary, inherit); font-style: italic; opacity: 0.7;">No services enabled</div>'
+        
+        services_html = []
+        for service in enabled_services:
+            service_type = service.type.value
+            cost_text = "Free" if service.pricing == 0 else f"${service.pricing:.3f}/request"
+            cost_class = "free" if service.pricing == 0 else "paid"
+            cost_color = "#28a745" if service.pricing == 0 else "#1976d2"
+            
+            # Get available parameters for this service type
+            params = []
+            descriptions = {}
+            if service_type == "chat":
+                params = ["messages", "temperature", "max_tokens", "top_p"]
+                descriptions = {
+                    "messages": "conversation messages",
+                    "temperature": "randomness (0.0-1.0)",
+                    "max_tokens": "response length limit",
+                    "top_p": "nucleus sampling",
+                }
+            elif service_type == "search":
+                params = ["message", "topK", "similarity_threshold"]
+                descriptions = {
+                    "message": "search query text",
+                    "topK": "max results to return",
+                    "similarity_threshold": "relevance cutoff",
+                }
+            
+            # Build parameter list with descriptions
+            param_items = []
+            for param in params:
+                desc = descriptions.get(param, "")
+                param_items.append(f'<li style="margin: 3px 0;"><code style="color: var(--syft-text-primary, inherit); font-weight: 500; font-size: 11px;">{param}</code>: <span style="color: var(--syft-text-secondary, inherit);">{desc}</span></li>')
+            
+            param_html = f'<ul style="margin: 6px 0; padding-left: 16px; font-size: 12px;">{"".join(param_items)}</ul>' if param_items else ""
+            
+            services_html.append(
+                f'<div style="margin: 12px 0;">'
+                f'<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">'
+                f'<span style="font-weight: 600; font-size: 14px; color: var(--syft-text-primary, inherit);">{service_type.title()} Service</span>'
+                f'<span style="color: {cost_color}; font-weight: 600; font-size: 12px;">{cost_text}</span>'
+                f'</div>'
+                f'<div style="color: var(--syft-text-secondary, inherit); font-size: 12px; margin-bottom: 8px;">Available parameters:</div>'
+                f'{param_html}'
+                f'</div>'
+            )
+        
+        # Wrap services with adjusted spacing for first/last items
+        if services_html:
+            # Remove top margin from first item and bottom margin from last item
+            if len(services_html) > 0:
+                # Update first item to remove top margin
+                services_html[0] = services_html[0].replace('style="margin: 12px 0;"', 'style="margin: 0 0 12px 0;"')
+                # Update last item to remove bottom margin
+                services_html[-1] = services_html[-1].replace('style="margin: 12px 0;"', 'style="margin: 12px 0 0 0;"')
+                # If there's only one item, remove both top and bottom margins
+                if len(services_html) == 1:
+                    services_html[0] = services_html[0].replace('style="margin: 12px 0 0 0;"', 'style="margin: 0;"')
+            
+            return f'<div>{"".join(services_html)}</div>'
+        else:
+            return ""
+    
+    def _get_quickstart_html(self) -> str:
+        """Get HTML-formatted quickstart example with copy button."""
+        if not self.services:
+            return '<div style="color: var(--syft-text-secondary, inherit); font-style: italic; opacity: 0.7;">No services available</div>'
+        
+        enabled_services = [s for s in self.services if s.enabled]
+        if not enabled_services:
+            return '<div style="color: var(--syft-text-secondary, inherit); font-style: italic; opacity: 0.7;">No services enabled</div>'
+        
+        # Pick the first enabled service for the example
+        primary_service = enabled_services[0]
+        service_type = primary_service.type.value
+        full_service_name = f"{self.datasite}/{self.name}"
+        
+        # Build end-to-end example based on service type
+        code_parts = [
+            f'# Load the service',
+            f'service = client.load_service("{full_service_name}")',
+            '',
+        ]
+        
+        if service_type == "chat":
+            code_parts.extend([
+                '# Basic chat example',
+                'response = await service.chat(',
+                '    messages=[',
+                '        {"role": "user", "content": "Hello! How can you help me?"}',
+                '    ]',
+                ')',
+                'print(response.content)  # View the response',
+                'print(f"Cost: ${response.cost}")  # Check cost',
+                '',
+                '# Advanced chat with parameters',
+                'response = await service.chat(',
+                '    messages=[',
+                '        {"role": "system", "content": "You are a helpful assistant"},',
+                '        {"role": "user", "content": "Explain machine learning"}',
+                '    ],',
+                '    temperature=0.7,',
+                '    max_tokens=200',
+                ')',
+                'print(response.content)'
+            ])
+        elif service_type == "search":
+            code_parts.extend([
+                '# Basic search example',
+                'results = await service.search("machine learning")',
+                'for result in results:',
+                '    print(f"Score: {result.score:.3f} - {result.content[:100]}...")',
+                '',
+                '# Advanced search with parameters',
+                'results = await service.search(',
+                '    message="artificial intelligence research",',
+                '    topK=10,',
+                '    similarity_threshold=0.8',
+                ')',
+                'print(f"Found {len(results)} results")',
+                'for i, result in enumerate(results[:3], 1):',
+                '    print(f"{i}. {result.content[:150]}...")'
+            ])
+        else:
+            code_parts.extend([
+                '# Basic usage',
+                f'# Check available methods: dir(service)',
+                f'# service.{service_type}(...)'
+            ])
+        
+        code_text = "\\n".join(code_parts)
+        code_display = "<br>".join(code_parts)
+        
+        return f'''<div class="code-block" style="padding: 12px; margin: 8px 0;">
+    <span class="command-code" style="font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace; font-size: 12px; line-height: 1.5; color: var(--syft-text-primary, inherit);">{code_display}</span>
+</div>'''
+    
+    def _render_description_as_markdown(self, description: str) -> str:
+        """Render description content as markdown HTML.
+        
+        Args:
+            description: Raw description text that may contain markdown
+            
+        Returns:
+            HTML string with markdown rendered and wrapped in styled container
+        """
+        if not description:
+            return ""
+        
+        try:
+            # Try to render as markdown
+            import markdown2
+            # Convert markdown to HTML with extras for better formatting
+            content = markdown2.markdown(
+                description,
+                extras=['fenced-code-blocks', 'tables', 'break-on-newline', 'code-friendly']
+            )
+        except ImportError:
+            # Fallback to simple HTML escaping if markdown2 not available
+            import html
+            content = html.escape(description).replace('\n', '<br>')
+        except Exception:
+            # Fallback to simple HTML escaping on any error
+            import html
+            content = html.escape(description).replace('\n', '<br>')
+        
+        # Wrap in styled container with margins and proper font size
+        return f'''<div class="markdown-content" style="margin: 8px 16px; font-size: 12px; line-height: 1.4; color: var(--syft-text-primary, inherit);">{content}</div>'''
     
     def __eq__(self, other) -> bool:
         """Check equality based on name and datasite."""

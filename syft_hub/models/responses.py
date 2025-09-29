@@ -39,6 +39,7 @@ class ChatResponse(BaseResponse):
     """Chat response data class."""
     model: str = ""
     message: Optional[ChatMessage] = None
+    messages: List[ChatMessage] = field(default_factory=list)  # Store original messages
     usage: Optional[ChatUsage] = None
     finish_reason: Optional[str] = None
     logprobs: Optional[Dict[str, Any]] = None  # Changed from Dict[str, float] to Any
@@ -62,15 +63,36 @@ class ChatResponse(BaseResponse):
             total_tokens=usage_data.get('totalTokens', 0)
         )
         
+        # Parse messages list if available
+        messages_list = []
+        if 'messages' in data and data['messages']:
+            messages_list = [
+                ChatMessage(
+                    role=msg.get('role', 'user'),
+                    content=msg.get('content', ''),
+                    name=msg.get('name')
+                ) for msg in data['messages']
+            ]
+        
+        cost = data.get('cost')
+        
+        # Detect timeout/failure: 0 tokens and free (no cost)
+        status = ResponseStatus.SUCCESS
+        if usage.total_tokens == 0 and (cost is None or cost == 0):
+            status = ResponseStatus.TIMEOUT
+            print("⚠️  Warning: This call did not succeed. We recommend you to retry shortly.")
+        
         return cls(
             id=data.get('id', str(uuid.uuid4())),
             model=data.get('model', 'unknown'),
             message=message,
+            messages=messages_list,
             usage=usage,
             finish_reason=data.get('finishReason'),  # camelCase from endpoint
-            cost=data.get('cost'),
+            cost=cost,
             provider_info=data.get('providerInfo'),  # camelCase from endpoint
-            logprobs=data.get('logprobs')  # Direct assignment, no nested extraction
+            logprobs=data.get('logprobs'),  # Direct assignment, no nested extraction
+            status=status
         )
     
     def to_dict(self) -> Dict[str, Any]:
@@ -82,6 +104,10 @@ class ChatResponse(BaseResponse):
                 "role": self.message.role if self.message else "assistant",
                 "content": self.message.content if self.message else "",
             },
+            "messages": [
+                {"role": msg.role, "content": msg.content, "name": msg.name} 
+                for msg in self.messages
+            ] if self.messages else [],
             "finish_reason": self.finish_reason,
             "usage": {
                 "prompt_tokens": self.usage.prompt_tokens if self.usage else 0,
@@ -146,14 +172,12 @@ class ChatResponse(BaseResponse):
         # Status badge styling
         status_class = "badge-ready" if self.status.value == "success" else "badge-not-ready"
         
-        # Content preview
+        # Content preview with markdown rendering
         content_preview = ""
         if self.message:
             content = self.message.content
-            if len(content) > 200:
-                content_preview = content[:200] + "..."
-            else:
-                content_preview = content
+            # Render content as markdown with length limits
+            content_preview = self._render_content_as_markdown(content, max_length=2000)
         
         # Usage info
         usage_text = ""
@@ -163,80 +187,25 @@ class ChatResponse(BaseResponse):
         # Cost info
         cost_text = f"${self.cost:.4f}" if self.cost is not None else "Free"
         
-        html = f"""
-        <style>
-            .chat-response-widget {{
-                font-family: system-ui, -apple-system, sans-serif;
-                padding: 12px 0;
-                color: #333;
-                line-height: 1.5;
-                border: 1px solid #e0e0e0;
-                border-radius: 6px;
-                background: #fafafa;
-                padding: 16px;
-                margin: 8px 0;
-            }}
-            .widget-title {{
-                font-size: 14px;
-                font-weight: 600;
-                margin-bottom: 12px;
-                color: #333;
-            }}
-            .status-line {{
-                display: flex;
-                align-items: flex-start;
-                margin: 6px 0;
-                font-size: 13px;
-            }}
-            .status-label {{
-                color: #666;
-                min-width: 100px;
-                margin-right: 12px;
-                flex-shrink: 0;
-            }}
-            .status-value {{
-                font-family: monospace;
-                color: #333;
-                word-break: break-word;
-            }}
-            .status-badge {{
-                display: inline-block;
-                padding: 2px 8px;
-                border-radius: 3px;
-                font-size: 11px;
-                margin-left: 8px;
-            }}
-            .badge-ready {{
-                background: #d4edda;
-                color: #155724;
-            }}
-            .badge-not-ready {{
-                background: #f8d7da;
-                color: #721c24;
-            }}
-            .content-preview {{
-                background: #f8f9fa;
-                border: 1px solid #e9ecef;
-                border-radius: 4px;
-                padding: 8px;
-                font-family: inherit;
-                font-size: 12px;
-                color: #495057;
-                white-space: pre-wrap;
-                max-height: 120px;
-                overflow-y: auto;
-            }}
-        </style>
+        from ..utils.theme import generate_adaptive_css
         
-        <div class="chat-response-widget">
-            <div class="widget-title">
+        html = generate_adaptive_css('chat-response')
+        html += f"""
+        <div class="syft-widget">
+            <div class="chat-response-widget">
+                <div class="widget-title">
                 Chat Response <span class="status-badge {status_class}">{self.status.value.title()}</span>
             </div>
             
-            <div class="status-line">
-                <span class="status-label">Content:</span>
+            <div class="widget-title" style="margin: 16px 0 12px 0;">
+                Messages
             </div>
-            <div class="content-preview">{content_preview}</div>
+            {self._render_messages_html()}
+            
+            <div class="widget-title" style="margin: 16px 0 12px 0;">
+                Response
+            </div>
+            {content_preview}
             
             <div class="status-line">
                 <span class="status-label">Usage:</span>
@@ -256,6 +225,71 @@ class ChatResponse(BaseResponse):
         """
         
         display(HTML(html))
+    
+    def _render_messages_html(self) -> str:
+        """Render the conversation messages as HTML."""
+        if not self.messages:
+            return '<div style="margin: 12px 16px; font-size: 12px; line-height: 1.4; color: inherit; opacity: 0.7;">No messages to display</div>'
+        
+        messages_html = ""
+        for i, msg in enumerate(self.messages):
+            role_label = "User" if msg.role == "user" else "Assistant" if msg.role == "assistant" else "System"
+            
+            # Simple text content without markdown rendering for cleaner display
+            content_text = msg.content[:500] + "..." if len(msg.content) > 500 else msg.content
+            
+            messages_html += f'''
+            <div style="margin: 4px 16px; font-size: 12px; line-height: 1.4;">
+                <span style="font-weight: 500; color: var(--syft-text-primary, inherit); opacity: 0.8;">{role_label}:</span>
+                <span style="color: var(--syft-text-primary, inherit); margin-left: 8px;">{content_text}</span>
+            </div>
+            '''
+        
+        return messages_html
+    
+    def _render_content_as_markdown(self, content: str, max_length: int = 2000) -> str:
+        """Render content as markdown HTML with length limits.
+        
+        Args:
+            content: Raw content text that may contain markdown
+            max_length: Maximum length for the rendered content
+            
+        Returns:
+            HTML string with markdown rendered and wrapped in styled container
+        """
+        if not content:
+            return ""
+        
+        try:
+            # Try to render as markdown
+            import markdown2
+            # Convert markdown to HTML with extras for better formatting
+            formatted_content = markdown2.markdown(
+                content,
+                extras=['fenced-code-blocks', 'tables', 'break-on-newline', 'code-friendly']
+            )
+            # Truncate if too long
+            if len(formatted_content) > max_length:
+                formatted_content = formatted_content[:max_length] + '...<br><em>(truncated)</em>'
+        except ImportError:
+            # Fallback to simple HTML escaping if markdown2 not available
+            import html
+            escaped_content = html.escape(content)
+            formatted_content = escaped_content.replace('\n', '<br>')
+            # Truncate if too long
+            if len(formatted_content) > max_length:
+                formatted_content = formatted_content[:max_length] + '...<br><em>(truncated)</em>'
+        except Exception:
+            # Fallback to simple HTML escaping on any error
+            import html
+            escaped_content = html.escape(content)
+            formatted_content = escaped_content.replace('\n', '<br>')
+            # Truncate if too long
+            if len(formatted_content) > max_length:
+                formatted_content = formatted_content[:max_length] + '...<br><em>(truncated)</em>'
+        
+        # Wrap in styled container with margins and proper font size
+        return f'''<div class="markdown-content" style="margin: 12px 16px; font-size: 12px; line-height: 1.4; color: var(--syft-text-primary, inherit);">{formatted_content}</div>'''
 
 @dataclass
 class SearchResponse(BaseResponse):
@@ -386,14 +420,19 @@ class SearchResponse(BaseResponse):
     def _display_rich(self) -> None:
         """Display rich HTML representation in Jupyter notebooks."""
         from IPython.display import display, HTML
+        import uuid
         
         # Status badge styling
         status_class = "badge-ready" if self.status.value == "success" else "badge-not-ready"
+        
+        # Generate unique ID for this widget instance
+        widget_id = str(uuid.uuid4())[:8]
         
         # Results preview
         results_preview = ""
         if self.results:
             results_preview = f"<div class='results-list'>"
+            # Show first 3 results
             for i, result in enumerate(self.results[:3], 1):
                 content = result.content[:150] + "..." if len(result.content) > 150 else result.content
                 results_preview += f"""
@@ -405,8 +444,29 @@ class SearchResponse(BaseResponse):
                     <div class='result-content'>{content}</div>
                 </div>
                 """
+            
+            # Add collapsable section for remaining results
             if len(self.results) > 3:
-                results_preview += f"<div class='more-results'>... and {len(self.results) - 3} more results</div>"
+                results_preview += f"""
+                <div class='more-results-toggle' onclick='toggleResults_{widget_id}()' style='cursor: pointer; user-select: none;'>
+                    <span id='toggle-icon-{widget_id}'>▶</span> <span id='toggle-text-{widget_id}'>Show {len(self.results) - 3} more result(s)</span>
+                </div>
+                <div id='extra-results-{widget_id}' class='extra-results' style='display: none;'>
+                """
+                # Add remaining results
+                for i, result in enumerate(self.results[3:], 4):
+                    content = result.content[:150] + "..." if len(result.content) > 150 else result.content
+                    results_preview += f"""
+                    <div class='result-item'>
+                        <div class='result-header'>
+                            <span class='result-rank'>{i}.</span>
+                            <span class='result-score'>Score: {result.score:.3f}</span>
+                        </div>
+                        <div class='result-content'>{content}</div>
+                    </div>
+                    """
+                results_preview += "</div>"
+                
             results_preview += "</div>"
         else:
             results_preview = "<div class='no-results'>No documents found</div>"
@@ -414,109 +474,86 @@ class SearchResponse(BaseResponse):
         # Cost info
         cost_text = f"${self.cost:.4f}" if self.cost is not None else "Free"
         
-        html = f"""
-        <style>
-            .search-response-widget {{
-                font-family: system-ui, -apple-system, sans-serif;
-                padding: 12px 0;
-                color: #333;
-                line-height: 1.5;
-                border: 1px solid #e0e0e0;
-                border-radius: 6px;
-                background: #fafafa;
-                padding: 16px;
-                margin: 8px 0;
-            }}
-            .widget-title {{
-                font-size: 14px;
-                font-weight: 600;
-                margin-bottom: 12px;
-                color: #333;
-            }}
-            .status-line {{
-                display: flex;
-                align-items: flex-start;
-                margin: 6px 0;
-                font-size: 13px;
-            }}
-            .status-label {{
-                color: #666;
-                min-width: 100px;
-                margin-right: 12px;
-                flex-shrink: 0;
-            }}
-            .status-value {{
-                font-family: monospace;
-                color: #333;
-                word-break: break-word;
-            }}
-            .status-badge {{
-                display: inline-block;
-                padding: 2px 8px;
-                border-radius: 3px;
-                font-size: 11px;
-                margin-left: 8px;
-            }}
-            .badge-ready {{
-                background: #d4edda;
-                color: #155724;
-            }}
-            .badge-not-ready {{
-                background: #f8d7da;
-                color: #721c24;
-            }}
-            .results-list {{
-                margin-top: 8px;
-            }}
-            .result-item {{
-                background: #f8f9fa;
-                border: 1px solid #e9ecef;
-                border-radius: 4px;
-                padding: 8px;
-                margin: 4px 0;
-            }}
-            .result-header {{
-                display: flex;
-                justify-content: space-between;
-                margin-bottom: 4px;
-                font-size: 12px;
-            }}
-            .result-rank {{
-                font-weight: 600;
-                color: #495057;
-            }}
-            .result-score {{
-                color: #6c757d;
-                font-family: monospace;
-            }}
-            .result-content {{
-                font-size: 12px;
-                color: #495057;
-                white-space: pre-wrap;
-                max-height: 60px;
-                overflow: hidden;
-            }}
-            .more-results {{
-                font-size: 12px;
-                color: #6c757d;
-                font-style: italic;
-                text-align: center;
-                padding: 4px;
-            }}
-            .no-results {{
-                font-size: 12px;
-                color: #6c757d;
-                font-style: italic;
-                text-align: center;
-                padding: 8px;
-                background: #f8f9fa;
-                border: 1px solid #e9ecef;
-                border-radius: 4px;
-            }}
-        </style>
+        from ..utils.theme import generate_adaptive_css
         
-        <div class="search-response-widget">
-            <div class="widget-title">
+        # Custom styles for search results
+        search_styles = {
+            '.results-list': {
+                'margin-top': '8px'
+            },
+            '.result-item': {
+                'padding': '8px',
+                'margin': '4px 0',
+                'border-radius': '4px'
+            },
+            '.result-header': {
+                'display': 'flex',
+                'justify-content': 'space-between',
+                'margin-bottom': '4px',
+                'font-size': '11px'
+            },
+            '.result-rank': {
+                'font-weight': '600'
+            },
+            '.result-score': {
+                'font-family': 'monospace'
+            },
+            '.result-content': {
+                'font-size': '11px',
+                'white-space': 'pre-wrap',
+                'max-height': '60px',
+                'overflow': 'hidden'
+            },
+            '.more-results-toggle': {
+                'font-size': '11px',
+                'text-align': 'center',
+                'padding': '8px 4px',
+                'margin': '4px 0',
+                'color': 'var(--syft-primary, #0066cc)',
+                'transition': 'opacity 0.2s'
+            },
+            '.more-results-toggle:hover': {
+                'opacity': '0.7'
+            },
+            '.extra-results': {
+                'margin-top': '4px'
+            },
+            '.no-results': {
+                'font-size': '11px',
+                'font-style': 'italic',
+                'text-align': 'center',
+                'padding': '8px',
+                'border-radius': '4px'
+            }
+        }
+        
+        html = generate_adaptive_css('search-response', search_styles)
+        
+        # Add JavaScript toggle function
+        html += f"""
+        <script>
+        function toggleResults_{widget_id}() {{
+            var extraResults = document.getElementById('extra-results-{widget_id}');
+            var icon = document.getElementById('toggle-icon-{widget_id}');
+            var text = document.getElementById('toggle-text-{widget_id}');
+            
+            if (extraResults.style.display === 'none') {{
+                extraResults.style.display = 'block';
+                icon.textContent = '▼';
+                text.textContent = 'Hide {len(self.results) - 3} result(s)';
+            }} else {{
+                extraResults.style.display = 'none';
+                icon.textContent = '▶';
+                text.textContent = 'Show {len(self.results) - 3} result(s)';
+            }}
+        }}
+        </script>
+        """
+        
+        html += f"""
+        <div class="syft-widget">
+            <div class="search-response-widget">
+                <div class="widget-title">
                 Search Response <span class="status-badge {status_class}">{self.status.value.title()}</span>
             </div>
             

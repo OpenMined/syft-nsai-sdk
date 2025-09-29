@@ -362,6 +362,85 @@ class SyftBoxRPCClient(SyftBoxAPIClient):
             if spinner:
                 await spinner.stop_async("Response received")
 
+    async def _call_rpc_with_interactive_polling(self, 
+                                                syft_url: str, 
+                                                payload: Optional[Dict[str, Any]] = None,  
+                                                query_params: Optional[Dict[str, Any]] = None,
+                                                headers: Optional[Dict[str, str]] = None,
+                                                method: str = "POST",
+                                                show_spinner: bool = True,
+                                                args: Optional[RequestArgs] = None,
+                                                max_poll_attempts: Optional[int] = None,
+                                                poll_interval: Optional[float] = None,
+                                                operation_type: str = "operation"
+                                                ) -> Dict[str, Any]:
+        """Make an RPC call with interactive polling continuation for chat/search operations.
+        
+        This method extends call_rpc with interactive polling continuation when operations
+        fail due to polling timeout, allowing users to continue waiting.
+        """
+        from ..core.exceptions import PollingTimeoutError, NetworkError
+        
+        try:
+            # First attempt with regular call_rpc
+            return await self.call_rpc(
+                syft_url=syft_url,
+                payload=payload,
+                query_params=query_params,
+                headers=headers,
+                method=method,
+                show_spinner=show_spinner,
+                args=args,
+                max_poll_attempts=max_poll_attempts,
+                poll_interval=poll_interval
+            )
+            
+        except PollingTimeoutError as e:
+            # Polling timeout - ask user if they want to continue
+            print(f"\n⏱️  {operation_type.title()} operation timed out after {max_poll_attempts or self.max_poll_attempts} attempts ({((max_poll_attempts or self.max_poll_attempts) * (poll_interval or self.poll_interval)):.0f}s)")
+            print(f"The service might still be processing your {operation_type} request.")
+            
+            while True:
+                try:
+                    response = input("Do you want to continue polling for 30 more seconds? (y/n): ").lower().strip()
+                    if response in ['y', 'yes']:
+                        print(f"Continuing to poll for {operation_type} response...")
+                        try:
+                            # Continue polling with 20 more attempts at 1.5s intervals (30s total)
+                            return await self.call_rpc(
+                                syft_url=syft_url,
+                                payload=payload,
+                                query_params=query_params,
+                                headers=headers,
+                                method=method,
+                                show_spinner=show_spinner,
+                                args=args,
+                                max_poll_attempts=20,
+                                poll_interval=1.5
+                            )
+                        except PollingTimeoutError:
+                            # Timed out again, ask again
+                            print(f"\n⏱️  {operation_type.title()} operation timed out again after 20 more attempts (30s)")
+                            continue
+                            
+                    elif response in ['n', 'no']:
+                        print(f"{operation_type.title()} operation cancelled by user.")
+                        raise e  # Re-raise the original timeout error
+                    else:
+                        print("Please enter 'y' for yes or 'n' for no.")
+                        continue
+                        
+                except (EOFError, KeyboardInterrupt):
+                    print(f"\n{operation_type.title()} operation cancelled by user.")
+                    raise e  # Re-raise the original timeout error
+                    
+        except NetworkError as e:
+            # Network timeout or connection issue
+            if "timeout" in str(e).lower():
+                raise NetworkError(f"Timeout: The service might be offline or with an unstable connection.", syft_url)
+            else:
+                raise e  # Re-raise other network errors as-is
+
     async def call_health(self, service_info: ServiceInfo) -> Dict[str, Any]:
         """Call the health endpoint of a service.
         
@@ -377,7 +456,7 @@ class SyftBoxRPCClient(SyftBoxAPIClient):
 
         endpoints = ServiceEndpoints(service_info.datasite, service_info.name)
         syft_url = endpoints.health_url()
-        # Use 15 attempts for health checks with faster polling
+        # Use 15 attempts for health checks with updated polling
         return await self.call_rpc(
             syft_url, 
             payload=None, 
@@ -385,7 +464,7 @@ class SyftBoxRPCClient(SyftBoxAPIClient):
             show_spinner=True,  # Show spinner for health check polling
             args=health_args,
             max_poll_attempts=15,
-            poll_interval=0.5
+            poll_interval=0.25
         )
     
     async def call_chat(self, service_info: ServiceInfo, request_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -416,7 +495,14 @@ class SyftBoxRPCClient(SyftBoxAPIClient):
 
         endpoints = ServiceEndpoints(service_info.datasite, service_info.name)
         syft_url = endpoints.chat_url()
-        return await self.call_rpc(syft_url, payload=request_data, args=chat_args)
+        return await self._call_rpc_with_interactive_polling(
+            syft_url, 
+            payload=request_data, 
+            args=chat_args,
+            max_poll_attempts=100,
+            poll_interval=1.5,
+            operation_type="chat"
+        )
 
     async def call_search(self, service_info: ServiceInfo, request_data: Dict[str, Any]) -> Dict[str, Any]:
         """Call the search endpoint of a service.
@@ -443,7 +529,14 @@ class SyftBoxRPCClient(SyftBoxAPIClient):
 
         endpoints = ServiceEndpoints(service_info.datasite, service_info.name)
         syft_url = endpoints.search_url()
-        return await self.call_rpc(syft_url, payload=request_data, args=search_args)
+        return await self._call_rpc_with_interactive_polling(
+            syft_url, 
+            payload=request_data, 
+            args=search_args,
+            max_poll_attempts=100,
+            poll_interval=1.5,
+            operation_type="search"
+        )
 
     async def call_custom_endpoint(self, 
                                    service_info: ServiceInfo, 

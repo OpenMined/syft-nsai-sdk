@@ -258,7 +258,7 @@ def health_check(
     service: Optional[str] = typer.Option(None, "--service", "-m", help="Check specific service"),
     all_services: bool = typer.Option(False, "--all", help="Check all services"),
     serviceType: Optional[str] = typer.Option(None, "--service", "-s", help="Filter by service type"),
-    timeout: float = typer.Option(2.0, "--timeout", "-t", help="Health check timeout"),
+    timeout: float = typer.Option(1.5, "--timeout", "-t", help="Health check timeout"),
 ):
     """Check health status of services."""
     client = get_client()

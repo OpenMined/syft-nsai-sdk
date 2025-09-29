@@ -351,13 +351,15 @@ class Client:
         """
         service_info = self.get_service(service_name)
         
-        # Check health status if not already checked
-        if service_info.health_status is None:
+        # Check health status - use cached if available and not offline, otherwise check
+        if (service_info.health_status is None or 
+            service_info.health_status == HealthStatus.UNKNOWN or 
+            service_info.health_status == HealthStatus.OFFLINE):
             try:
                 from .services.health import check_service_health
                 from .utils.async_utils import run_async_in_thread
                 health_status = run_async_in_thread(
-                    check_service_health(service_info, self.rpc_client, timeout=2.0)
+                    check_service_health(service_info, self.rpc_client, timeout=1.5)
                 )
                 service_info.health_status = health_status
             except Exception as e:
@@ -406,8 +408,13 @@ class Client:
         service = self.get_service(service_name)
         logger.info(f"Using service: {service.name} from datasite: {service.datasite}") 
         
-        # Check if service is online by pinging it
-        health_status = await check_service_health(service, self.rpc_client, timeout=3.0)
+        # Check if service is online - use cached status if available, otherwise query
+        if service.health_status and service.health_status != HealthStatus.UNKNOWN:
+            health_status = service.health_status
+        else:
+            # Use longer timeout for chat health checks as chat services may take longer to respond
+            health_status = await check_service_health(service, self.rpc_client, timeout=5.0)
+        
         if health_status == HealthStatus.OFFLINE:
             raise ServiceNotFoundError("The node is offline. Please retry or find a different service to use")
         
@@ -458,8 +465,13 @@ class Client:
             service = self.get_service(service_name)
             logger.info(f"Using service: {service.name} from datasite: {service.datasite}")
             
-            # Check if service is online by pinging it
-            health_status = await check_service_health(service, self.rpc_client, timeout=3.0)
+            # Check if service is online - use cached status if available, otherwise query
+            if service.health_status and service.health_status != HealthStatus.UNKNOWN:
+                health_status = service.health_status
+            else:
+                # Use longer timeout for chat health checks as chat services may take longer to respond
+                health_status = await check_service_health(service, self.rpc_client, timeout=5.0)
+            
             if health_status == HealthStatus.OFFLINE:
                 raise ServiceNotFoundError("The node is offline. Please retry or find a different service to use")
             
@@ -569,8 +581,12 @@ class Client:
             service = self.get_service(service_name)
             logger.info(f"Using service: {service.name} from datasite: {service.datasite}") 
             
-            # Check if service is online by pinging it
-            health_status = await check_service_health(service, self.rpc_client, timeout=3.0)
+            # Check if service is online - use cached status if available, otherwise query
+            if service.health_status and service.health_status != HealthStatus.UNKNOWN:
+                health_status = service.health_status
+            else:
+                health_status = await check_service_health(service, self.rpc_client, timeout=1.5)
+            
             if health_status == HealthStatus.OFFLINE:
                 raise ServiceNotFoundError("The node is offline. Please retry or find a different service to use")
             
@@ -645,8 +661,12 @@ class Client:
         service = self.get_service(service_name)
         logger.info(f"Using service: {service.name} from datasite: {service.datasite}") 
         
-        # Check if service is online by pinging it
-        health_status = await check_service_health(service, self.rpc_client, timeout=3.0)
+        # Check if service is online - use cached status if available, otherwise query
+        if service.health_status and service.health_status != HealthStatus.UNKNOWN:
+            health_status = service.health_status
+        else:
+            health_status = await check_service_health(service, self.rpc_client, timeout=1.5)
+        
         if health_status == HealthStatus.OFFLINE:
             raise ServiceNotFoundError("The node is offline. Please retry or find a different service to use")
         
@@ -798,7 +818,7 @@ class Client:
         service.show()
     
     # Health Monitoring Methods
-    async def check_service_health(self, service_name: str, timeout: float = 2.0) -> HealthStatus:
+    async def check_service_health(self, service_name: str, timeout: float = 1.5) -> HealthStatus:
         """Check health of a specific service.
         
         Args:
@@ -829,7 +849,7 @@ class Client:
     async def check_all_services_health(
             self, 
             service_type: Optional[ServiceType] = None,
-            timeout: float = 2.0
+            timeout: float = 1.5
         ) -> Dict[str, HealthStatus]:
         """Check health of all discovered services.
         
@@ -1114,7 +1134,7 @@ class Client:
             html = '''
             <div style="font-family: system-ui, -apple-system, sans-serif; padding: 12px 0; color: #333;">
                 <div style="font-size: 14px; font-weight: 600; margin-bottom: 12px;">Available Services</div>
-                <div style="color: #999; font-style: italic; font-size: 13px;">
+                <div style="color: #999; font-style: italic; font-size: 11px;">
                     Error loading services. Make sure SyftBox is running.
                 </div>
             </div>
@@ -1157,7 +1177,7 @@ class Client:
                 display: flex;
                 align-items: center;
                 margin: 6px 0;
-                font-size: 13px;
+                font-size: 11px;
             }
             .status-label {
                 color: #666;
@@ -1187,7 +1207,7 @@ class Client:
                 margin-top: 16px;
                 padding-top: 12px;
                 border-top: 1px solid #e0e0e0;
-                font-size: 12px;
+                font-size: 11px;
                 color: #666;
             }
             .command-code {
@@ -1239,15 +1259,22 @@ class Client:
                     <span class="command-code">client.search("service", "message")</span> — Search with a service
                 </div>
             </div>
-            
+        '''
+        
+        # Add account warning section only if account is not configured
+        if not self._account_configured:
+            html += '''
             <div class="docs-section">
                 <div style="margin-bottom: 8px; font-weight: 500;">Account:</div>
-                <div style=""line-height: 1.8;">
+                <div style="line-height: 1.8;">
                     ⚠️ No accounting registered - free services only.<br>
                     <span class="command-code">Client(set_accounting=True)</span> — Register for paid services<br>
                     <span class="command-code">Client(accounting_pass=password)</span> — Connect existing account
                 </div>
             </div>
+            '''
+        
+        html += '''
         </div>
         '''
         
@@ -1287,6 +1314,8 @@ class Client:
     
     def _repr_html_(self) -> str:
         """Display HTML widget in Jupyter environments - same as show()."""
+        from .utils.theme import generate_adaptive_css
+        
         # Get status information
         syftbox_status = "Running" if self.config_manager.is_syftbox_running() else "Not Running"
         syftbox_path = str(self.config.data_dir)
@@ -1300,118 +1329,68 @@ class Client:
         except:
             service_count = 0
         
-        # Build HTML widget with minimal notebook-like styling (same as show())
-        html = '''
-        <style>
-            .syfthub-widget {
-                font-family: system-ui, -apple-system, sans-serif;
-                padding: 12px 0;
-                color: #333;
-                line-height: 1.5;
-            }
-            .widget-title {
-                font-size: 14px;
-                font-weight: 600;
-                margin-bottom: 12px;
-                color: #333;
-            }
-            .status-line {
-                display: flex;
-                align-items: center;
-                margin: 6px 0;
-                font-size: 13px;
-            }
-            .status-label {
-                color: #666;
-                min-width: 140px;
-                margin-right: 12px;
-            }
-            .status-value {
-                font-family: monospace;
-                color: #333;
-            }
-            .status-badge {
-                display: inline-block;
-                padding: 2px 8px;
-                border-radius: 3px;
-                font-size: 11px;
-                margin-left: 8px;
-            }
-            .badge-ready {
-                background: #d4edda;
-                color: #155724;
-            }
-            .badge-not-ready {
-                background: #f8d7da;
-                color: #721c24;
-            }
-            .docs-section {
-                margin-top: 16px;
-                padding-top: 12px;
-                border-top: 1px solid #e0e0e0;
-                font-size: 12px;
-                color: #666;
-            }
-            .command-code {
-                font-family: monospace;
-                background: #f5f5f5;
-                padding: 1px 4px;
-                border-radius: 2px;
-                color: #333;
-            }
-        </style>
-        '''
+        # Generate adaptive CSS for both light and dark themes
+        html = generate_adaptive_css('syfthub')
         
         # Determine badges
         syftbox_badge = '<span class="status-badge badge-ready">Running</span>' if syftbox_status == "Running" else '<span class="status-badge badge-not-ready">Not Running</span>'
         account_badge = '<span class="status-badge badge-ready">Configured</span>' if self._account_configured else '<span class="status-badge badge-not-ready">Not Configured</span>'
         
         html += f'''
-        <div class="syfthub-widget">
-            <div class="widget-title">
-                SyftHub Client {syftbox_badge}
-            </div>
-            
-            <div class="status-line">
-                <span class="status-label">SyftBox Path:</span>
-                <span class="status-value">{syftbox_path}</span>
-            </div>
-            
-            <div class="status-line">
-                <span class="status-label">Cache Server:</span>
-                <span class="status-value">{cache_server}</span>
-            </div>
-            
-            <div class="status-line">
-                <span class="status-label">Account:</span>
-                <span class="status-value">{account_email or "Not configured"}</span>
-                {account_badge}
-            </div>
-            
-            <div class="status-line">
-                <span class="status-label">Services Found:</span>
-                <span class="status-value">{service_count} services</span>
-            </div>
-            
-            <div class="docs-section">
-                <div style="margin-bottom: 8px; font-weight: 500;">Common operations:</div>
-                <div style="line-height: 1.8;">
-                    <span class="command-code">client.list_services()</span> — Discover available services<br>
-                    <span class="command-code">client.chat("datasite/service", "message")</span> — Chat with a service<br>
-                    <span class="command-code">client.search("datasite/service", "message")</span> — Search with a service
+        <div class="syft-widget">
+            <div class="syfthub-widget">
+                <div class="widget-title">
+                    SyftHub Client {syftbox_badge}
                 </div>
-            </div>
-            
-            <div class="docs-section">
-                <div style="margin-bottom: 8px; font-weight: 500;">Account:</div>
-                <div style="font-size: 11px; color: #e67e22; background: #fef9e7; padding: 8px; border-radius: 4px; margin-bottom: 8px;">
-                    ⚠️ No accounting registered. Free services only.<br>
-                    <span style="font-family: monospace; font-weight: 600;">Client(set_accounting=True)</span> — Register for paid services<br>
-                    <span style="font-family: monospace; font-weight: 600;">Client(accounting_pass=password)</span> — Connect existing account
+                
+                <div class="status-line">
+                    <span class="status-label">SyftBox Path:</span>
+                    <span class="status-value">{syftbox_path}</span>
                 </div>
+                
+                <div class="status-line">
+                    <span class="status-label">Cache Server:</span>
+                    <span class="status-value">{cache_server}</span>
+                </div>
+                
+                <div class="status-line">
+                    <span class="status-label">Account:</span>
+                    <span class="status-value">{account_email or "Not configured"}</span>
+                    {account_badge}
+                </div>
+                
+                <div class="status-line">
+                    <span class="status-label">Services Found:</span>
+                    <span class="status-value">{service_count} services</span>
+                </div>
+                
+                <div class="docs-section">
+                    <div style="margin-bottom: 8px; font-weight: 500;">Common operations:</div>
+                    <div style="line-height: 1.8; font-size: 11px;">
+                        <span class="command-code">client.list_services()</span> — Discover available services<br>
+                        <span class="command-code">client.chat("datasite/service", "message")</span> — Chat with a service<br>
+                        <span class="command-code">client.search("datasite/service", "message")</span> — Search with a service
+                    </div>
+                </div>
+                
             </div>
         </div>
         '''
+        
+        # Add account warning section only if account is not configured
+        if not self._account_configured:
+            html += '''
+                <div class="docs-section">
+                    <div style="margin-bottom: 8px; font-weight: 500;">Account:</div>
+                    <div style="font-size: 11px; color: #e67e22; background: #fef9e7; padding: 8px; border-radius: 4px; margin-bottom: 8px;">
+                        ⚠️ No accounting registered. Free services only.<br>
+                        <span style="font-family: monospace; font-weight: 600;">Client(set_accounting=True)</span> — Register for paid services<br>
+                        <span style="font-family: monospace; font-weight: 600;">Client(accounting_pass=password)</span> — Connect existing account
+                    </div>
+                </div>
+            </div>
+        </div>
+            '''
         
         return html
     
@@ -1515,7 +1494,7 @@ class Client:
     
     async def _add_health_status(self, services: List[ServiceInfo]) -> List[ServiceInfo]:
         """Add health status to services with progress feedback."""
-        health_status = await self._batch_health_check_with_progress(services, self.rpc_client, timeout=2.0)
+        health_status = await self._batch_health_check_with_progress(services, self.rpc_client, timeout=1.5)
         
         for service in services:
             service.health_status = health_status.get(service.name, HealthStatus.UNKNOWN)

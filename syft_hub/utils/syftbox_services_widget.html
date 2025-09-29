@@ -1,0 +1,1338 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SyftBox Services</title>
+    
+    <style>
+        .syft-widget {
+            font-family: system-ui, -apple-system, sans-serif;
+            line-height: 1.5;
+            transition: all 0.2s ease-in-out;
+        }
+        
+        /* Light theme (default) */
+        .services-widget-widget {
+            padding: 12px 0;
+            color: #333;
+            background: #fafafa;
+            border: 1px solid #e0e0e0;
+            border-radius: 6px;
+            padding: 16px;
+            margin: 8px 0;
+        }
+        .widget-title {
+            font-size: 14px;
+            font-weight: 600;
+            margin-bottom: 12px;
+            color: #333;
+        }
+        .status-line {
+            display: flex;
+            align-items: flex-start;
+            margin: 6px 0;
+            font-size: 13px;
+        }
+        .status-label {
+            color: #666;
+            min-width: 140px;
+            margin-right: 12px;
+            flex-shrink: 0;
+        }
+        .status-value {
+            font-family: monospace;
+            color: #333;
+            word-break: break-word;
+        }
+        .status-badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 3px;
+            font-size: 11px;
+            margin-left: 8px;
+        }
+        .badge-ready {
+            background: #d4edda;
+            color: #155724;
+        }
+        .badge-not-ready {
+            background: #f8d7da;
+            color: #721c24;
+        }
+        .badge-online {
+            background: #d4edda;
+            color: #155724;
+        }
+        .badge-offline {
+            background: #f8d7da;
+            color: #721c24;
+        }
+        .badge-timeout {
+            background: #fff3cd;
+            color: #856404;
+        }
+        .badge-unknown {
+            background: #e2e3e5;
+            color: #6c757d;
+        }
+        .docs-section {
+            margin-top: 16px;
+            padding-top: 12px;
+            border-top: 1px solid #e0e0e0;
+            font-size: 12px;
+            color: #666;
+        }
+        .command-code {
+            font-family: monospace;
+            background: #f5f5f5;
+            padding: 1px 4px;
+            border-radius: 2px;
+            color: #333;
+        }
+        .content-preview {
+            background: #f8f9fa;
+            border: 1px solid #e0e0e0;
+            border-radius: 4px;
+            padding: 8px;
+            font-family: inherit;
+            font-size: 12px;
+            color: #495057;
+            white-space: pre-wrap;
+        }
+        
+        /* Dark theme */
+        .syft-widget[data-theme="dark"] .services-widget-widget,
+        .theme-dark .services-widget-widget,
+        body[theme="dark"] .services-widget-widget,
+        body[data-jp-theme-name*="dark"] .services-widget-widget,
+        body[data-vscode-theme-kind*="dark"] .services-widget-widget,
+        body.vscode-dark .services-widget-widget,
+        body.vs-dark .services-widget-widget,
+        html[data-theme="dark"] .services-widget-widget,
+        html.dark .services-widget-widget,
+        body.dark .services-widget-widget,
+        .jp-mod-dark .services-widget-widget {
+            color: #f0f0f0;
+            background: #2b2b2b;
+            border-color: #4a4a4a;
+        }
+        .syft-widget[data-theme="dark"] .widget-title,
+        .theme-dark .widget-title,
+        body[theme="dark"] .widget-title,
+        body[data-jp-theme-name*="dark"] .widget-title,
+        body[data-vscode-theme-kind*="dark"] .widget-title,
+        body.vscode-dark .widget-title,
+        body.vs-dark .widget-title,
+        html[data-theme="dark"] .widget-title,
+        html.dark .widget-title,
+        body.dark .widget-title,
+        .jp-mod-dark .widget-title {
+            color: #f0f0f0;
+        }
+        .syft-widget[data-theme="dark"] .status-label,
+        .theme-dark .status-label,
+        body[theme="dark"] .status-label,
+        body[data-jp-theme-name*="dark"] .status-label,
+        .jp-mod-dark .status-label {
+            color: #c0c0c0;
+        }
+        .syft-widget[data-theme="dark"] .status-value,
+        .theme-dark .status-value,
+        body[theme="dark"] .status-value,
+        body[data-jp-theme-name*="dark"] .status-value,
+        body[data-vscode-theme-kind*="dark"] .status-value,
+        body.vscode-dark .status-value,
+        body.vs-dark .status-value,
+        html[data-theme="dark"] .status-value,
+        html.dark .status-value,
+        body.dark .status-value,
+        .jp-mod-dark .status-value {
+            color: #ffffff !important;
+            font-weight: 500 !important;
+        }
+        .syft-widget[data-theme="dark"] .badge-ready,
+        .theme-dark .badge-ready,
+        body[theme="dark"] .badge-ready,
+        body[data-jp-theme-name*="dark"] .badge-ready,
+        .jp-mod-dark .badge-ready {
+            background: #0d4f14;
+            color: #7bc97f;
+        }
+        .syft-widget[data-theme="dark"] .badge-not-ready,
+        .theme-dark .badge-not-ready,
+        body[theme="dark"] .badge-not-ready,
+        body[data-jp-theme-name*="dark"] .badge-not-ready,
+        .jp-mod-dark .badge-not-ready {
+            background: #5a1b20;
+            color: #ff7979;
+        }
+        .syft-widget[data-theme="dark"] .badge-online,
+        .theme-dark .badge-online,
+        body[theme="dark"] .badge-online,
+        body[data-jp-theme-name*="dark"] .badge-online,
+        .jp-mod-dark .badge-online {
+            background: #0d4f14;
+            color: #7bc97f;
+        }
+        .syft-widget[data-theme="dark"] .badge-offline,
+        .theme-dark .badge-offline,
+        body[theme="dark"] .badge-offline,
+        body[data-jp-theme-name*="dark"] .badge-offline,
+        .jp-mod-dark .badge-offline {
+            background: #5a1b20;
+            color: #ff7979;
+        }
+        .syft-widget[data-theme="dark"] .badge-timeout,
+        .theme-dark .badge-timeout,
+        body[theme="dark"] .badge-timeout,
+        body[data-jp-theme-name*="dark"] .badge-timeout,
+        .jp-mod-dark .badge-timeout {
+            background: #4a3c00;
+            color: #ffa726;
+        }
+        .syft-widget[data-theme="dark"] .badge-unknown,
+        .theme-dark .badge-unknown,
+        body[theme="dark"] .badge-unknown,
+        body[data-jp-theme-name*="dark"] .badge-unknown,
+        .jp-mod-dark .badge-unknown {
+            background: #2a2a2a;
+            color: #b0b0b0;
+        }
+        .syft-widget[data-theme="dark"] .docs-section,
+        .theme-dark .docs-section,
+        body[theme="dark"] .docs-section,
+        body[data-jp-theme-name*="dark"] .docs-section,
+        .jp-mod-dark .docs-section {
+            border-top-color: #4a4a4a;
+            color: #c0c0c0;
+        }
+        .syft-widget[data-theme="dark"] .command-code,
+        .theme-dark .command-code,
+        body[theme="dark"] .command-code,
+        body[data-jp-theme-name*="dark"] .command-code,
+        .jp-mod-dark .command-code {
+            background: #1e1e1e;
+            color: #f0f0f0;
+        }
+        .syft-widget[data-theme="dark"] .content-preview,
+        .theme-dark .content-preview,
+        body[theme="dark"] .content-preview,
+        body[data-jp-theme-name*="dark"] .content-preview,
+        body[data-vscode-theme-kind*="dark"] .content-preview,
+        body.vscode-dark .content-preview,
+        body.vs-dark .content-preview,
+        html[data-theme="dark"] .content-preview,
+        html.dark .content-preview,
+        body.dark .content-preview,
+        .jp-mod-dark .content-preview {
+            background: #363636;
+            border-color: #4a4a4a;
+            color: #f5f5f5;
+        }
+        
+        /* Dark theme overrides for inline styled elements */
+        .syft-widget[data-theme="dark"] div[style*="color: #e67e22"],
+        .theme-dark div[style*="color: #e67e22"],
+        body[theme="dark"] div[style*="color: #e67e22"],
+        body[data-jp-theme-name*="dark"] div[style*="color: #e67e22"],
+        body[data-vscode-theme-kind*="dark"] div[style*="color: #e67e22"],
+        body.vscode-dark div[style*="color: #e67e22"],
+        body.vs-dark div[style*="color: #e67e22"],
+        html[data-theme="dark"] div[style*="color: #e67e22"],
+        html.dark div[style*="color: #e67e22"],
+        body.dark div[style*="color: #e67e22"],
+        .jp-mod-dark div[style*="color: #e67e22"] {
+            color: #ffc947 !important;
+            background: #2a2200 !important;
+            border: 1px solid #ffa726 !important;
+        }
+        
+        /* Better styling for inline monospace spans (code elements) - less highlighted */
+        .syft-widget[data-theme="dark"] span[style*="font-family: monospace"],
+        .syft-widget[data-theme="dark"] .command-code,
+        .theme-dark span[style*="font-family: monospace"],
+        .theme-dark .command-code,
+        body[theme="dark"] span[style*="font-family: monospace"],
+        body[theme="dark"] .command-code,
+        body[data-jp-theme-name*="dark"] span[style*="font-family: monospace"],
+        body[data-jp-theme-name*="dark"] .command-code,
+        body[data-vscode-theme-kind*="dark"] span[style*="font-family: monospace"],
+        body[data-vscode-theme-kind*="dark"] .command-code,
+        body.vscode-dark span[style*="font-family: monospace"],
+        body.vscode-dark .command-code,
+        body.vs-dark span[style*="font-family: monospace"],
+        body.vs-dark .command-code,
+        html[data-theme="dark"] span[style*="font-family: monospace"],
+        html[data-theme="dark"] .command-code,
+        html.dark span[style*="font-family: monospace"],
+        html.dark .command-code,
+        body.dark span[style*="font-family: monospace"],
+        body.dark .command-code,
+        .jp-mod-dark span[style*="font-family: monospace"],
+        .jp-mod-dark .command-code {
+            background: #363636 !important;
+            color: #b8c5d1 !important;
+            padding: 2px 4px !important;
+            border-radius: 3px !important;
+            border: 1px solid #4a4a4a !important;
+            font-weight: normal !important;
+        }
+        
+        /* Fix inline comment colors (gray text) */
+        .syft-widget[data-theme="dark"] span[style*="color: #6c757d"],
+        .theme-dark span[style*="color: #6c757d"],
+        body[theme="dark"] span[style*="color: #6c757d"],
+        body[data-jp-theme-name*="dark"] span[style*="color: #6c757d"],
+        body[data-vscode-theme-kind*="dark"] span[style*="color: #6c757d"],
+        body.vscode-dark span[style*="color: #6c757d"],
+        body.vs-dark span[style*="color: #6c757d"],
+        html[data-theme="dark"] span[style*="color: #6c757d"],
+        html.dark span[style*="color: #6c757d"],
+        body.dark span[style*="color: #6c757d"],
+        .jp-mod-dark span[style*="color: #6c757d"] {
+            color: #999 !important;
+        }
+        
+        /* Fix inline price colors (green/red) */
+        .syft-widget[data-theme="dark"] span[style*="color: #28a745"],
+        .theme-dark span[style*="color: #28a745"],
+        body[theme="dark"] span[style*="color: #28a745"],
+        body[data-jp-theme-name*="dark"] span[style*="color: #28a745"],
+        body[data-vscode-theme-kind*="dark"] span[style*="color: #28a745"],
+        body.vscode-dark span[style*="color: #28a745"],
+        body.vs-dark span[style*="color: #28a745"],
+        html[data-theme="dark"] span[style*="color: #28a745"],
+        html.dark span[style*="color: #28a745"],
+        body.dark span[style*="color: #28a745"],
+        .jp-mod-dark span[style*="color: #28a745"] {
+            color: #7bc97f !important;
+        }
+        
+        .syft-widget[data-theme="dark"] span[style*="color: #dc3545"],
+        .theme-dark span[style*="color: #dc3545"],
+        body[theme="dark"] span[style*="color: #dc3545"],
+        body[data-jp-theme-name*="dark"] span[style*="color: #dc3545"],
+        body[data-vscode-theme-kind*="dark"] span[style*="color: #dc3545"],
+        body.vscode-dark span[style*="color: #dc3545"],
+        body.vs-dark span[style*="color: #dc3545"],
+        html[data-theme="dark"] span[style*="color: #dc3545"],
+        html.dark span[style*="color: #dc3545"],
+        body.dark span[style*="color: #dc3545"],
+        .jp-mod-dark span[style*="color: #dc3545"] {
+            color: #ff7979 !important;
+        }
+        
+        /* Fix inline secondary text colors */
+        .syft-widget[data-theme="dark"] div[style*="color: #666"],
+        .theme-dark div[style*="color: #666"],
+        body[theme="dark"] div[style*="color: #666"],
+        body[data-jp-theme-name*="dark"] div[style*="color: #666"],
+        body[data-vscode-theme-kind*="dark"] div[style*="color: #666"],
+        body.vscode-dark div[style*="color: #666"],
+        body.vs-dark div[style*="color: #666"],
+        html[data-theme="dark"] div[style*="color: #666"],
+        html.dark div[style*="color: #666"],
+        body.dark div[style*="color: #666"],
+        .jp-mod-dark div[style*="color: #666"] {
+            color: #c0c0c0 !important;
+        }
+        
+        /* Additional overrides for ANY monospace elements that might be too bright */
+        .syft-widget[data-theme="dark"] *[style*="font-family: monospace"],
+        .syft-widget[data-theme="dark"] *[style*="font-weight: 600"],
+        .theme-dark *[style*="font-family: monospace"],
+        .theme-dark *[style*="font-weight: 600"],
+        body[theme="dark"] *[style*="font-family: monospace"],
+        body[theme="dark"] *[style*="font-weight: 600"],
+        body[data-jp-theme-name*="dark"] *[style*="font-family: monospace"],
+        body[data-jp-theme-name*="dark"] *[style*="font-weight: 600"],
+        body[data-vscode-theme-kind*="dark"] *[style*="font-family: monospace"],
+        body[data-vscode-theme-kind*="dark"] *[style*="font-weight: 600"],
+        body.vscode-dark *[style*="font-family: monospace"],
+        body.vscode-dark *[style*="font-weight: 600"],
+        body.vs-dark *[style*="font-family: monospace"],
+        body.vs-dark *[style*="font-weight: 600"],
+        html[data-theme="dark"] *[style*="font-family: monospace"],
+        html[data-theme="dark"] *[style*="font-weight: 600"],
+        html.dark *[style*="font-family: monospace"],
+        html.dark *[style*="font-weight: 600"],
+        body.dark *[style*="font-family: monospace"],
+        body.dark *[style*="font-weight: 600"],
+        .jp-mod-dark *[style*="font-family: monospace"],
+        .jp-mod-dark *[style*="font-weight: 600"] {
+            background: #363636 !important;
+            color: #a8b3c1 !important;
+            font-weight: normal !important;
+            border: 1px solid #4a4a4a !important;
+        }
+        
+        /* Ensure attribute values are very readable */
+        .syft-widget[data-theme="dark"] .status-value *,
+        .theme-dark .status-value *,
+        body[theme="dark"] .status-value *,
+        body[data-jp-theme-name*="dark"] .status-value *,
+        body[data-vscode-theme-kind*="dark"] .status-value *,
+        body.vscode-dark .status-value *,
+        body.vs-dark .status-value *,
+        html[data-theme="dark"] .status-value *,
+        html.dark .status-value *,
+        body.dark .status-value *,
+        .jp-mod-dark .status-value * {
+            color: #ffffff !important;
+        }
+    </style>
+    
+    <script>
+    (function() {
+        function detectAndApplyTheme() {
+            const isDark = document.querySelector('body[theme="dark"]') ||
+                          document.querySelector('.theme-dark') ||
+                          document.querySelector('[data-theme="dark"]') ||
+                          document.querySelector('body.dark-theme') ||
+                          document.querySelector('body[data-jp-theme-name*="dark"]') ||
+                          document.querySelector('.jp-mod-dark');
+            
+            const widgets = document.querySelectorAll('.syft-widget');
+            widgets.forEach(widget => {
+                widget.setAttribute('data-theme', isDark ? 'dark' : 'light');
+            });
+        }
+        
+        // Apply theme immediately
+        detectAndApplyTheme();
+        
+        // Watch for theme changes
+        const observer = new MutationObserver(detectAndApplyTheme);
+        observer.observe(document.body, {
+            attributes: true,
+            attributeFilter: ['theme', 'data-jp-theme-name', 'class']
+        });
+        observer.observe(document.documentElement, {
+            attributes: true,
+            attributeFilter: ['theme', 'data-jp-theme-name', 'class']
+        });
+    })();
+    </script>
+    
+    
+    <style>
+    body {
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+        margin: 0;
+        padding: 16px;
+        background: #fafafa;
+        color: #333;
+        font-size: 13px;
+        line-height: 1.5;
+    }
+    
+    /* Dark theme for services widget */
+    @media (prefers-color-scheme: dark) {
+        body {
+            background: #1e1e1e !important;
+            color: #f0f0f0 !important;
+        }
+    }
+    
+    body[data-theme="dark"],
+    body.dark-theme {
+        background: #1e1e1e !important;
+        color: #f0f0f0 !important;
+    }
+    
+    /* Dark theme overrides for main elements - higher specificity */
+    @media (prefers-color-scheme: dark) {
+        body #syft_services_d510b472 {
+            border: 1px solid #4a4a4a !important;
+            background: #2b2b2b !important;
+            box-shadow: 0 1px 3px rgba(255,255,255,0.1) !important;
+        }
+        .header {
+            background: #363636 !important;
+            border-bottom: 1px solid #4a4a4a !important;
+        }
+        .header h2 {
+            color: #f0f0f0 !important;
+        }
+        .header p {
+            color: #c0c0c0 !important;
+        }
+        .controls {
+            background: #2b2b2b !important;
+            border-bottom: 1px solid #4a4a4a !important;
+        }
+        .filter-group label {
+            color: #c0c0c0 !important;
+        }
+        .filter-select, .filter-input {
+            background: #363636 !important;
+            border: 1px solid #4a4a4a !important;
+            color: #f0f0f0 !important;
+        }
+        table {
+            background: #2b2b2b !important;
+        }
+        thead {
+            background: #363636 !important;
+            border-bottom: 1px solid #4a4a4a !important;
+        }
+        th {
+            color: #f0f0f0 !important;
+            border-bottom: 1px solid #4a4a4a !important;
+        }
+        tbody tr {
+            background: #2b2b2b !important;
+            border-bottom: 1px solid #4a4a4a !important;
+        }
+        tbody tr:hover {
+            background: #363636 !important;
+        }
+        td {
+            color: #f0f0f0 !important;
+            border-bottom: 1px solid #4a4a4a !important;
+        }
+        .badge-free {
+            background: #0d4f14 !important;
+            color: #7bc97f !important;
+        }
+        .badge-paid {
+            background: #5a1b20 !important;
+            color: #ff7979 !important;
+        }
+        .badge-online {
+            background: #0d4f14 !important;
+            color: #7bc97f !important;
+        }
+        .badge-offline {
+            background: #5a1b20 !important;
+            color: #ff7979 !important;
+        }
+        .badge-unknown {
+            background: #2a2a2a !important;
+            color: #b0b0b0 !important;
+        }
+        .tag {
+            background: #363636 !important;
+            color: #c0c0c0 !important;
+            border: 1px solid #4a4a4a !important;
+        }
+        .pagination {
+            background: #363636 !important;
+            border-top: 1px solid #4a4a4a !important;
+        }
+        .pagination button {
+            background: #2b2b2b !important;
+            color: #f0f0f0 !important;
+            border: 1px solid #4a4a4a !important;
+        }
+        .pagination button:hover:not(:disabled) {
+            background: #363636 !important;
+        }
+        .pagination button.active {
+            background: #0066cc !important;
+            border-color: #0066cc !important;
+        }
+    }
+    
+    /* Also apply dark theme when body has dark theme class - comprehensive overrides */
+    body[data-theme="dark"] #syft_services_d510b472,
+    body.dark-theme #syft_services_d510b472 {
+        border: 1px solid #4a4a4a !important;
+        background: #2b2b2b !important;
+        box-shadow: 0 1px 3px rgba(255,255,255,0.1) !important;
+    }
+    body[data-theme="dark"] .header,
+    body.dark-theme .header {
+        background: #363636 !important;
+        border-bottom: 1px solid #4a4a4a !important;
+    }
+    body[data-theme="dark"] .header h2,
+    body.dark-theme .header h2 {
+        color: #f0f0f0 !important;
+    }
+    body[data-theme="dark"] .header p,
+    body.dark-theme .header p {
+        color: #c0c0c0 !important;
+    }
+    body[data-theme="dark"] .controls,
+    body.dark-theme .controls {
+        background: #2b2b2b !important;
+        border-bottom: 1px solid #4a4a4a !important;
+    }
+    body[data-theme="dark"] table,
+    body.dark-theme table {
+        background: #2b2b2b !important;
+    }
+    body[data-theme="dark"] thead,
+    body.dark-theme thead {
+        background: #363636 !important;
+    }
+    body[data-theme="dark"] tbody tr,
+    body.dark-theme tbody tr {
+        background: #2b2b2b !important;
+        border-bottom: 1px solid #4a4a4a !important;
+    }
+    body[data-theme="dark"] tbody tr:hover,
+    body.dark-theme tbody tr:hover {
+        background: #363636 !important;
+    }
+    body[data-theme="dark"] td,
+    body.dark-theme td {
+        color: #f0f0f0 !important;
+        border-bottom: 1px solid #4a4a4a !important;
+    }
+    body[data-theme="dark"] th,
+    body.dark-theme th {
+        color: #f0f0f0 !important;
+        border-bottom: 1px solid #4a4a4a !important;
+    }
+    
+    #syft_services_d510b472 {
+        border: 1px solid #e1e1e1;
+        border-radius: 8px;
+        background: #fff;
+        max-width: 100%;
+        overflow: hidden;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+    
+    /* Dark theme styles */
+    body[data-theme="dark"],
+    body.dark-theme {
+        background: #1e1e1e !important;
+        color: #f0f0f0 !important;
+    }
+    
+    body[data-theme="dark"] #syft_services_d510b472,
+    body.dark-theme #syft_services_d510b472 {
+        border: 1px solid #4a4a4a !important;
+        background: #2b2b2b !important;
+        box-shadow: 0 1px 3px rgba(255,255,255,0.1) !important;
+    }
+    
+    html body[data-theme="dark"] .header,
+    html body.dark-theme .header {
+        background: #363636 !important;
+        border-bottom: 1px solid #4a4a4a !important;
+    }
+    
+    html body[data-theme="dark"] .header h2,
+    html body.dark-theme .header h2 {
+        color: #f0f0f0 !important;
+    }
+    
+    html body[data-theme="dark"] .header p,
+    html body.dark-theme .header p {
+        color: #c0c0c0 !important;
+    }
+    
+    html body[data-theme="dark"] .controls,
+    html body.dark-theme .controls {
+        background: #2b2b2b !important;
+        border-bottom: 1px solid #4a4a4a !important;
+    }
+    
+    html body[data-theme="dark"] table,
+    html body.dark-theme table {
+        background: #2b2b2b !important;
+        color: #f0f0f0 !important;
+    }
+    
+    html body[data-theme="dark"] thead,
+    html body.dark-theme thead {
+        background: #363636 !important;
+    }
+    
+    html body[data-theme="dark"] th,
+    html body.dark-theme th {
+        color: #f0f0f0 !important;
+        border-bottom: 1px solid #4a4a4a !important;
+    }
+    
+    html body[data-theme="dark"] tbody tr,
+    html body.dark-theme tbody tr {
+        background: #2b2b2b !important;
+        border-bottom: 1px solid #4a4a4a !important;
+    }
+    
+    html body[data-theme="dark"] tbody tr:hover,
+    html body.dark-theme tbody tr:hover {
+        background: #363636 !important;
+    }
+    
+    html body[data-theme="dark"] td,
+    html body.dark-theme td {
+        color: #f0f0f0 !important;
+        border-bottom: 1px solid #4a4a4a !important;
+    }
+    
+    .header {
+        background: #f7f7f7;
+        padding: 16px 20px;
+        border-bottom: 1px solid #e1e1e1;
+    }
+    
+    .header h2 {
+        margin: 0 0 4px 0;
+        font-size: 17px;
+        font-weight: 500;
+        color: #1a1a1a;
+        letter-spacing: -0.01em;
+    }
+    
+    .header p {
+        margin: 0;
+        font-size: 13px;
+        color: #666;
+    }
+    
+    .controls {
+        padding: 12px 20px;
+        background: #f9f9f9;
+        border-bottom: 1px solid #e1e1e1;
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+        align-items: center;
+    }
+    
+    .controls input, .controls select {
+        padding: 6px 10px;
+        border: 1px solid #d0d0d0;
+        border-radius: 5px;
+        font-size: 13px;
+        background: #fff;
+        font-family: inherit;
+        transition: border-color 0.2s ease;
+    }
+    
+    .controls input {
+        flex: 1;
+        min-width: 200px;
+    }
+    
+    .controls select {
+        min-width: 120px;
+    }
+    
+    .controls input:focus, .controls select:focus {
+        outline: none;
+        border-color: #007acc;
+        box-shadow: 0 0 0 2px rgba(0,122,204,0.1);
+    }
+    
+    .quick-filters {
+        padding: 10px 20px;
+        background: #f4f4f4;
+        border-bottom: 1px solid #e1e1e1;
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+    }
+    
+    .quick-btn {
+        padding: 4px 10px;
+        border: 1px solid #c0c0c0;
+        border-radius: 4px;
+        background: #fff;
+        color: #333;
+        font-size: 12px;
+        cursor: pointer;
+        text-decoration: none;
+        display: inline-block;
+        font-family: inherit;
+        transition: all 0.15s ease;
+    }
+    
+    .quick-btn:hover {
+        background: #f0f0f0;
+        border-color: #999;
+        transform: translateY(-1px);
+    }
+    
+    .table-container {
+        overflow: auto;
+        max-height: 400px;
+    }
+    
+    table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 12px;
+    }
+    
+    th {
+        background: #f6f6f6;
+        padding: 10px;
+        text-align: left;
+        border-bottom: 1px solid #e1e1e1;
+        font-weight: 500;
+        font-size: 12px;
+        color: #555;
+        position: sticky;
+        top: 0;
+    }
+    
+    td {
+        padding: 10px;
+        border-bottom: 1px solid #f0f0f0;
+        vertical-align: top;
+    }
+    
+    tbody tr:hover {
+        background: #f8f8f8;
+    }
+    
+    tbody tr {
+        cursor: pointer;
+        transition: background-color 0.1s ease;
+    }
+    
+    .badge {
+        display: inline-block;
+        padding: 2px 6px;
+        border-radius: 3px;
+        font-size: 10px;
+        font-weight: 500;
+        margin-right: 3px;
+    }
+    
+    .badge-chat {
+        background: #e1f5fe;
+        color: #0277bd;
+        border: 1px solid #81d4fa;
+    }
+    
+    .badge-search {
+        background: #e8f5e8;
+        color: #2e7d32;
+        border: 1px solid #a5d6a7;
+    }
+    
+    .badge-free {
+        background: #e8f5e8;
+        color: #2e7d32;
+        border: 1px solid #a5d6a7;
+    }
+    
+    .badge-paid {
+        background: #fff3e0;
+        color: #ef6c00;
+        border: 1px solid #ffcc02;
+    }
+    
+    .badge-online {
+        background: #e8f5e8;
+        color: #2e7d32;
+        border: 1px solid #a5d6a7;
+    }
+    
+    .badge-offline {
+        background: #ffebee;
+        color: #c62828;
+        border: 1px solid #ef9a9a;
+    }
+    
+    .badge-timeout {
+        background: #fff8e1;
+        color: #f57f17;
+        border: 1px solid #fff176;
+    }
+    
+    .badge-unknown {
+        background: #f5f5f5;
+        color: #666;
+        border: 1px solid #ccc;
+    }
+    
+    .tag {
+        background: #f0f0f0;
+        color: #555;
+        padding: 1px 4px;
+        border-radius: 2px;
+        font-size: 10px;
+        margin-right: 2px;
+        margin-bottom: 1px;
+        display: inline-block;
+    }
+    
+    .copy-btn {
+        padding: 3px 8px;
+        border: 1px solid #c0c0c0;
+        border-radius: 3px;
+        background: #fff;
+        color: #333;
+        font-size: 10px;
+        cursor: pointer;
+        font-family: inherit;
+        margin-bottom: 3px;
+        display: block;
+        width: 100%;
+        text-align: center;
+        transition: all 0.15s ease;
+    }
+    
+    .copy-btn:hover {
+        background: #f0f0f0;
+        border-color: #999;
+        transform: translateY(-1px);
+    }
+    
+    .copy-btn.copied {
+        background: #e8f5e8;
+        color: #2e7d32;
+        border-color: #a5d6a7;
+    }
+    
+    .pagination {
+        padding: 12px 20px;
+        background: #f7f7f7;
+        border-top: 1px solid #e1e1e1;
+        text-align: center;
+        font-size: 13px;
+    }
+    
+    .pagination button {
+        padding: 6px 12px;
+        border: 1px solid #c0c0c0;
+        border-radius: 4px;
+        background: #fff;
+        color: #333;
+        font-size: 12px;
+        cursor: pointer;
+        margin: 0 3px;
+        font-family: inherit;
+        transition: all 0.15s ease;
+    }
+    
+    .pagination button:hover:not(:disabled) {
+        background: #f0f0f0;
+        border-color: #999;
+        transform: translateY(-1px);
+    }
+    
+    .pagination button:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+    
+    .truncate {
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-width: 150px;
+    }
+    </style>
+</head>
+<body class="" >
+    <div class="syft-widget">
+        <div id="syft_services_d510b472">
+        <div class="header">
+            <h2>SyftBox Services</h2>
+            <p>Click on any row to see usage examples</p>
+        </div>
+        
+        <div class="controls">
+            <input type="text" id="syft_services_d510b472-search" placeholder="Search services...">
+            <select id="syft_services_d510b472-service-type">
+                <option value="">All Types</option>
+                <option value="chat">Chat</option>
+                <option value="search">Search</option>
+            </select>
+            <select id="syft_services_d510b472-pricing">
+                <option value="">All Pricing</option>
+                <option value="free">Free</option>
+                <option value="paid">Paid</option>
+            </select>
+            <select id="syft_services_d510b472-availability">
+                <option value="">All Status</option>
+                <option value="online">Online</option>
+                <option value="offline">Offline</option>
+                <option value="timeout">Timeout</option>
+            </select>
+        </div>
+        
+        <div class="quick-filters">
+            <button class="quick-btn" onclick="quickFilter_syft_services_d510b472('free')">Free Only</button>
+            <button class="quick-btn" onclick="quickFilter_syft_services_d510b472('online')">Online Only</button>
+            <button class="quick-btn" onclick="quickFilter_syft_services_d510b472('chat')">Chat Services</button>
+            <button class="quick-btn" onclick="quickFilter_syft_services_d510b472('search')">Search Services</button>
+            <button class="quick-btn" onclick="clearFilters_syft_services_d510b472()">Clear All</button>
+        </div>
+        
+        <div class="table-container">
+            <table>
+                <thead>
+                    <tr>
+                        <th style="width: 15%">Name</th>
+                        <th style="width: 15%">Datasite</th>
+                        <th style="width: 12%">Type</th>
+                        <th style="width: 10%">Pricing</th>
+                        <th style="width: 10%">Availability</th>
+                        <th style="width: 15%">Tags</th>
+                        <th style="width: 18%">Description</th>
+                        <th style="width: 5%">Copy</th>
+                    </tr>
+                </thead>
+                <tbody id="syft_services_d510b472-tbody">
+                    <tr><td colspan="8" style="text-align: center; padding: 20px;">Loading services...</td></tr>
+                </tbody>
+            </table>
+        </div>
+        
+        <div class="pagination">
+            <button onclick="previousPage_syft_services_d510b472()" id="syft_services_d510b472-prev-btn" disabled>← Previous</button>
+            <span id="syft_services_d510b472-page-info">Page 1 of 1</span>
+            <button onclick="nextPage_syft_services_d510b472()" id="syft_services_d510b472-next-btn">Next →</button>
+        </div>
+    </div>
+
+    <script>
+    // Simple theme detection for services widget
+    function detectAndApplyTheme() {
+        // If body already has dark theme (from server), nothing to do
+        if (document.body.hasAttribute('data-theme') && 
+            document.body.getAttribute('data-theme') === 'dark') {
+            console.log('Dark theme already applied from server');
+            return;
+        }
+        
+        // Check system preference as fallback
+        if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+            console.log('Applying dark theme from system preference');
+            document.body.setAttribute('data-theme', 'dark');
+            document.body.classList.add('dark-theme');
+        }
+    }
+    
+    // Apply theme detection
+    detectAndApplyTheme();
+    
+    // Listen for changes to system preference
+    if (window.matchMedia) {
+        window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function(e) {
+            console.log('System preference changed:', e.matches ? 'dark' : 'light');
+            if (e.matches) {
+                document.body.setAttribute('data-theme', 'dark');
+                document.body.classList.add('dark-theme');
+            } else {
+                document.body.removeAttribute('data-theme');
+                document.body.classList.remove('dark-theme');
+            }
+        });
+    }
+    
+    (function() {  // IIFE to isolate this widget instance
+    const widgetId = 'syft_services_d510b472';
+    
+    // Widget-specific state
+    let allServices = [];
+    let filteredServices = [];
+    let currentPage = 1;
+    const itemsPerPage = 20;
+
+    // Initialize services data - json.dumps creates a JavaScript array literal
+    const servicesData = [{"name": "tempo-test", "datasite": "hayripradana@gmail.com", "summary": "tempo test", "description": "tempo test", "tags": [], "services": [{"type": "chat", "enabled": false, "pricing": 0.0, "charge_type": "per_request"}, {"type": "search", "enabled": true, "pricing": 0.0, "charge_type": "per_request"}], "config_status": "Active", "health_status": "offline", "min_pricing": 0.0, "max_pricing": 0.0}, {"name": "keelan-test-3", "datasite": "kj@kj.dev", "summary": "test", "description": "test", "tags": ["test"], "services": [{"type": "chat", "enabled": true, "pricing": 0.01, "charge_type": "per_request"}, {"type": "search", "enabled": true, "pricing": 0.01, "charge_type": "per_request"}], "config_status": "Active", "health_status": "offline", "min_pricing": 0.01, "max_pricing": 0.01}, {"name": "the-city", "datasite": "speters@thecity.nyc", "summary": "The City", "description": "# The City News", "tags": ["news"], "services": [{"type": "chat", "enabled": false, "pricing": 0.0, "charge_type": "per_request"}, {"type": "search", "enabled": true, "pricing": 0.7, "charge_type": "per_request"}], "config_status": "Active", "health_status": "offline", "min_pricing": 0.7, "max_pricing": 0.7}, {"name": "matts-news-service", "datasite": "mtprewitt@gmail.com", "summary": "news articles\n", "description": "--", "tags": [], "services": [{"type": "chat", "enabled": false, "pricing": 0.0, "charge_type": "per_request"}, {"type": "search", "enabled": true, "pricing": 1.0, "charge_type": "per_request"}], "config_status": "Active", "health_status": "offline", "min_pricing": 1.0, "max_pricing": 1.0}, {"name": "pal-8", "datasite": "afdolriski@gmail.com", "summary": "Pal 8 Street Documents", "description": "Pal 8 Street Documents", "tags": [], "services": [{"type": "chat", "enabled": true, "pricing": 0.0, "charge_type": "per_request"}, {"type": "search", "enabled": true, "pricing": 0.0, "charge_type": "per_request"}], "config_status": "Active", "health_status": "offline", "min_pricing": 0.0, "max_pricing": 0.0}, {"name": "carl-model", "datasite": "callis@openmined.org", "summary": "A sota model.", "description": "A sota model.", "tags": ["chat", "search", "sota", "open-source"], "services": [{"type": "chat", "enabled": true, "pricing": 0.05, "charge_type": "per_request"}, {"type": "search", "enabled": true, "pricing": 0.05, "charge_type": "per_request"}], "config_status": "Active", "health_status": "offline", "min_pricing": 0.05, "max_pricing": 0.05}, {"name": "github-trending", "datasite": "demo@openmined.org", "summary": "Get the trending repositories from github\n", "description": "# Github Trending repositories", "tags": ["github", "repositories", "community"], "services": [{"type": "chat", "enabled": false, "pricing": 0.0, "charge_type": "per_request"}, {"type": "search", "enabled": true, "pricing": 0.4, "charge_type": "per_request"}], "config_status": "Active", "health_status": "offline", "min_pricing": 0.4, "max_pricing": 0.4}, {"name": "claude-sonnet-3.5", "datasite": "aggregator@openmined.org", "summary": "Hosted Claude Sonnet 3.5 router ", "description": "**Overview**  \nClaude 3.5 Sonnet is the latest release in Anthropic\u2019s Claude 3.5 family\u2014outperforming prior models (like Claude 3 Opus) and rival AIs (e.g., GPT-4o, Gemini 1.5 Pro) across reasoning, coding, and vision tasks, all while delivering twice the speed and lower cost. ", "tags": ["claude", "anthropic", "sonnet", "chat"], "services": [{"type": "chat", "enabled": true, "pricing": 0.3, "charge_type": "per_request"}, {"type": "search", "enabled": false, "pricing": 0.0, "charge_type": "per_request"}], "config_status": "Active", "health_status": "offline", "min_pricing": 0.3, "max_pricing": 0.3}, {"name": "deepseek-v3", "datasite": "aggregator@openmined.org", "summary": "Hosted Deepseek V3\n", "description": "DeepSeek-V3 is an advanced, open-source large language model (LLM) developed by the Chinese AI firm DeepSeek. It employs an efficient Mixture-of-Experts (MoE) architecture, featuring 671 billion total parameters, of which 37 billion are activated per token\u2014a setup that delivers powerful inference while conserving compute resources ", "tags": ["deepseek", "opensource", "chagt"], "services": [{"type": "chat", "enabled": true, "pricing": 0.15, "charge_type": "per_request"}, {"type": "search", "enabled": false, "pricing": 0.0, "charge_type": "per_request"}], "config_status": "Active", "health_status": "offline", "min_pricing": 0.15, "max_pricing": 0.15}, {"name": "openmined-about", "datasite": "irina@openmined.org", "summary": "Learn about OpenMined and Attribution-based Control\n", "description": "Learn about OpenMined and Attribution-based Control\n", "tags": ["openmined", "abc", "attribution", "control"], "services": [{"type": "chat", "enabled": false, "pricing": 0.0, "charge_type": "per_request"}, {"type": "search", "enabled": true, "pricing": 0.0, "charge_type": "per_request"}], "config_status": "Active", "health_status": "online", "min_pricing": 0.0, "max_pricing": 0.0}, {"name": "state-of-ai-report-n-benaich", "datasite": "irina@openmined.org", "summary": "Get insights from the past years\u2019 State of AI Report by Nathan Benaich.\n\n", "description": "The State of AI Report analyses the most interesting developments in AI. We aim to trigger an informed conversation about the state of AI and its implication for the future. The Report is produced by AI investor Nathan Benaich and Air Street Capital.\n\n", "tags": ["reports", "ai", "air-street"], "services": [{"type": "chat", "enabled": false, "pricing": 0.0, "charge_type": "per_request"}, {"type": "search", "enabled": true, "pricing": 0.05, "charge_type": "per_request"}], "config_status": "Active", "health_status": "online", "min_pricing": 0.05, "max_pricing": 0.05}, {"name": "sota-model", "datasite": "callisezenwaka@barestripe.com", "summary": "sota", "description": "sota", "tags": ["chat", "search"], "services": [{"type": "chat", "enabled": true, "pricing": 0.0, "charge_type": "per_request"}, {"type": "search", "enabled": true, "pricing": 0.0, "charge_type": "per_request"}], "config_status": "Active", "health_status": "offline", "min_pricing": 0.0, "max_pricing": 0.0}];
+    
+    // Use services data or demo data
+    if (!servicesData || !Array.isArray(servicesData) || servicesData.length === 0) {
+        allServices = [
+            {
+                name: "Demo Chat Service",
+                datasite: "demo@example.com",
+                services: [{type: "chat", enabled: true}],
+                min_pricing: 0,
+                max_pricing: 0,
+                config_status: "active",
+                health_status: "online",
+                tags: ["demo", "chat"],
+                summary: "A demo chat service",
+                description: "Demo service for testing"
+            },
+            {
+                name: "Demo Search Service", 
+                datasite: "demo2@example.com",
+                services: [{type: "search", enabled: true}],
+                min_pricing: 0.01,
+                max_pricing: 0.05,
+                config_status: "active",
+                health_status: "offline",
+                tags: ["demo", "search"],
+                summary: "A demo search service",
+                description: "Demo search service"
+            }
+        ];
+    } else {
+        allServices = servicesData;
+    }
+    
+    filteredServices = allServices.slice();
+
+    // Render table
+    function renderTable() {
+        const tbody = document.getElementById('syft_services_d510b472-tbody');
+        
+        if (!tbody) {
+            console.error('tbody element not found! Retrying in 100ms...');
+            setTimeout(renderTable, 100);
+            return;
+        }
+        
+        const totalPages = Math.ceil(filteredServices.length / itemsPerPage);
+        const start = (currentPage - 1) * itemsPerPage;
+        const end = Math.min(start + itemsPerPage, filteredServices.length);
+        
+        if (filteredServices.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="8" style="text-align: center; padding: 20px;">No services found</td></tr>';
+        } else {
+            const rows = filteredServices.slice(start, end).map(service => {
+                const serviceId = service.datasite + '/' + service.name;
+                
+                // Handle services array properly
+                let serviceTypes = [];
+                if (service.services && Array.isArray(service.services)) {
+                    serviceTypes = service.services.filter(s => s.enabled);
+                }
+                
+                const types = serviceTypes.length > 0 ? 
+                    serviceTypes.map(s => `<span class="badge badge-${s.type}">${s.type}</span>`).join('') : 
+                    '<span class="badge badge-unknown">none</span>';
+                
+                const pricing = (service.min_pricing === 0 || service.min_pricing === undefined) ? 
+                    '<span class="badge badge-free">Free</span>' : 
+                    `<span class="badge badge-paid">$${service.min_pricing.toFixed(3)}</span>`;
+                
+                const status = service.health_status ? 
+                    `<span class="badge badge-${service.health_status}">${service.health_status}</span>` :
+                    '<span class="badge badge-unknown">unknown</span>';
+                
+                const tags = service.tags && service.tags.length > 0 ? 
+                    service.tags.slice(0, 3).map(tag => `<span class="tag">${escapeHtml(tag)}</span>`).join('') : 
+                    '<span class="tag">none</span>';
+                
+                const moreTagsCount = service.tags && service.tags.length > 3 ? service.tags.length - 3 : 0;
+                const tagsDisplay = tags + (moreTagsCount > 0 ? `<span class="tag">+${moreTagsCount}</span>` : '');
+                
+                return `<tr onclick="window['showUsageModal_syft_services_d510b472']('${escapeHtml(service.name)}', '${escapeHtml(service.datasite)}', ${JSON.stringify(service.services || [])})">
+                    <td><div class="truncate" title="${escapeHtml(service.name)}">${escapeHtml(service.name)}</div></td>
+                    <td><div class="truncate" title="${escapeHtml(service.datasite)}">${escapeHtml(service.datasite)}</div></td>
+                    <td>${types}</td>
+                    <td>${pricing}</td>
+                    <td>${status}</td>
+                    <td>${tagsDisplay}</td>
+                    <td><div class="truncate" title="${escapeHtml(service.summary || service.description || '')}">${escapeHtml(service.summary || service.description || '')}</div></td>
+                    <td>
+                        <button class="copy-btn" onclick="event.stopPropagation(); window['copyServiceName_syft_services_d510b472']('${serviceId}', this)">Name</button>
+                        <button class="copy-btn" onclick="event.stopPropagation(); window['copyServiceExample_syft_services_d510b472']('${serviceId}', this)">Example</button>
+                    </td>
+                </tr>`;
+            }).join('');
+            
+            tbody.innerHTML = rows;
+        }
+        
+        updatePagination();
+    }
+
+    // Filter functions
+    function applyFilters() {
+        const search = document.getElementById('syft_services_d510b472-search').value.toLowerCase();
+        const serviceType = document.getElementById('syft_services_d510b472-service-type').value;
+        const pricing = document.getElementById('syft_services_d510b472-pricing').value;
+        const availability = document.getElementById('syft_services_d510b472-availability').value;
+        
+        filteredServices = allServices.filter(service => {
+            // Search filter
+            if (search && !service.name.toLowerCase().includes(search) && 
+                !service.datasite.toLowerCase().includes(search) &&
+                !service.summary?.toLowerCase().includes(search) &&
+                !(service.tags || []).some(tag => tag.toLowerCase().includes(search))) {
+                return false;
+            }
+            
+            // Service type filter
+            if (serviceType && !service.services?.some(s => s.type === serviceType && s.enabled)) {
+                return false;
+            }
+            
+            // Pricing filter
+            if (pricing === 'free' && service.min_pricing > 0) return false;
+            if (pricing === 'paid' && service.min_pricing === 0) return false;
+            
+            // Availability filter
+            if (availability && service.health_status !== availability) return false;
+            
+            return true;
+        });
+        
+        currentPage = 1;
+        renderTable();
+    }
+
+    // Quick filter functions - attach to window for onclick handlers
+    window['quickFilter_syft_services_d510b472'] = function(type) {
+        clearFilters();
+        if (type === 'free') {
+            document.getElementById('syft_services_d510b472-pricing').value = 'free';
+        } else if (type === 'online') {
+            document.getElementById('syft_services_d510b472-availability').value = 'online';
+        } else if (type === 'chat' || type === 'search') {
+            document.getElementById('syft_services_d510b472-service-type').value = type;
+        }
+        applyFilters();
+    }
+
+    window['clearFilters_syft_services_d510b472'] = function() {
+        document.getElementById('syft_services_d510b472-search').value = '';
+        document.getElementById('syft_services_d510b472-service-type').value = '';
+        document.getElementById('syft_services_d510b472-pricing').value = '';
+        document.getElementById('syft_services_d510b472-availability').value = '';
+        applyFilters();
+    }
+
+    // Pagination - attach to window for onclick handlers
+    window['previousPage_syft_services_d510b472'] = function() {
+        if (currentPage > 1) {
+            currentPage--;
+            renderTable();
+        }
+    };
+
+    window['nextPage_syft_services_d510b472'] = function() {
+        const totalPages = Math.ceil(filteredServices.length / itemsPerPage);
+        if (currentPage < totalPages) {
+            currentPage++;
+            renderTable();
+        }
+    };
+
+    // Update pagination
+    function updatePagination() {
+        const totalPages = Math.ceil(filteredServices.length / itemsPerPage);
+        document.getElementById('syft_services_d510b472-prev-btn').disabled = currentPage <= 1;
+        document.getElementById('syft_services_d510b472-next-btn').disabled = currentPage >= totalPages;
+        document.getElementById('syft_services_d510b472-page-info').textContent = `Page ${currentPage} of ${totalPages || 1}`;
+    }
+
+    // Quick filter functions - attach to window for inline onclick handlers
+    window['quickFilter_syft_services_d510b472'] = function(type) {
+        // Reset to first page
+        currentPage = 1;
+        
+        // Clear existing filters first
+        document.getElementById('syft_services_d510b472-search').value = '';
+        document.getElementById('syft_services_d510b472-service-type').value = 'all';
+        document.getElementById('syft_services_d510b472-pricing').value = 'all';
+        document.getElementById('syft_services_d510b472-availability').value = 'all';
+        
+        // Apply new filter based on type
+        switch(type) {
+            case 'free':
+                document.getElementById('syft_services_d510b472-pricing').value = 'free';
+                break;
+            case 'online':
+                document.getElementById('syft_services_d510b472-availability').value = 'online';
+                break;
+            case 'chat':
+                document.getElementById('syft_services_d510b472-service-type').value = 'chat';
+                break;
+            case 'search':
+                document.getElementById('syft_services_d510b472-service-type').value = 'search';
+                break;
+        }
+        
+        applyFilters();
+    }
+    
+    window['clearFilters_syft_services_d510b472'] = function() {
+        currentPage = 1;
+        document.getElementById('syft_services_d510b472-search').value = '';
+        document.getElementById('syft_services_d510b472-service-type').value = 'all';
+        document.getElementById('syft_services_d510b472-pricing').value = 'all';
+        document.getElementById('syft_services_d510b472-availability').value = 'all';
+        applyFilters();
+    }
+
+    // Copy functions - attach to window for inline onclick handlers
+    window['copyServiceName_syft_services_d510b472'] = function(serviceId, button) {
+        if (navigator.clipboard) {
+            navigator.clipboard.writeText(serviceId).then(() => {
+                const original = button.textContent;
+                button.textContent = 'Copied!';
+                button.classList.add('copied');
+                setTimeout(() => {
+                    button.textContent = original;
+                    button.classList.remove('copied');
+                }, 1500);
+            });
+        }
+    }
+
+    window['copyServiceExample_syft_services_d510b472'] = function(serviceId, button) {
+        // Simple copy of how to call show_example()
+        const exampleCode = `service = client.load_service("${serviceId}")
+service.show_example()`;
+        
+        if (navigator.clipboard) {
+            navigator.clipboard.writeText(exampleCode).then(() => {
+                const original = button.textContent;
+                button.textContent = 'Copied!';
+                button.classList.add('copied');
+                setTimeout(() => {
+                    button.textContent = original;
+                    button.classList.remove('copied');
+                }, 1500);
+            });
+        }
+    }
+
+    // Usage modal - attach to window for inline onclick handlers
+    window['showUsageModal_syft_services_d510b472'] = function(name, datasite, services) {
+        const serviceId = datasite + '/' + name;
+        const hasChat = services.some(s => s.type === 'chat' && s.enabled);
+        const hasSearch = services.some(s => s.type === 'search' && s.enabled);
+        
+        let examples = [];
+        if (hasChat) {
+            examples.push(`# Chat with service\nresponse = client.chat("${serviceId}", "Your message here")`);
+        }
+        if (hasSearch) {
+            examples.push(`# Search with service\nresults = client.search("${serviceId}", "search query")`);
+        }
+        if (examples.length === 0) {
+            examples.push(`# Load service\nservice = client.load_service("${serviceId}")\nservice.show_example()`);
+        }
+        
+        alert(`Service: ${name}\nDatasite: ${datasite}\n\nUsage Examples:\n${examples.join('\n\n')}`);
+    }
+
+    // Utility functions
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text || '';
+        return div.innerHTML;
+    }
+
+    // Event listeners
+    document.getElementById('syft_services_d510b472-search').addEventListener('input', applyFilters);
+    document.getElementById('syft_services_d510b472-service-type').addEventListener('change', applyFilters);
+    document.getElementById('syft_services_d510b472-pricing').addEventListener('change', applyFilters);
+    document.getElementById('syft_services_d510b472-availability').addEventListener('change', applyFilters);
+
+    // Initialize and render when DOM is ready
+    function initialize() {
+        // Force initial render
+        renderTable();
+        updatePagination();
+    }
+    
+    // Call initialize immediately since we're at the end of the body
+    initialize();
+    
+    })();  // End IIFE
+    </script>
+    </div>
+</body>
+</html>

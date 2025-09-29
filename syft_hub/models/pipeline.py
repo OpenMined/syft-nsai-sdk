@@ -314,17 +314,26 @@ class PipelineResult:
         
         execution_html = ' • '.join(execution_details)
         
-        # Build complete HTML with SearchResponse-style colors
-        html_content = f'''
+        # Build complete HTML with SearchResponse-style colors  
+        from ..utils.theme import generate_adaptive_css, get_current_theme
+        
+        # Get current theme for dark mode support
+        current_theme = get_current_theme()
+        theme_attr = f'data-theme="{current_theme}"' if current_theme else ''
+        
+        adaptive_css = generate_adaptive_css('pipeline-result')
+        
+        html_content = adaptive_css + f'''
+        <div class="syft-widget" {theme_attr}>
         <style>
             .pipeline-result-widget {{
                 font-family: system-ui, -apple-system, sans-serif;
                 padding: 12px 0;
-                color: #333;
+                color: var(--syft-text-color, #333);
                 line-height: 1.5;
-                border: 1px solid #e0e0e0;
+                border: 1px solid var(--syft-border-color, #e0e0e0);
                 border-radius: 6px;
-                background: #fafafa;
+                background: var(--syft-bg-color, #fafafa);
                 padding: 16px;
                 margin: 8px 0;
             }}
@@ -332,23 +341,24 @@ class PipelineResult:
                 font-size: 14px;
                 font-weight: 600;
                 margin-bottom: 12px;
-                color: #333;
+                color: var(--syft-text-color, #333);
             }}
             .status-line {{
                 display: flex;
                 align-items: flex-start;
                 margin: 6px 0;
-                font-size: 13px;
+                font-size: 11px;
             }}
             .status-label {{
-                color: #666;
+                color: var(--syft-text-color, #666);
+                opacity: 0.8;
                 min-width: 100px;
                 margin-right: 12px;
                 flex-shrink: 0;
             }}
             .status-value {{
                 font-family: monospace;
-                color: #333;
+                color: var(--syft-text-color, #333);
                 word-break: break-word;
             }}
             .status-badge {{
@@ -360,32 +370,214 @@ class PipelineResult:
                 background: #d4edda;
                 color: #155724;
             }}
+            
+            /* Dark theme for status badges */
+            .syft-widget[data-theme="dark"] .status-badge.badge-complete,
+            .syft-widget[data-theme="dark"] .status-badge.badge-ready {{
+                background: #0d4f14 !important;
+                color: #7bc97f !important;
+            }}
             .pipeline-query-content {{
-                background: #f8f9fa;
-                border: 1px solid #e9ecef;
+                background: var(--syft-bg-color, #f8f9fa);
+                border: 1px solid var(--syft-border-color, #e9ecef);
                 border-radius: 4px;
                 padding: 8px;
                 font-family: inherit;
-                font-size: 12px;
-                color: #495057;
+                font-size: 11px;
+                color: var(--syft-text-color, #495057);
                 white-space: pre-wrap;
                 max-height: 60px;
                 overflow: hidden;
                 margin-top: 4px;
             }}
             .pipeline-response-content {{
-                background: #f8f9fa;
-                border: 1px solid #e9ecef;
+                background: var(--syft-bg-color, #f8f9fa);
+                border: 1px solid var(--syft-border-color, #e9ecef);
                 border-radius: 4px;
                 padding: 8px;
                 font-family: inherit;
-                font-size: 12px;
-                color: #495057;
+                font-size: 11px;
+                color: var(--syft-text-color, #495057);
                 white-space: pre-wrap;
                 max-height: 200px;
                 overflow-y: auto;
                 margin-top: 4px;
             }}
+        </style>
+        <style>
+            /* Dark theme overrides for pipeline response content */
+            .syft-widget[data-theme="dark"] .pipeline-query-content,
+            .theme-dark .pipeline-query-content,
+            body[theme="dark"] .pipeline-query-content,
+            body[data-jp-theme-name*="dark"] .pipeline-query-content,
+            body[data-vscode-theme-kind*="dark"] .pipeline-query-content,
+            body.vscode-dark .pipeline-query-content,
+            body.vs-dark .pipeline-query-content,
+            html[data-theme="dark"] .pipeline-query-content,
+            html.dark .pipeline-query-content,
+            body.dark .pipeline-query-content,
+            .jp-mod-dark .pipeline-query-content {{
+                background: #363636 !important;
+                border: 1px solid #4a4a4a !important;
+                color: #f0f0f0 !important;
+            }}
+            
+            .syft-widget[data-theme="dark"] .pipeline-response-content,
+            .theme-dark .pipeline-response-content,
+            body[theme="dark"] .pipeline-response-content,
+            body[data-jp-theme-name*="dark"] .pipeline-response-content,
+            body[data-vscode-theme-kind*="dark"] .pipeline-response-content,
+            body.vscode-dark .pipeline-response-content,
+            body.vs-dark .pipeline-response-content,
+            html[data-theme="dark"] .pipeline-response-content,
+            html.dark .pipeline-response-content,
+            body.dark .pipeline-response-content,
+            .jp-mod-dark .pipeline-response-content {{
+                background: #363636 !important;
+                border: 1px solid #4a4a4a !important;
+                color: #f0f0f0 !important;
+            }}
+            
+            /* Fix markdown content colors in dark theme */
+            .syft-widget[data-theme="dark"] .pipeline-response-content h1,
+            .syft-widget[data-theme="dark"] .pipeline-response-content h2,
+            .syft-widget[data-theme="dark"] .pipeline-response-content h3,
+            .theme-dark .pipeline-response-content h1,
+            .theme-dark .pipeline-response-content h2,
+            .theme-dark .pipeline-response-content h3,
+            body[theme="dark"] .pipeline-response-content h1,
+            body[theme="dark"] .pipeline-response-content h2,
+            body[theme="dark"] .pipeline-response-content h3,
+            body[data-jp-theme-name*="dark"] .pipeline-response-content h1,
+            body[data-jp-theme-name*="dark"] .pipeline-response-content h2,
+            body[data-jp-theme-name*="dark"] .pipeline-response-content h3,
+            body[data-vscode-theme-kind*="dark"] .pipeline-response-content h1,
+            body[data-vscode-theme-kind*="dark"] .pipeline-response-content h2,
+            body[data-vscode-theme-kind*="dark"] .pipeline-response-content h3,
+            body.vscode-dark .pipeline-response-content h1,
+            body.vscode-dark .pipeline-response-content h2,
+            body.vscode-dark .pipeline-response-content h3,
+            body.vs-dark .pipeline-response-content h1,
+            body.vs-dark .pipeline-response-content h2,
+            body.vs-dark .pipeline-response-content h3,
+            html[data-theme="dark"] .pipeline-response-content h1,
+            html[data-theme="dark"] .pipeline-response-content h2,
+            html[data-theme="dark"] .pipeline-response-content h3,
+            html.dark .pipeline-response-content h1,
+            html.dark .pipeline-response-content h2,
+            html.dark .pipeline-response-content h3,
+            body.dark .pipeline-response-content h1,
+            body.dark .pipeline-response-content h2,
+            body.dark .pipeline-response-content h3,
+            .jp-mod-dark .pipeline-response-content h1,
+            .jp-mod-dark .pipeline-response-content h2,
+            .jp-mod-dark .pipeline-response-content h3 {{
+                color: #f0f0f0 !important;
+            }}
+            
+            .syft-widget[data-theme="dark"] .pipeline-response-content code,
+            .theme-dark .pipeline-response-content code,
+            body[theme="dark"] .pipeline-response-content code,
+            body[data-jp-theme-name*="dark"] .pipeline-response-content code,
+            body[data-vscode-theme-kind*="dark"] .pipeline-response-content code,
+            body.vscode-dark .pipeline-response-content code,
+            body.vs-dark .pipeline-response-content code,
+            html[data-theme="dark"] .pipeline-response-content code,
+            html.dark .pipeline-response-content code,
+            body.dark .pipeline-response-content code,
+            .jp-mod-dark .pipeline-response-content code {{
+                background: #2b2b2b !important;
+                color: #f5f5f5 !important;
+            }}
+            
+            /* Dark mode overrides for sources */
+            .syft-widget[data-theme="dark"] .source-item,
+            .theme-dark .source-item,
+            body[theme="dark"] .source-item,
+            body[data-jp-theme-name*="dark"] .source-item,
+            body[data-vscode-theme-kind*="dark"] .source-item,
+            body.vscode-dark .source-item,
+            body.vs-dark .source-item,
+            html[data-theme="dark"] .source-item,
+            html.dark .source-item,
+            body.dark .source-item,
+            .jp-mod-dark .source-item {{
+                background: #363636 !important;
+                border: 1px solid #4a4a4a !important;
+            }}
+            
+            .syft-widget[data-theme="dark"] .source-name,
+            .theme-dark .source-name,
+            body[theme="dark"] .source-name,
+            body[data-jp-theme-name*="dark"] .source-name,
+            body[data-vscode-theme-kind*="dark"] .source-name,
+            body.vscode-dark .source-name,
+            body.vs-dark .source-name,
+            html[data-theme="dark"] .source-name,
+            html.dark .source-name,
+            body.dark .source-name,
+            .jp-mod-dark .source-name {{
+                color: #f0f0f0 !important;
+            }}
+            
+            .syft-widget[data-theme="dark"] .source-score,
+            .theme-dark .source-score,
+            body[theme="dark"] .source-score,
+            body[data-jp-theme-name*="dark"] .source-score,
+            body[data-vscode-theme-kind*="dark"] .source-score,
+            body.vscode-dark .source-score,
+            body.vs-dark .source-score,
+            html[data-theme="dark"] .source-score,
+            html.dark .source-score,
+            body.dark .source-score,
+            .jp-mod-dark .source-score {{
+                color: #c0c0c0 !important;
+            }}
+            
+            .syft-widget[data-theme="dark"] .source-preview,
+            .theme-dark .source-preview,
+            body[theme="dark"] .source-preview,
+            body[data-jp-theme-name*="dark"] .source-preview,
+            body[data-vscode-theme-kind*="dark"] .source-preview,
+            body.vscode-dark .source-preview,
+            body.vs-dark .source-preview,
+            html[data-theme="dark"] .source-preview,
+            html.dark .source-preview,
+            body.dark .source-preview,
+            .jp-mod-dark .source-preview {{
+                color: #f0f0f0 !important;
+            }}
+            
+            .syft-widget[data-theme="dark"] .more-sources,
+            .theme-dark .more-sources,
+            body[theme="dark"] .more-sources,
+            body[data-jp-theme-name*="dark"] .more-sources,
+            body[data-vscode-theme-kind*="dark"] .more-sources,
+            body.vscode-dark .more-sources,
+            body.vs-dark .more-sources,
+            html[data-theme="dark"] .more-sources,
+            html.dark .more-sources,
+            body.dark .more-sources,
+            .jp-mod-dark .more-sources {{
+                color: #c0c0c0 !important;
+            }}
+            
+            .syft-widget[data-theme="dark"] .no-sources,
+            .theme-dark .no-sources,
+            body[theme="dark"] .no-sources,
+            body[data-jp-theme-name*="dark"] .no-sources,
+            body[data-vscode-theme-kind*="dark"] .no-sources,
+            body.vscode-dark .no-sources,
+            body.vs-dark .no-sources,
+            html[data-theme="dark"] .no-sources,
+            html.dark .no-sources,
+            body.dark .no-sources,
+            .jp-mod-dark .no-sources {{
+                background: #363636 !important;
+                border: 1px solid #4a4a4a !important;
+                color: #c0c0c0 !important;
+            }}
+            
             /* Markdown styles matching SearchResponse theme */
             .pipeline-response-content h1 {{ font-size: 1.3em; margin: 0.5em 0; color: #495057; }}
             .pipeline-response-content h2 {{ font-size: 1.2em; margin: 0.5em 0; color: #495057; }}
@@ -413,7 +605,7 @@ class PipelineResult:
                 display: flex;
                 justify-content: space-between;
                 margin-bottom: 4px;
-                font-size: 12px;
+                font-size: 11px;
             }}
             .source-name {{
                 font-weight: 600;
@@ -424,21 +616,21 @@ class PipelineResult:
                 font-family: monospace;
             }}
             .source-preview {{
-                font-size: 12px;
+                font-size: 11px;
                 color: #495057;
                 white-space: pre-wrap;
                 max-height: 60px;
                 overflow: hidden;
             }}
             .more-sources {{
-                font-size: 12px;
+                font-size: 11px;
                 color: #6c757d;
                 font-style: italic;
                 text-align: center;
                 padding: 4px;
             }}
             .no-sources {{
-                font-size: 12px;
+                font-size: 11px;
                 color: #6c757d;
                 font-style: italic;
                 text-align: center;
