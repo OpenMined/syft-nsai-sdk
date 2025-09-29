@@ -351,13 +351,15 @@ class Client:
         """
         service_info = self.get_service(service_name)
         
-        # Check health status if not already checked
-        if service_info.health_status is None:
+        # Check health status - use cached if available and not offline, otherwise check
+        if (service_info.health_status is None or 
+            service_info.health_status == HealthStatus.UNKNOWN or 
+            service_info.health_status == HealthStatus.OFFLINE):
             try:
                 from .services.health import check_service_health
                 from .utils.async_utils import run_async_in_thread
                 health_status = run_async_in_thread(
-                    check_service_health(service_info, self.rpc_client, timeout=2.0)
+                    check_service_health(service_info, self.rpc_client, timeout=1.5)
                 )
                 service_info.health_status = health_status
             except Exception as e:
@@ -406,8 +408,13 @@ class Client:
         service = self.get_service(service_name)
         logger.info(f"Using service: {service.name} from datasite: {service.datasite}") 
         
-        # Check if service is online by pinging it
-        health_status = await check_service_health(service, self.rpc_client, timeout=3.0)
+        # Check if service is online - use cached status if available, otherwise query
+        if service.health_status and service.health_status != HealthStatus.UNKNOWN:
+            health_status = service.health_status
+        else:
+            # Use longer timeout for chat health checks as chat services may take longer to respond
+            health_status = await check_service_health(service, self.rpc_client, timeout=5.0)
+        
         if health_status == HealthStatus.OFFLINE:
             raise ServiceNotFoundError("The node is offline. Please retry or find a different service to use")
         
@@ -458,8 +465,13 @@ class Client:
             service = self.get_service(service_name)
             logger.info(f"Using service: {service.name} from datasite: {service.datasite}")
             
-            # Check if service is online by pinging it
-            health_status = await check_service_health(service, self.rpc_client, timeout=3.0)
+            # Check if service is online - use cached status if available, otherwise query
+            if service.health_status and service.health_status != HealthStatus.UNKNOWN:
+                health_status = service.health_status
+            else:
+                # Use longer timeout for chat health checks as chat services may take longer to respond
+                health_status = await check_service_health(service, self.rpc_client, timeout=5.0)
+            
             if health_status == HealthStatus.OFFLINE:
                 raise ServiceNotFoundError("The node is offline. Please retry or find a different service to use")
             
@@ -569,8 +581,12 @@ class Client:
             service = self.get_service(service_name)
             logger.info(f"Using service: {service.name} from datasite: {service.datasite}") 
             
-            # Check if service is online by pinging it
-            health_status = await check_service_health(service, self.rpc_client, timeout=3.0)
+            # Check if service is online - use cached status if available, otherwise query
+            if service.health_status and service.health_status != HealthStatus.UNKNOWN:
+                health_status = service.health_status
+            else:
+                health_status = await check_service_health(service, self.rpc_client, timeout=1.5)
+            
             if health_status == HealthStatus.OFFLINE:
                 raise ServiceNotFoundError("The node is offline. Please retry or find a different service to use")
             
@@ -645,8 +661,12 @@ class Client:
         service = self.get_service(service_name)
         logger.info(f"Using service: {service.name} from datasite: {service.datasite}") 
         
-        # Check if service is online by pinging it
-        health_status = await check_service_health(service, self.rpc_client, timeout=3.0)
+        # Check if service is online - use cached status if available, otherwise query
+        if service.health_status and service.health_status != HealthStatus.UNKNOWN:
+            health_status = service.health_status
+        else:
+            health_status = await check_service_health(service, self.rpc_client, timeout=1.5)
+        
         if health_status == HealthStatus.OFFLINE:
             raise ServiceNotFoundError("The node is offline. Please retry or find a different service to use")
         
@@ -798,7 +818,7 @@ class Client:
         service.show()
     
     # Health Monitoring Methods
-    async def check_service_health(self, service_name: str, timeout: float = 2.0) -> HealthStatus:
+    async def check_service_health(self, service_name: str, timeout: float = 1.5) -> HealthStatus:
         """Check health of a specific service.
         
         Args:
@@ -829,7 +849,7 @@ class Client:
     async def check_all_services_health(
             self, 
             service_type: Optional[ServiceType] = None,
-            timeout: float = 2.0
+            timeout: float = 1.5
         ) -> Dict[str, HealthStatus]:
         """Check health of all discovered services.
         
@@ -1474,7 +1494,7 @@ class Client:
     
     async def _add_health_status(self, services: List[ServiceInfo]) -> List[ServiceInfo]:
         """Add health status to services with progress feedback."""
-        health_status = await self._batch_health_check_with_progress(services, self.rpc_client, timeout=2.0)
+        health_status = await self._batch_health_check_with_progress(services, self.rpc_client, timeout=1.5)
         
         for service in services:
             service.health_status = health_status.get(service.name, HealthStatus.UNKNOWN)

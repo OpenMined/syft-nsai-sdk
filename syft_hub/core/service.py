@@ -415,9 +415,25 @@ results = service.search(
         from ..core.types import HealthStatus
         from ..core.exceptions import ServiceNotFoundError
         
-        # Check if service is online
+        # Check if service is online - if cached status is offline, perform fresh health check
         if self._service_info.health_status == HealthStatus.OFFLINE:
-            raise ServiceNotFoundError("The node is offline. Please retry or find a different service to use")
+            # Perform fresh health check to see if service came back online
+            try:
+                from ..services.health import check_service_health
+                from ..utils.async_utils import run_async_in_thread
+                # Use longer timeout for chat health checks as chat services may take longer to respond
+                health_status = run_async_in_thread(
+                    check_service_health(self._service_info, self._client.rpc_client, timeout=5.0)
+                )
+                self._service_info.health_status = health_status
+                
+                # If still offline after fresh check, raise error
+                if health_status == HealthStatus.OFFLINE:
+                    raise ServiceNotFoundError("The node is offline. Please retry or find a different service to use")
+                    
+            except Exception as e:
+                # If health check fails, assume still offline
+                raise ServiceNotFoundError("The node is offline. Please retry or find a different service to use")
         
         if not self.supports_chat:
             raise ServiceNotSupportedError(f"Service '{self.name}' doesn't support chat")
@@ -439,9 +455,17 @@ results = service.search(
         from ..core.types import HealthStatus
         from ..core.exceptions import ServiceNotFoundError
         
-        # Check if service is online
+        # Check if service is online - if cached status is offline, perform fresh health check
         if self._service_info.health_status == HealthStatus.OFFLINE:
-            raise ServiceNotFoundError("The node is offline. Please retry or find a different service to use")
+            # Perform fresh health check to see if service came back online
+            from ..services.health import check_service_health
+            # Use longer timeout for chat health checks as chat services may take longer to respond
+            health_status = await check_service_health(self._service_info, self._client.rpc_client, timeout=5.0)
+            self._service_info.health_status = health_status
+            
+            # If still offline after fresh check, raise error
+            if health_status == HealthStatus.OFFLINE:
+                raise ServiceNotFoundError("The node is offline. Please retry or find a different service to use")
         
         if not self.supports_chat:
             raise ServiceNotSupportedError(f"Service '{self.name}' doesn't support chat")
@@ -463,9 +487,24 @@ results = service.search(
         from ..core.types import HealthStatus
         from ..core.exceptions import ServiceNotFoundError
         
-        # Check if service is online
+        # Check if service is online - if cached status is offline, perform fresh health check
         if self._service_info.health_status == HealthStatus.OFFLINE:
-            raise ServiceNotFoundError("The node is offline. Please retry or find a different service to use")
+            # Perform fresh health check to see if service came back online
+            try:
+                from ..services.health import check_service_health
+                from ..utils.async_utils import run_async_in_thread
+                health_status = run_async_in_thread(
+                    check_service_health(self._service_info, self._client.rpc_client, timeout=3.0)
+                )
+                self._service_info.health_status = health_status
+                
+                # If still offline after fresh check, raise error
+                if health_status == HealthStatus.OFFLINE:
+                    raise ServiceNotFoundError("The node is offline. Please retry or find a different service to use")
+                    
+            except Exception as e:
+                # If health check fails, assume still offline
+                raise ServiceNotFoundError("The node is offline. Please retry or find a different service to use")
         
         if not self.supports_search:
             raise ServiceNotSupportedError(f"Service '{self.name}' doesn't support search")
@@ -487,9 +526,16 @@ results = service.search(
         from ..core.types import HealthStatus
         from ..core.exceptions import ServiceNotFoundError
         
-        # Check if service is online
+        # Check if service is online - if cached status is offline, perform fresh health check
         if self._service_info.health_status == HealthStatus.OFFLINE:
-            raise ServiceNotFoundError("The node is offline. Please retry or find a different service to use")
+            # Perform fresh health check to see if service came back online
+            from ..services.health import check_service_health
+            health_status = await check_service_health(self._service_info, self._client.rpc_client, timeout=3.0)
+            self._service_info.health_status = health_status
+            
+            # If still offline after fresh check, raise error
+            if health_status == HealthStatus.OFFLINE:
+                raise ServiceNotFoundError("The node is offline. Please retry or find a different service to use")
         
         if not self.supports_search:
             raise ServiceNotSupportedError(f"Service '{self.name}' doesn't support search")

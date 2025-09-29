@@ -4,6 +4,7 @@ Supports both inline and object-oriented RAG/FedRAG workflows
 """
 import asyncio
 import logging
+import sys
 from typing import List, Dict, Optional, Union, TYPE_CHECKING
 
 from .types import ServiceType, ServiceSpec
@@ -16,6 +17,40 @@ if TYPE_CHECKING:
     from .service import Service 
 
 logger = logging.getLogger(__name__)
+
+class PipelineOutputHandler:
+    """Handles output collection and display for pipeline execution."""
+    
+    def __init__(self):
+        self.messages = []
+        self.in_jupyter = self._detect_jupyter()
+    
+    def _detect_jupyter(self):
+        """Detect if we're running in Jupyter."""
+        try:
+            return 'ipykernel' in sys.modules or 'IPython' in sys.modules
+        except:
+            return False
+    
+    def print(self, *args, **kwargs):
+        """Context-aware print that works in both Jupyter and regular Python."""
+        message = ' '.join(str(arg) for arg in args)
+        self.messages.append(message)
+        
+        if not self.in_jupyter:
+            # In regular Python, print immediately
+            print(*args, **kwargs)
+    
+    def get_output(self):
+        """Get all collected output as a string."""
+        return '\n'.join(self.messages)
+
+# Global output handler for pipeline
+_pipeline_output = PipelineOutputHandler()
+
+def _jupyter_aware_print(*args, **kwargs):
+    """Print function that works correctly in both Jupyter notebooks and regular Python contexts."""
+    _pipeline_output.print(*args, **kwargs)
 
 class Pipeline:
     """Pipeline for structured RAG/FedRAG workflows.
@@ -383,8 +418,19 @@ pipeline = client.pipeline(
         from ..utils.async_utils import detect_async_context, run_async_in_thread
         
         if detect_async_context():
-            # In Jupyter or other async context, use run_async_in_thread
-            return run_async_in_thread(self.run_async(messages, continue_without_results))
+            # In Jupyter or other async context, capture output and display it properly
+            _pipeline_output.messages.clear()  # Clear previous messages
+            result = run_async_in_thread(self.run_async(messages, continue_without_results))
+            
+            # Display captured output in current Jupyter cell
+            if _pipeline_output.in_jupyter and _pipeline_output.messages:
+                try:
+                    output_text = _pipeline_output.get_output()
+                    print(output_text)  # Use regular print to display in current cell
+                except:
+                    pass
+            
+            return result
         else:
             # In regular sync context, use asyncio.run
             return asyncio.run(self.run_async(messages, continue_without_results))
@@ -428,14 +474,14 @@ pipeline = client.pipeline(
         total_cost = 0.0
         
         # Print search progress header
-        print(f"\n📊 Searching {len(self.data_sources)} data source(s)...")
+        _jupyter_aware_print(f"\n📊 Searching {len(self.data_sources)} data source(s)...")
         
         for i, result in enumerate(search_results_list):
             source_name = self.data_sources[i].name
             
             if isinstance(result, Exception):
                 logger.warning(f"Search failed for source {source_name}: {result}")
-                print(f"❌ {source_name}: Search failed - {result}")
+                _jupyter_aware_print(f"❌ {source_name}: Search failed - {result}")
                 continue
             
             search_response, cost = result
@@ -443,13 +489,13 @@ pipeline = client.pipeline(
             
             # Print summary for this source
             if num_results > 0:
-                print(f"✅ {source_name}: Found {num_results} result(s)")
+                _jupyter_aware_print(f"✅ {source_name}: Found {num_results} result(s)")
                 # Show top result preview
                 if search_response.results:
                     top_result = search_response.results[0]
                     preview = top_result.content[:100] + "..." if len(top_result.content) > 100 else top_result.content
             else:
-                print(f"⚠️  {source_name}: No results found")
+                _jupyter_aware_print(f"⚠️  {source_name}: No results found")
             
             all_search_results.extend(search_response.results)
             total_cost += cost
@@ -457,26 +503,26 @@ pipeline = client.pipeline(
         if not all_search_results:
             if not continue_without_results:
                 # Interactive prompt
-                print("\n⚠️  No search results found from data sources")
-                print("Options: Continue with predictions without sources or cancel")
+                _jupyter_aware_print("\n⚠️  No search results found from data sources")
+                _jupyter_aware_print("Options: Continue with predictions without sources or cancel")
                 
                 try:
                     response = input("Continue without search results? (y/n): ").lower().strip()
                     if response not in ['y', 'yes']:
-                        print("Pipeline cancelled.")
+                        _jupyter_aware_print("Pipeline cancelled.")
                         raise ValidationError("Pipeline cancelled by user - no search results available")
                 except (EOFError, KeyboardInterrupt):
-                    print("\nPipeline cancelled.")
+                    _jupyter_aware_print("\nPipeline cancelled.")
                     raise ValidationError("Pipeline cancelled by user - no search results available")
             
-            print("Continuing with synthesis without search context...")
+            _jupyter_aware_print("Continuing with synthesis without search context...")
             logger.warning("All data source searches failed or returned empty results")
         
         # Remove duplicate results
         unique_results = self.client.remove_duplicate_results(all_search_results)
         
         # Print search summary
-        print(f"📋 Search Summary: {len(unique_results)} result(s)")
+        _jupyter_aware_print(f"📋 Search Summary: {len(unique_results)} result(s)")
         
         # Format search context for synthesizer
         context = self.client.format_search_context(unique_results, self.context_format)
@@ -485,7 +531,7 @@ pipeline = client.pipeline(
         enhanced_messages = self._prepare_enhanced_messages(messages, context)
         
         # Print synthesis start
-        print(f"\n🤖 Synthesizing response with {self.synthesizer.name}...")
+        _jupyter_aware_print(f"\n🤖 Synthesizing response with {self.synthesizer.name}...")
         
         # Execute synthesis
         synthesizer_cost, chat_response = await self._execute_synthesis(enhanced_messages)
@@ -496,9 +542,9 @@ pipeline = client.pipeline(
             # Show preview of the response
             content = chat_response.message.content
             preview = content[:200] + "..." if len(content) > 200 else content
-            print(f"✅ Response generated ({len(content)} chars)")
+            _jupyter_aware_print(f"✅ Response generated ({len(content)} chars)")
         else:
-            print(f"⚠️  No response generated")
+            _jupyter_aware_print(f"⚠️  No response generated")
         
         # Print cost summary
         

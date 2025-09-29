@@ -74,6 +74,14 @@ class ChatResponse(BaseResponse):
                 ) for msg in data['messages']
             ]
         
+        cost = data.get('cost')
+        
+        # Detect timeout/failure: 0 tokens and free (no cost)
+        status = ResponseStatus.SUCCESS
+        if usage.total_tokens == 0 and (cost is None or cost == 0):
+            status = ResponseStatus.TIMEOUT
+            print("⚠️  Warning: This call did not succeed. We recommend you to retry shortly.")
+        
         return cls(
             id=data.get('id', str(uuid.uuid4())),
             model=data.get('model', 'unknown'),
@@ -81,9 +89,10 @@ class ChatResponse(BaseResponse):
             messages=messages_list,
             usage=usage,
             finish_reason=data.get('finishReason'),  # camelCase from endpoint
-            cost=data.get('cost'),
+            cost=cost,
             provider_info=data.get('providerInfo'),  # camelCase from endpoint
-            logprobs=data.get('logprobs')  # Direct assignment, no nested extraction
+            logprobs=data.get('logprobs'),  # Direct assignment, no nested extraction
+            status=status
         )
     
     def to_dict(self) -> Dict[str, Any]:
@@ -411,14 +420,19 @@ class SearchResponse(BaseResponse):
     def _display_rich(self) -> None:
         """Display rich HTML representation in Jupyter notebooks."""
         from IPython.display import display, HTML
+        import uuid
         
         # Status badge styling
         status_class = "badge-ready" if self.status.value == "success" else "badge-not-ready"
+        
+        # Generate unique ID for this widget instance
+        widget_id = str(uuid.uuid4())[:8]
         
         # Results preview
         results_preview = ""
         if self.results:
             results_preview = f"<div class='results-list'>"
+            # Show first 3 results
             for i, result in enumerate(self.results[:3], 1):
                 content = result.content[:150] + "..." if len(result.content) > 150 else result.content
                 results_preview += f"""
@@ -430,8 +444,29 @@ class SearchResponse(BaseResponse):
                     <div class='result-content'>{content}</div>
                 </div>
                 """
+            
+            # Add collapsable section for remaining results
             if len(self.results) > 3:
-                results_preview += f"<div class='more-results'>... and {len(self.results) - 3} more results</div>"
+                results_preview += f"""
+                <div class='more-results-toggle' onclick='toggleResults_{widget_id}()' style='cursor: pointer; user-select: none;'>
+                    <span id='toggle-icon-{widget_id}'>▶</span> <span id='toggle-text-{widget_id}'>Show {len(self.results) - 3} more result(s)</span>
+                </div>
+                <div id='extra-results-{widget_id}' class='extra-results' style='display: none;'>
+                """
+                # Add remaining results
+                for i, result in enumerate(self.results[3:], 4):
+                    content = result.content[:150] + "..." if len(result.content) > 150 else result.content
+                    results_preview += f"""
+                    <div class='result-item'>
+                        <div class='result-header'>
+                            <span class='result-rank'>{i}.</span>
+                            <span class='result-score'>Score: {result.score:.3f}</span>
+                        </div>
+                        <div class='result-content'>{content}</div>
+                    </div>
+                    """
+                results_preview += "</div>"
+                
             results_preview += "</div>"
         else:
             results_preview = "<div class='no-results'>No documents found</div>"
@@ -469,11 +504,19 @@ class SearchResponse(BaseResponse):
                 'max-height': '60px',
                 'overflow': 'hidden'
             },
-            '.more-results': {
+            '.more-results-toggle': {
                 'font-size': '11px',
-                'font-style': 'italic',
                 'text-align': 'center',
-                'padding': '4px'
+                'padding': '8px 4px',
+                'margin': '4px 0',
+                'color': 'var(--syft-primary, #0066cc)',
+                'transition': 'opacity 0.2s'
+            },
+            '.more-results-toggle:hover': {
+                'opacity': '0.7'
+            },
+            '.extra-results': {
+                'margin-top': '4px'
             },
             '.no-results': {
                 'font-size': '11px',
@@ -485,6 +528,28 @@ class SearchResponse(BaseResponse):
         }
         
         html = generate_adaptive_css('search-response', search_styles)
+        
+        # Add JavaScript toggle function
+        html += f"""
+        <script>
+        function toggleResults_{widget_id}() {{
+            var extraResults = document.getElementById('extra-results-{widget_id}');
+            var icon = document.getElementById('toggle-icon-{widget_id}');
+            var text = document.getElementById('toggle-text-{widget_id}');
+            
+            if (extraResults.style.display === 'none') {{
+                extraResults.style.display = 'block';
+                icon.textContent = '▼';
+                text.textContent = 'Hide {len(self.results) - 3} result(s)';
+            }} else {{
+                extraResults.style.display = 'none';
+                icon.textContent = '▶';
+                text.textContent = 'Show {len(self.results) - 3} result(s)';
+            }}
+        }}
+        </script>
+        """
+        
         html += f"""
         <div class="syft-widget">
             <div class="search-response-widget">
