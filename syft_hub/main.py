@@ -59,7 +59,7 @@ class Client:
             syftbox_config_path: Optional[Path] = None,
             cache_server_url: Optional[str] = None,
             accounting_client: Optional[AccountingClient] = None,
-            set_accounting: bool = False,
+            set_accounting: bool = True,
             accounting_pass: Optional[str] = None,
             _auto_setup_accounting: bool = True,
             _auto_health_check_threshold: int = 10
@@ -421,6 +421,16 @@ class Client:
         # Validate service supports chat
         if not service.supports_service(ServiceType.CHAT):
             raise ServiceNotSupportedError(service.name, "chat", service)
+        
+        # Check if service is paid and accounting is configured
+        chat_service_info = service.get_service_info(ServiceType.CHAT)
+        if chat_service_info and chat_service_info.pricing > 0:
+            if not self._account_configured:
+                from .core.exceptions import PaymentError
+                raise PaymentError(
+                    f"Service '{service.datasite}/{service.name}' is a paid service (${chat_service_info.pricing} per request). "
+                    f"To call a paid service, you need to set up your accounting by calling Client(set_accounting=True)."
+                )
 
         # Build request parameters
         chat_params = {
@@ -478,6 +488,16 @@ class Client:
             # Validate service supports chat
             if not service.supports_service(ServiceType.CHAT):
                 raise ServiceNotSupportedError(service.name, "chat", service)
+            
+            # Check if service is paid and accounting is configured
+            chat_service_info = service.get_service_info(ServiceType.CHAT)
+            if chat_service_info and chat_service_info.pricing > 0:
+                if not self._account_configured:
+                    from .core.exceptions import PaymentError
+                    raise PaymentError(
+                        f"Service '{service.datasite}/{service.name}' is a paid service (${chat_service_info.pricing} per request). "
+                        f"To call a paid service, you need to set up your accounting by calling Client(set_accounting=True)."
+                    )
             
             # Format messages if string provided
             formatted_messages = messages
@@ -594,6 +614,16 @@ class Client:
             if not service.supports_service(ServiceType.SEARCH):
                 raise ServiceNotSupportedError(service.name, "search", service)
             
+            # Check if service is paid and accounting is configured
+            search_service_info = service.get_service_info(ServiceType.SEARCH)
+            if search_service_info and search_service_info.pricing > 0:
+                if not self._account_configured:
+                    from .core.exceptions import PaymentError
+                    raise PaymentError(
+                        f"Service '{service.datasite}/{service.name}' is a paid service (${search_service_info.pricing} per request). "
+                        f"To call a paid service, you need to set up your accounting by calling Client(set_accounting=True)."
+                    )
+            
             # Build request parameters
             search_params = {
                 "message": message,
@@ -673,6 +703,16 @@ class Client:
         # Validate service supports search
         if not service.supports_service(ServiceType.SEARCH):
             raise ServiceNotSupportedError(service.name, "search", service)
+        
+        # Check if service is paid and accounting is configured
+        search_service_info = service.get_service_info(ServiceType.SEARCH)
+        if search_service_info and search_service_info.pricing > 0:
+            if not self._account_configured:
+                from .core.exceptions import PaymentError
+                raise PaymentError(
+                    f"Service '{service.datasite}/{service.name}' is a paid service (${search_service_info.pricing} per request). "
+                    f"To call a paid service, you need to set up your accounting by calling Client(set_accounting=True)."
+                )
         
         # Build request parameters
         search_params = {

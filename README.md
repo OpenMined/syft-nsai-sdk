@@ -1,203 +1,236 @@
-# SyftBox Hub NSAI SDK
+# Syft Hub SDK
 
-Python SDK for discovering and using SyftBox AI services with built-in payment handling and RAG coordination.
+**Build Federated RAG and tap into distributed data sources without centralizing knowledge.**
 
-## Installation
+LLMs often fail on domain-specific questions, not from lack of capability, but from missing access to expert data. RAG extends their reach with external context, but only if you already own the data. 
+
+---
+
+## 🚀 Quick Start: Federated RAG
+
+```python
+from syft_hub import Client
+
+client = Client()
+
+# Choose data sources from the network
+hacker_news_source = client.load_service("demo@openmined.org/hacker-news")
+arxiv_source = client.load_service("demo@openmined.org/arxiv-agents")
+github_source = client.load_service("demo@openmined.org/trending-github")
+
+# Choose an LLM to synthesize insights
+claude_llm = client.load_service("aggregator@openmined.org/claude-3.5-sonnet")
+
+# Create a Federated RAG pipeline
+fedrag_pipeline = client.pipeline(
+    data_sources=[hacker_news_source, arxiv_source, github_source],
+    synthesizer=claude_llm
+)
+
+# Run your query across the network
+query = "What methods can help improve context in LLM agents?"
+result = fedrag_pipeline.run(messages=[{"role": "user", "content": query}])
+
+print(result)
+```
+
+**What just happened?**
+- Each data source was queried **on its own infrastructure** (no data centralization)
+- Only relevant snippets were retrieved and shared
+- The LLM synthesized insights from multiple sources into one answer
+- Data owners maintained full control and privacy
+
+---
+
+## 📦 Installation
 
 ```bash
 # Basic installation
 pip install syft-hub
-
-# With accounting features (for paid services)
-pip install syft-hub[accounting]
-
-# With all optional features
-pip install syft-hub[all]
 ```
 
-## Quick Start
+**For Jupyter/Colab:** Make sure Syft runtime is available:
 
 ```python
-import asyncio
+!pip install syfthub syft-installer
+import syft_installer as si
+
+# Make sure Syft runtime is running
+si.install_and_run_if_needed()
+```
+
+**Outside Jupyter/Colab:** Donwload and run distributed protocol, [SyftBox](syftbox.net).
+
+
+---
+
+## 💡 Why Federated RAG?
+
+Traditional approaches to domain-specific AI have a fundamental flaw: **data owners must hand over their raw data and lose control**. This introduces legal, privacy, and intellectual property risks.
+
+**The result?** Most organizations say no, and AI stays limited to public training data.
+
+**Federated RAG solves this** by letting AI "walk the halls" and consult distributed data sources without centralizing knowledge:
+- 🔒 **Privacy-preserving**: Data stays where it belongs
+- 🌐 **Distributed**: Query multiple sources in one pipeline
+- ⚡ **Selective sharing**: Only relevant snippets are returned
+- 🎯 **Domain expertise**: Access specialized knowledge networks
+
+Think of it like a student gathering input from multiple teachers (biology, law, ethics professors) rather than studying alone—the result is far richer.
+
+---
+
+## 🎯 Core Concepts
+
+### 1. **Data Sources**
+Data sources are federated peers that own their data. They don't ship it to you — you query them at runtime.
+
+```python
+# Load data sources from the network
+hacker_news = client.load_service("demo@openmined.org/hacker-news")
+arxiv_papers = client.load_service("demo@openmined.org/arxiv-agents")
+```
+
+### 2. **Synthesizers (LLMs)**
+Synthesizers take insights from multiple data sources and combine them into coherent answers.
+
+```python
+# Load an LLM for generation
+claude = client.load_service("aggregator@openmined.org/claude-3.5-sonnet")
+```
+
+### 3. **Pipelines**
+Pipelines orchestrate federated queries across data sources and route results to synthesizers.
+
+```python
+# Create a pipeline
+pipeline = client.pipeline(
+    data_sources=[source1, source2, source3],
+    synthesizer=llm
+)
+
+# Run queries
+result = pipeline.run(messages=[{"role": "user", "content": "Your question"}])
+```
+
+---
+
+## 🌐 How It Works
+
+1. **Distributed Indexing**: Each data source maintains its own private index (embeddings of their documents)
+2. **Federated Query**: When you run a pipeline, your query is broadcast to selected data sources
+3. **Local Retrieval**: Each source searches its own index and returns only the top-k most relevant snippets
+4. **Aggregation**: The pipeline collects all snippets and ranks them globally
+5. **Synthesis**: The LLM receives the best snippets and generates a grounded answer
+
+**Key insight:** Raw data never leaves the source. Only relevant snippets are shared based on semantic similarity to your query.
+
+---
+
+## 📚 Examples
+
+### Example 1: Multi-Source Domain Expertise
+
+Query specialized knowledge across different domains:
+
+```python
 from syft_hub import Client
 
-async def main():
-    async with Client() as client:
-        # Setup accounting for paid services
-        await client.setup_accounting(
-            email,
-            password,
-            # service_url,
-        )
-        
-        # Chat with a service
-        response = await client.chat(
-            service_name="claude-sonnet-3.5",
-            datasite="aggregator@openmined.org",
-            prompt="Hello! What is syftbox?",
-            temperature=0.7,
-            max_tokens=200
-        )
-        print(response.message.content)
+client = Client()
 
-asyncio.run(main())
+# Load domain-specific sources
+medical_db = client.load_service("<medical_institution>/medical-research")
+pharma_trials = client.load_service("<pharma_company>/clinical-trials")
+patient_notes = client.load_service("<hospital_X>/doctor-notes")
+
+# Load synthesizer
+gpt4 = client.load_service("aggregator@openmined.org/gpt-4")
+
+# Create pipeline
+medical_rag = client.pipeline(
+    data_sources=[medical_db, pharma_trials, patient_notes],
+    synthesizer=gpt4
+)
+
+# Ask domain-specific questions
+query = "Is drug X safe for diabetes patients with kidney disease?"
+answer = medical_rag.run(messages=[{"role": "user", "content": query}])
+
+print(answer)
 ```
 
-## Client Methods
+### Example 2: Single Source RAG
 
-### Model Discovery
+Not every use case needs multiple sources:
 
 ```python
-# Discover available services
-# Discover available services
-services = client.discover_services(
-    service_type="chat",  # "chat" or "search"
-    datasite="user@domain.com",
+# Query a single specialized source
+company_docs = client.load_service("yourcompany@example.com/internal-docs")
+assistant = client.load_service("aggregator@openmined.org/claude-3.5-sonnet")
+
+rag_pipeline = client.pipeline(
+    data_sources=[company_docs],
+    synthesizer=assistant
+)
+
+result = rag_pipeline.run(
+    messages=[{"role": "user", "content": "What's our remote work policy?"}]
+)
+```---
+
+## 🔍 Service Discovery
+
+Discover available data sources and LLMs on the network:
+
+```python
+# List all services
+client.list_services()
+
+# List services by type
+chat_services = client.list_services(
+    service_type="chat",
     tags=["opensource"],
-    max_cost=0.10,
-    health_check="auto"  # "auto", "always", "never"
+    max_cost=0.10
 )
 
-# Find specific service
-service = client.find_service("service-name", datasite="user@domain.com")
-
-# Find best service by criteria
-best_chat = client.find_best_chat_service(
-    preference="balanced",  # "cheapest", "balanced", "premium", "fastest"
-    max_cost=0.50,
-    tags=["helpful"]
+search_services = client.list_services(
+    service_type="search",
+    datasite="yourcompany@example.com"
 )
 ```
 
-### Chat Services
+---
+
+## 💰 Setup accounting for paid models
+
+**Each new user received $20 upon registration (but hey, most are anyway free!)**
+
+Preview and manage costs for federated queries:
 
 ```python
-# Direct chat
-response = await client.chat(
-    service_name="gpt-assistant",
-    datasite="ai-team@company.com",
-    prompt="Explain quantum computing",
-    temperature=0.7,
-    max_tokens=500
+# Setup accounting for paid services
+await client.register_accounting(
+    email="your@email.com",
+    password="your_password"
 )
 
-# Auto-select best chat service
-response = await client.chat_with_best(
-    prompt="What's the weather like?",
-    max_cost=0.25,
-    tags=["helpful"],
-    temperature=0.5
-)
+# Check account balance
+info = await client.get_account_info()
+print(f"Balance: ${info['balance']}")
+
+# Get cost estimate for multi-source RAG
+estimate = pipeline.estimate_cost()
 ```
 
-### Search Services
+---
 
-```python
-# Direct search
-results = await client.search(
-    service_name="legal-database",
-    datasite="legal@company.com", 
-    query="employment contracts",
-    limit=10,
-    similarity_threshold=0.8
-)
+## 🏥 Health Monitoring
 
-# Auto-select best search service
-results = await client.search_with_best(
-    query="company policies remote work",
-    max_cost=0.15,
-    tags=["internal"],
-    limit=5
-)
-
-# Search multiple services
-results = await client.search_multiple_services(
-    service_names=["docs", "wiki", "policies"],
-    query="vacation policy",
-    limit_per_service=3,
-    total_limit=10,
-    remove_duplicates=True
-)
-```
-
-### RAG Coordination
-
-```python
-# Preview RAG workflow costs
-preview = client.preview_rag_workflow(
-    search_services=["legal-docs", "hr-policies"],
-    chat_service="gpt-assistant"
-)
-print(preview)
-
-# Chat only (no search context)
-response = await client.chat_with_search_context(
-    search_services=[],  # No search services = chat only
-    chat_service="claude-assistant",
-    prompt="What is machine learning?"
-)
-
-# RAG workflow (search + chat)
-response = await client.chat_with_search_context(
-    search_services=["legal-docs", "hr-policies", "wiki"],
-    chat_service="claude-assistant", 
-    prompt="What's our remote work policy?",
-    max_search_results=5,
-    temperature=0.7
-)
-
-# Simple search-then-chat
-response = await client.search_then_chat(
-    search_service="company-docs",
-    chat_service="helpful-assistant", 
-    prompt="How do I submit expenses?"
-)
-```
-
-### RAG vs Chat-Only
-The `chat_with_search_context()` method supports both patterns:
-
-```python
-# Chat only (like frontend with no data sources)
-response = await client.chat_with_search_context(
-    search_services=[],  # Empty = chat only
-    chat_service="assistant",
-    prompt="What is Python?"
-)
-
-# RAG workflow (like frontend with data sources selected)
-response = await client.chat_with_search_context(
-    search_services=["docs", "wiki"],  # Search + chat
-    chat_service="assistant",
-    prompt="What's our policy?"
-)
-```
-
-### Model Information
-
-```python
-# List available services
-print(client.format_services(service_type="chat", format="table"))
-
-# Get service details
-details = client.show_service_details("service-name", datasite="user@domain.com")
-
-# Show usage examples
-examples = client.show_service_usage("gpt-service", datasite="ai-team@company.com")
-
-# Get statistics
-stats = client.get_statistics()
-print(f"Total services: {stats['total_services']}")
-```
-
-### Health Monitoring
+Monitor service availability and performance:
 
 ```python
 # Check single service health
 status = await client.check_service_health("service-name", timeout=5.0)
-
-# Check all services
-health_status = await client.check_all_services_health(service_type="chat")
 
 # Start continuous monitoring
 monitor = client.start_health_monitoring(
@@ -206,123 +239,58 @@ monitor = client.start_health_monitoring(
 )
 ```
 
-### Account Management
+---
 
+## 📖 API Reference
+
+### Client Methods
+
+| Method | Description |
+|--------|-------------|
+| `load_service(identifier)` | Load a data source or LLM from the network |
+| `pipeline(data_sources, synthesizer)` | Create a Federated RAG pipeline |
+| `list_services(service_type, ...)` | Discover available services |
+| `chat("datasite/service_name", messages, ...)` | Direct chat with an LLM |
+| `search("datasite/service_name", query, ...)` | Search a data source |
+| `register_accounting(email, password, ...)` | Register to use paid services |
+| `connect_accounting(email, password, ...)` | Setup existing account for paid services |
+
+### Pipeline Methods
+
+| Method | Description |
+|--------|-------------|
+| `run(messages)` | Execute federated query and synthesize results |
+
+### Response Objects
+
+**ChatResponse:**
 ```python
-# Setup accounting
-await client.setup_accounting("email", "password", "service_url")
-
-# Check account info
-info = await client.get_account_info()
-print(f"Balance: ${info['balance']}")
-
-# Show accounting status
-print(client.show_accounting_status())
-
-# Cost estimation
-estimate = client.get_rag_cost_estimate(
-    search_services=["docs1", "docs2"], 
-    chat_service="premium-chat"
-)
-print(f"Total cost: ${estimate['total_cost']}")
+response.message.content    # The AI's response
+response.cost              # Cost of the request
+response.usage.total_tokens # Tokens used
+response.service           # Service name
 ```
 
-## Response Objects
-
-### ChatResponse
+**SearchResponse:**
 ```python
-response.message.content    # String: The AI's response
-response.cost              # Float: Cost of the request  
-response.usage.total_tokens # Int: Tokens used
-response.service             # String: Model name used
-response.provider_info     # Dict: Additional provider details
-```
-
-### SearchResponse  
-```python
-response.results           # List[DocumentResult]: Search results
-response.cost              # Float: Cost of the request
-response.query             # String: Original query
-response.provider_info     # Dict: Search metadata
+response.results           # List of search results
+response.cost              # Cost of the request
+response.query             # Original query
 
 # Individual result
-result = response.results[0]
-result.content             # String: Document content
-result.score              # Float: Similarity score (0-1)
-result.metadata           # Dict: File info, etc.
+result.content             # Document content
+result.score              # Similarity score (0-1)
+result.metadata           # Additional metadata
 ```
 
-## Error Handling
+---
 
-```python
-from syft_hub.core.exceptions import (
-    ModelNotFoundError,
-    ServiceNotSupportedError,
-    PaymentError,
-    AuthenticationError,
-    ValidationError
-)
+## 🤝 Contributing
 
-try:
-    response = await client.chat(service_name="invalid-service", prompt="test")
-except ModelNotFoundError:
-    print("Model not found")
-except PaymentError:
-    print("Payment issue - check accounting setup")
-except ValidationError as e:
-    print(f"Invalid parameters: {e}")
-```
+Contributions are welcome! This SDK is part of the broader SyftBox ecosystem for privacy-preserving AI.
 
-### Conversation Management
+---
 
-**For maintaining context between messages, use conversation managers:**
+## 📄 License
 
-```python
-# Create conversation manager
-conversation = client.create_conversation(
-    service_name="claude-sonnet-3.5",
-    datasite="aggregator@openmined.org"
-)
-
-# Optional: Set system message
-conversation.set_system_message("You are a helpful assistant.")
-
-# Configure context retention (default: keeps last 2 exchanges)
-conversation.set_max_exchanges(3)  # Keep last 3 exchanges
-
-# Each message remembers previous context
-response1 = await conversation.send_message("What is SyftBox?")
-
-# This now prints just the content
-print(f"Response:\n{response1}")
-
-# Full object details still available via repr() or explicit access
-print(repr(response1))  # Shows full ChatResponse details
-print(response1.cost)   # Still works for specific attributes
-
-response2 = await conversation.send_message("How does it work?")  # Remembers previous
-response3 = await conversation.send_message("Give me an example")   # Full context
-
-# Get conversation summary
-summary = conversation.get_conversation_summary()
-print(f"Total messages: {summary['total_messages']}")
-
-# Clear history when needed
-conversation.clear_history()
-```
-
-## Configuration
-
-```python
-# Environment variables
-# SYFTBOX_ACCOUNTING_EMAIL
-# SYFTBOX_ACCOUNTING_PASSWORD  
-# SYFTBOX_ACCOUNTING_URL
-# Custom configuration
-client = Client(
-    user_email="your@email.com",
-    cache_server_url="https://custom.syftbox.net",
-    auto_setup_accounting=True,
-    auto_health_check_threshold=5
-)
-```
+See LICENSE file for details.
