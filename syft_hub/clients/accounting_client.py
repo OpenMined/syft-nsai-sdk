@@ -358,6 +358,8 @@ class AccountingClient:
     
     def _repr_html_(self) -> str:
         """Display HTML widget in Jupyter environments - same as show()."""
+        from ..utils.theme import generate_adaptive_css
+        
         is_configured = self.is_configured()
         email = self.get_email() if is_configured else None
         
@@ -367,95 +369,38 @@ class AccountingClient:
         else:
             overall_badge = '<span class="status-badge badge-not-ready">Not Configured</span>'
         
-        # Build HTML widget with minimal notebook-like styling (same as show())
-        html = '''
-        <style>
-            .accounting-widget {
-                font-family: system-ui, -apple-system, sans-serif;
-                padding: 12px 0;
-                color: #333;
-                line-height: 1.5;
-            }
-            .widget-title {
-                font-size: 14px;
-                font-weight: 600;
-                margin-bottom: 12px;
-                color: #333;
-            }
-            .status-line {
-                display: flex;
-                align-items: center;
-                margin: 6px 0;
-                font-size: 13px;
-            }
-            .status-label {
-                color: #666;
-                min-width: 100px;
-                margin-right: 12px;
-            }
-            .status-value {
-                font-family: monospace;
-                color: #333;
-            }
-            .status-badge {
-                display: inline-block;
-                padding: 2px 8px;
-                border-radius: 3px;
-                font-size: 11px;
-                margin-left: 8px;
-            }
-            .badge-ready {
-                background: #d4edda;
-                color: #155724;
-            }
-            .badge-not-ready {
-                background: #f8d7da;
-                color: #721c24;
-            }
-            .docs-section {
-                margin-top: 16px;
-                padding-top: 12px;
-                border-top: 1px solid #e0e0e0;
-                font-size: 12px;
-                color: #666;
-            }
-            .command-code {
-                font-family: monospace;
-                background: #f5f5f5;
-                padding: 1px 4px;
-                border-radius: 2px;
-                color: #333;
-            }
-        </style>
-        '''
+        # Generate adaptive CSS for both light and dark themes
+        html = generate_adaptive_css('accounting')
         
         html += f'''
-        <div class="accounting-widget">
-            <div class="widget-title">
-                AccountingClient {overall_badge}
-            </div>
-            
-            <div class="status-line">
-                <span class="status-label">Service:</span>
-                <span class="status-value">{self.accounting_url or "Not configured"}</span>
-            </div>
-            
-            <div class="status-line">
-                <span class="status-label">User:</span>
-                <span class="status-value">{email or "Not configured"}</span>
-            </div>
-            
-            <div class="status-line">
-                <span class="status-label">Password:</span>
-                <span class="status-value">{'••••••••' if is_configured else 'Not set'}</span>
-            </div>
-            
-            <div class="docs-section">
-                <div style="margin-bottom: 8px; font-weight: 500;">Common operations:</div>
-                <div style="line-height: 1.8;">
-                    <span class="command-code">client.connect_accounting(url, email, password)</span> — Connect with credentials<br>
-                    <span class="command-code">client.register_accounting(email)</span> — Register new account<br>
-                    <span class="command-code">client.get_account_balance()</span> — Check balance<br>
+        <div class="syft-widget">
+            <div class="accounting-widget">
+                <div class="widget-title">
+                    AccountingClient {overall_badge}
+                </div>
+                
+                <div class="status-line">
+                    <span class="status-label">Service:</span>
+                    <span class="status-value">{self.accounting_url or "Not configured"}</span>
+                </div>
+                
+                <div class="status-line">
+                    <span class="status-label">User:</span>
+                    <span class="status-value">{email or "Not configured"}</span>
+                </div>
+                
+                <div class="status-line">
+                    <span class="status-label">Password:</span>
+                    <span class="status-value">{'••••••••' if is_configured else 'Not set'}</span>
+                </div>
+                
+                <div class="docs-section">
+                    <div style="margin-bottom: 8px; font-weight: 500;">Common operations:</div>
+                    <div style="line-height: 1.8;">
+                        <span class="command-code">client.connect_accounting(url, email, password)</span> — Connect with credentials<br>
+                        <span class="command-code">client.register_accounting(email)</span> — Register new account<br>
+                        <span class="command-code">client.get_account_balance()</span> — Check balance<br>
+                    </div>
                 </div>
             </div>
         </div>

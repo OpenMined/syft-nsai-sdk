@@ -122,7 +122,13 @@ class ChatService:
 
         # Make RPC call
         response_data = await self.rpc_client.call_chat(self.service_info, payload)
-        return self._parse_rpc_chat_response(response_data)
+        chat_response = self._parse_rpc_chat_response(response_data)
+        
+        # Add the original messages to the response
+        from ..core.types import ChatMessage
+        chat_response.messages = [ChatMessage(**msg) if isinstance(msg, dict) else msg for msg in messages]
+        
+        return chat_response
         
     def estimate_cost(self, message_count: int = 1) -> float:
         return CostEstimator.estimate_chat_cost(self.service_info, message_count)

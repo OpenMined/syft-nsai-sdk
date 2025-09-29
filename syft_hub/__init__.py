@@ -92,6 +92,13 @@ from .utils.formatting import (
     format_statistics,
 )
 
+# Theme utilities (for dark mode support)
+from .utils.theme import (
+    set_theme,
+    get_current_theme,
+    detect_theme,
+)
+
 # Use settings for package metadata
 __version__ = settings.project_version or "0.1.0"
 __author__ = settings.project_author or "SyftBox Team"
@@ -270,6 +277,11 @@ __all__ = [
     "format_chat_conversation",
     "format_health_summary",
     "format_statistics",
+    
+    # Theme utilities
+    "set_theme",
+    "get_current_theme", 
+    "detect_theme",
 ]
 
 # Log package initialization in debug mode

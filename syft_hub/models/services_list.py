@@ -75,19 +75,34 @@ class ServicesList:
         return False
     
     def _display_in_notebook(self, html: str) -> None:
-        """Display HTML widget directly in Jupyter notebook."""
+        """Display HTML widget directly in Jupyter notebook.
+        
+        Uses modern best practices for inline widget display similar to 
+        ipywidgets, plotly, and other popular libraries.
+        """
         try:
-            # Try to import and use IPython display
-            import IPython.display as display
-            display.display(display.HTML(html))
-            print("Services widget displayed in notebook")
-        except ImportError:
-            # Fallback: save and show file path
-            print("IPython not available, saving to file instead")
+            # Import IPython display components
+            from IPython.display import display, HTML
+            from IPython import get_ipython
+            
+            # Check if we're actually in a valid IPython environment
+            ipython = get_ipython()
+            if ipython is None:
+                raise RuntimeError("Not in IPython environment")
+            
+            # Display the HTML widget inline
+            display(HTML(html))
+            
+        except ImportError as e:
+            print(f"⚠️ IPython not available: {e}")
+            print("💡 Tip: Install jupyter with 'pip install jupyter' for inline display")
             self._save_and_open_file(html)
+            
         except Exception as e:
-            # Fallback: save and show file path
-            print(f"Could not display in notebook: {e}")
+            print(f"⚠️ Could not display inline: {e}")
+            print("💡 Tip: You can manually set theme with:")
+            print("   from syft_hub.utils.theme import set_theme")
+            print("   set_theme('dark')  # or 'light'")
             self._save_and_open_file(html)
     
     def _save_and_open_file(self, html: str, output_path: Optional[str] = None) -> str:
@@ -95,7 +110,7 @@ class ServicesList:
         if output_path:
             file_path = Path(output_path)
         else:
-            file_path = Path("syftbox_services_widget.html")
+            file_path = Path(__file__).parent.parent / "utils" / "syftbox_services_widget.html"
         
         with open(file_path, "w", encoding="utf-8") as f:
             f.write(html)
@@ -178,12 +193,17 @@ class ServicesList:
                 traceback.print_exc()
                 continue
         
+        # Get current theme for dark mode support
+        from ..utils.theme import get_current_theme
+        current_theme = get_current_theme()
+        
         # Generate widget HTML (no filtering parameters needed)
         html = get_services_widget_html(
             services=widget_services,
             page=page,
             items_per_page=items_per_page,
-            current_user_email=current_user_email
+            current_user_email=current_user_email,
+            theme=current_theme
         )
         
         # Check if we should force browser opening or if we're in a Jupyter notebook

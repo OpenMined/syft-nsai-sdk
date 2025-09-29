@@ -41,6 +41,7 @@ dependencies = [
     "fastapi>=0.104.0",
     "uvicorn>=0.24.0",
     "syft-accounting-sdk>=0.1.0",
+    "markdown2>=2.5.4",
 ]
 
 [project.urls]
@@ -54,6 +55,9 @@ Changelog = "https://github.com/OpenMined/syftbox-nsai-sdk/blob/main/CHANGELOG.m
 where = ["."]
 include = ["syft_hub*"]
 exclude = ["syft_nsai_sdk*"]
+
+[tool.setuptools.package-data]
+syft_hub = ["utils/*.html"]
 
 [project.scripts]
 syft-hub = "syft_hub.cli:main"
