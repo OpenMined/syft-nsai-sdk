@@ -6,12 +6,15 @@ import time
 import logging
 from typing import List, Dict, Any, Optional, Tuple
 
+from syft_rpc.rpc import send, make_url
+
 from ..core.types import HealthStatus
 from ..core.exceptions import HealthCheckError, NetworkError, RPCError
 from ..clients.rpc_client import SyftBoxRPCClient
 from ..models.service_info import ServiceInfo
 
 logger = logging.getLogger(__name__)
+
 
 class HealthMonitor:
     """Continuous health monitoring for services."""
@@ -205,85 +208,26 @@ class HealthMonitor:
             logger.info("Health monitoring cancelled")
             raise
 
-async def check_service_health(
-        service_info: ServiceInfo,
-        rpc_client: SyftBoxRPCClient,
-        timeout: float = 1.5,
-        show_spinner: bool = True,
-        max_poll_attempts: int = 15,
-        poll_interval: float = 0.25
-    ) -> HealthStatus:
-    """Check health of a single service.
-    
-    Args:
-        service_info: Service to check
-        rpc_client: RPC client for making calls
-        timeout: Timeout in seconds for health check
-        
-    Returns:
-        Health status of the service
-    """
+async def check_service_health(service_info, rpc_client, timeout=1.5, show_spinner=True):
     try:
-        # Create a temporary client with shorter timeout for health checks
-        health_client = SyftBoxRPCClient(
-            cache_server_url=rpc_client.base_url,
-            timeout=timeout,
-            max_poll_attempts=max_poll_attempts,  # Updated to 15 attempts for health checks
-            poll_interval=poll_interval  # Updated to 0.25s polling interval
-        )
+        url = make_url(service_info.datasite, service_info.name, "health")
+        future = send(url=url, method="GET", client=rpc_client.syft_client)
+        response = future.wait(timeout=timeout)
         
-        try:
-            # Create custom health call to control spinner display
-            from ..clients.endpoint_client import ServiceEndpoints
-            from ..clients.request_client import RequestArgs
+        # Parse response
+        body = response.json()
+        status = body.get("status", "unknown").lower()
+        
+        if status in ["ok", "healthy"]:
+            return HealthStatus.ONLINE
+        elif status in ["error", "unhealthy"]:
+            return HealthStatus.OFFLINE
+        else:
+            return HealthStatus.UNKNOWN
             
-            health_args = RequestArgs(is_accounting=False)
-            endpoints = ServiceEndpoints(service_info.datasite, service_info.name)
-            syft_url = endpoints.health_url()
-            
-            response = await health_client.call_rpc(
-                syft_url, 
-                payload=None, 
-                method="GET", 
-                show_spinner=show_spinner,  # Use the parameter to control spinner
-                args=health_args,
-                max_poll_attempts=15,
-                poll_interval=0.25
-            )
-            
-            # Parse health response
-            if isinstance(response, dict):
-                data = response.get("data", {})
-                message = data.get("message", {})
-                body = message.get("body", {})
-                
-                # Check if body is a dict (successful response) or string (error response)
-                if isinstance(body, dict):
-                    status = body.get("status", "unknown").lower()
-                    # logger.info(f"Parsed status for {service_info.name}: {status}")
-                    
-                    if status == "ok" or status == "healthy":
-                        return HealthStatus.ONLINE
-                    elif status == "error" or status == "unhealthy":
-                        return HealthStatus.OFFLINE
-                    else:
-                        return HealthStatus.UNKNOWN
-                else:
-                    # body is a string (error message), service is having issues
-                    # logger.warning(f"Service {service_info.name} returned error: {body}")
-                    return HealthStatus.OFFLINE
-                
-        finally:
-            await health_client.close()
-    
-    except asyncio.TimeoutError:
-        return HealthStatus.TIMEOUT
-    except (NetworkError, RPCError) as e:
-        logger.debug(f"Health check failed for {service_info.name}: {e}")
-        return HealthStatus.OFFLINE
     except Exception as e:
-        logger.warning(f"Unexpected error in health check for {service_info.name}: {e}")
-        return HealthStatus.UNKNOWN
+        logger.debug(f"Health check failed: {e}")
+        return HealthStatus.OFFLINE
     
 async def batch_health_check(
         services: List[ServiceInfo],

@@ -1,36 +1,38 @@
 """
-Main Syft Hub SDK client
+Main Syft Hub SDK client - simplified with syft-core integration
 """
 import json
 import os
 import asyncio
-import concurrent.futures
 import logging
-import threading
 import hashlib
 import time
+import logging
 
 from typing import List, Optional, Dict, Any, Union, Awaitable
 from pathlib import Path
 from dotenv import load_dotenv
 
+from syft_core import Client as SyftClient
+from syft_crypto.x3dh_bootstrap import ensure_bootstrap
+
 from .core import Service, Pipeline
-from .core.config import ConfigManager
 from .core.types import ServiceType, HealthStatus, DocumentResult
 from .core.exceptions import (
     AuthenticationError,
     ServiceNotFoundError,
-    SyftBoxNotFoundError, 
+    SyftBoxNotFoundError,
     SyftBoxNotRunningError,
-    ServiceNotSupportedError, 
+    ServiceNotSupportedError,
     ValidationError,
 )
+from .core.exceptions import PaymentError
 from .discovery import FastScanner, MetadataParser, ServiceFilter, FilterCriteria
-from .clients import SyftBoxRPCClient, AccountingClient, SyftBoxAuthClient
+from .clients import SyftBoxRPCClient, AccountingClient
 from .services import ChatService, SearchService, HealthMonitor, check_service_health, batch_health_check
-from .models import ChatResponse, SearchResponse, DocumentResult, ServicesList, ServiceInfo
-from .utils.formatting import format_services_table, format_service_details
+from .models import ChatResponse, SearchResponse, ServiceInfo, ServicesList
 from .utils.async_utils import detect_async_context, run_async_in_thread
+from .utils.formatting import format_services_table, format_service_details
 from .utils.spinner import Spinner
 
 logger = logging.getLogger(__name__)
@@ -57,7 +59,6 @@ class Client:
     def __init__(
             self, 
             syftbox_config_path: Optional[Path] = None,
-            cache_server_url: Optional[str] = None,
             accounting_client: Optional[AccountingClient] = None,
             set_accounting: bool = True,
             accounting_pass: Optional[str] = None,
@@ -68,37 +69,30 @@ class Client:
         
         Args:
             syftbox_config_path: Custom path to SyftBox config file
-            cache_server_url: Override cache server URL
             accounting_client: Pre-configured AccountingClient instance
             set_accounting: Whether to set up accounting (creates account if needed)
             accounting_pass: Password for existing accounting account (required if set_accounting=True and account exists)
             _auto_setup_accounting: Whether to prompt for accounting setup when needed
             _auto_health_check_threshold: Max services for auto health checking
         """
-        # Check SyftBox availability and config manager with custom path if provided
-        self.config_manager = ConfigManager(syftbox_config_path)
+        # Load syft-core client
+        try:
+            self.syft_client = SyftClient.load(syftbox_config_path)
+        except Exception as e:
+            raise SyftBoxNotFoundError(f"Failed to load SyftBox config: {e}")
         
-        # Check if installed first
-        if not self.config_manager.is_syftbox_installed():
-            raise SyftBoxNotFoundError(self.config_manager.get_installation_instructions())
-
-        # Then check if running  
-        if not self.config_manager.is_syftbox_running():
-            raise SyftBoxNotRunningError(self.config_manager.get_startup_instructions())
+        # Bootstrap encryption keys
+        self.syft_client = ensure_bootstrap(self.syft_client)
         
-        # Store config for later use
-        self.config = self.config_manager.config
+        # Verify SyftBox is running by checking datasite exists
+        if not self.syft_client.my_datasite.exists():
+            raise SyftBoxNotRunningError(
+                f"SyftBox datasite not found at {self.syft_client.my_datasite}. "
+                "Please ensure SyftBox is running."
+            )
         
         # Initialize account state
         self._account_configured = False
-
-        # Set up SyftBox authentication client using the loaded config
-        self.syftbox_auth_client, is_auth_configured = SyftBoxAuthClient.setup_auth_discovery(self.config)
-        
-        if is_auth_configured:
-            logger.info(f"SyftBox authentication configured for {self.syftbox_auth_client.get_user_email()}")
-        else:
-            logger.info("Using guest mode - no SyftBox authentication found")
 
         # Set up accounting client with new set_accounting logic
         if accounting_client:
@@ -108,7 +102,7 @@ class Client:
         else:
             # Check for existing accounting credentials
             client, is_configured = AccountingClient.setup_accounting_discovery()
-            user_email = self.config.email
+            user_email = self.syft_client.email
 
             # If credentials are configured, try to connect
             if is_configured:
@@ -151,20 +145,16 @@ class Client:
                 except Exception as e:
                     raise RuntimeError(f"Failed to create accounting account: {e}")
             else:
-                self.accounting_client = None
-                
+                self.accounting_client = AccountingClient()
         
         # Set up RPC client
-        server_url = cache_server_url or self.config.cache_server_url
-        
         self.rpc_client = SyftBoxRPCClient(
-            cache_server_url=server_url,
+            syft_client=self.syft_client,
             accounting_client=self.accounting_client,
-            syftbox_auth_client=self.syftbox_auth_client,
         )
         
         # Set up discovery services
-        self._scanner = FastScanner(self.config)
+        self._scanner = FastScanner(self.syft_client)
         self._parser = MetadataParser()
         
         # Configuration
@@ -174,8 +164,7 @@ class Client:
         # Optional health monitor
         self._health_monitor: Optional[HealthMonitor] = None
 
-        # Load user email from config if not provided (from_email and self._account_configured)
-        logger.info(f"Client initialized for {self.config.email}")
+        logger.info(f"Client initialized for {self.syft_client.email}")
     
     def __dir__(self):
         """Control what appears in autocomplete suggestions.
@@ -369,7 +358,6 @@ class Client:
         return Service(service_info, self)
 
     # Service Usage Methods 
-    # @require_account
     async def chat_async(self,
             service_name: str,
             messages: str,
@@ -426,7 +414,6 @@ class Client:
         chat_service_info = service.get_service_info(ServiceType.CHAT)
         if chat_service_info and chat_service_info.pricing > 0:
             if not self._account_configured:
-                from .core.exceptions import PaymentError
                 raise PaymentError(
                     f"Service '{service.datasite}/{service.name}' is a paid service (${chat_service_info.pricing} per request). "
                     f"To call a paid service, you need to set up your accounting by calling Client(set_accounting=True)."
@@ -493,7 +480,6 @@ class Client:
             chat_service_info = service.get_service_info(ServiceType.CHAT)
             if chat_service_info and chat_service_info.pricing > 0:
                 if not self._account_configured:
-                    from .core.exceptions import PaymentError
                     raise PaymentError(
                         f"Service '{service.datasite}/{service.name}' is a paid service (${chat_service_info.pricing} per request). "
                         f"To call a paid service, you need to set up your accounting by calling Client(set_accounting=True)."
@@ -515,20 +501,8 @@ class Client:
             # Remove None values
             chat_params = {k: v for k, v in chat_params.items() if v is not None}
             
-            # Create a new ChatService with a fresh HTTP client for this event loop
-            from .clients.request_client import HTTPClient
-            from .services.chat import ChatService
-            http_client = HTTPClient()
-            try:
-                rpc_client = SyftBoxRPCClient(
-                    cache_server_url=self.rpc_client.base_url,
-                    accounting_client=self.accounting_client,
-                    http_client=http_client
-                )
-                chat_service = ChatService(service, rpc_client)
-                return await chat_service.chat_with_params(chat_params)
-            finally:
-                await http_client.close()
+            chat_service = ChatService(service, self.rpc_client)
+            return await chat_service.chat_with_params(chat_params)
         
         return run_async_in_thread(_chat())
     
@@ -618,7 +592,6 @@ class Client:
             search_service_info = service.get_service_info(ServiceType.SEARCH)
             if search_service_info and search_service_info.pricing > 0:
                 if not self._account_configured:
-                    from .core.exceptions import PaymentError
                     raise PaymentError(
                         f"Service '{service.datasite}/{service.name}' is a paid service (${search_service_info.pricing} per request). "
                         f"To call a paid service, you need to set up your accounting by calling Client(set_accounting=True)."
@@ -635,19 +608,8 @@ class Client:
             # Remove None values
             search_params = {k: v for k, v in search_params.items() if v is not None}
             
-            # Create a new SearchService with a fresh HTTP client for this event loop
-            from .clients.request_client import HTTPClient
-            http_client = HTTPClient()
-            try:
-                rpc_client = SyftBoxRPCClient(
-                    cache_server_url=self.rpc_client.base_url,
-                    accounting_client=self.accounting_client,
-                    http_client=http_client
-                )
-                search_service = SearchService(service, rpc_client)
-                return await search_service.search_with_params(search_params)
-            finally:
-                await http_client.close()
+            search_service = SearchService(service, self.rpc_client)
+            return await search_service.search_with_params(search_params)
         
         return run_async_in_thread(_search())
     
@@ -708,7 +670,6 @@ class Client:
         search_service_info = service.get_service_info(ServiceType.SEARCH)
         if search_service_info and search_service_info.pricing > 0:
             if not self._account_configured:
-                from .core.exceptions import PaymentError
                 raise PaymentError(
                     f"Service '{service.datasite}/{service.name}' is a paid service (${search_service_info.pricing} per request). "
                     f"To call a paid service, you need to set up your accounting by calling Client(set_accounting=True)."
