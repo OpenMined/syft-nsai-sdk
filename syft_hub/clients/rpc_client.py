@@ -54,6 +54,8 @@ class SyftBoxRPCClient:
         method: str = "POST",
         encrypt: bool = False,
         args: Optional[RequestArgs] = None,
+        timeout: Optional[float] = None,
+        poll_interval: Optional[float] = None,
     ) -> Dict[str, Any]:
         """Make an RPC call using syft-rpc send().
         
@@ -63,6 +65,8 @@ class SyftBoxRPCClient:
             method: HTTP method
             encrypt: Whether to encrypt the request using X3DH
             args: Additional request arguments
+            timeout: Override timeout for this call (uses instance default if None)
+            poll_interval: Override poll interval for this call (uses instance default if None)
             
         Returns:
             Response data (auto-decrypted if response was encrypted)
@@ -120,11 +124,14 @@ class SyftBoxRPCClient:
             cache=False,
         )
         
-        # Wait for response with configured timeout
+        # Wait for response with configured timeout (use override if provided)
+        effective_timeout = timeout if timeout is not None else self.timeout
+        effective_poll_interval = poll_interval if poll_interval is not None else self.poll_interval
+        
         try:
             response = future.wait(
-                timeout=self.timeout,
-                poll_interval=self.poll_interval
+                timeout=effective_timeout,
+                poll_interval=effective_poll_interval
             )
             
             # Check response status

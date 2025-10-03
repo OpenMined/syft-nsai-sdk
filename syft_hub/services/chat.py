@@ -1,6 +1,7 @@
 """
 Chat service client using syft-rpc
 """
+import asyncio
 import logging
 from typing import Dict, Any
 
@@ -8,7 +9,7 @@ from syft_rpc.rpc import send, make_url
 from syft_rpc.protocol import SyftStatus
 
 from ..clients import SyftBoxRPCClient
-from ..core.types import ServiceType
+from ..core.types import ServiceType, ChatMessage
 from ..core.exceptions import RPCError, ValidationError, ServiceNotSupportedError, TransactionTokenCreationError
 from ..models.responses import ChatResponse
 from ..models.service_info import ServiceInfo
@@ -116,11 +117,13 @@ class ChatService:
             cache=False  # Don't cache chat requests
         )
         
-        # Wait for response
+        # Wait for response - use asyncio.to_thread to avoid blocking the event loop
         spinner = AsyncSpinner("Waiting for service response")
         await spinner.start_async()
         try:
-            response = future.wait(timeout=120.0, poll_interval=1.5)
+            # Run the blocking wait() in a thread pool to enable true parallelism
+            response = await asyncio.to_thread(future.wait, timeout=120.0, poll_interval=0.5)
+            logger.info(f"Chat response received from {self.service_info.datasite}/{self.service_info.name} (status: {response.status_code})")
         finally:
             # spinner.stop()
             await spinner.stop_async("Response received")
@@ -140,9 +143,24 @@ class ChatService:
             if "data" in response_data and "message" in response_data["data"]:
                 message_data = response_data["data"]["message"]
                 if "body" in message_data:
-                    return ChatResponse.from_dict(message_data["body"])
+                    chat_response = ChatResponse.from_dict(message_data["body"])
+                else:
+                    chat_response = ChatResponse.from_dict(response_data)
+            else:
+                chat_response = ChatResponse.from_dict(response_data)
             
-            return ChatResponse.from_dict(response_data)
+            # Store the original input messages in the response for display
+            # The server response doesn't include them, so we add them here
+            # Convert dictionary messages to ChatMessage objects
+            chat_response.messages = [
+                ChatMessage(
+                    role=msg.get('role', 'user'),
+                    content=msg.get('content', ''),
+                    name=msg.get('name')
+                ) for msg in messages
+            ]
+            
+            return chat_response
             
         except Exception as e:
             logger.error(f"Failed to parse chat response: {e}")

@@ -1,6 +1,7 @@
 """
 Search service client using syft-rpc
 """
+import asyncio
 import logging
 from typing import Dict, Any
 
@@ -102,11 +103,13 @@ class SearchService:
             cache=False  # Don't cache search requests
         )
         
-        # Wait for response
+        # Wait for response - use asyncio.to_thread to avoid blocking the event loop
         spinner = AsyncSpinner("Waiting for service response")
         await spinner.start_async()
         try:
-            response = future.wait(timeout=120.0, poll_interval=1.5)
+            # Run the blocking wait() in a thread pool to enable true parallelism
+            response = await asyncio.to_thread(future.wait, timeout=120.0, poll_interval=0.5)
+            logger.info(f"Search response received from {self.service_info.datasite}/{self.service_info.name} (status: {response.status_code})")
         finally:
             # spinner.stop()
             await spinner.stop_async("Response received")
