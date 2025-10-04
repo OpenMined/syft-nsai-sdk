@@ -48,3 +48,7 @@ class HTTPClient:
     async def get(self, url: str, **kwargs):
         """Make GET request."""
         return await self.client.get(url, **kwargs)
+    
+    async def post(self, url: str, data=None, json=None, headers=None, **kwargs):
+        """Make POST request."""
+        return await self.client.post(url, data=data, json=json, headers=headers, **kwargs)

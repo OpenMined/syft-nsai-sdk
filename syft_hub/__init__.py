@@ -19,7 +19,6 @@ from .core.types import (
     ChatMessage,
     TransactionToken,
 )
-from syft_core import Client as SyftCoreClient
 
 # Exceptions
 from .core.settings import settings, Settings
@@ -41,23 +40,13 @@ from .core.exceptions import (
     HealthCheckError,
 )
 
-# Configuration utilities
-# from .core.config import (
-#     SyftBoxConfig,
-#     get_config,
-#     is_syftbox_installed,
-#     is_syftbox_running,
-#     get_startup_instructions,
-#     get_installation_instructions,
-# )
-
 # Service clients (for advanced usage)
 from .services.chat import ChatService
 from .services.search import SearchService
 from .services.health import HealthMonitor
 
 # Client components (for advanced usage)
-from .clients import SyftBoxAuthClient
+from .clients import AuthClient, AccountingClient
 
 # Filtering utilities
 from .discovery.filters import (
@@ -77,11 +66,6 @@ from .discovery.filters import (
 from .models.service_info import ServiceInfo
 from .models.requests import ChatRequest, SearchRequest
 from .models.responses import ChatResponse, SearchResponse, DocumentResult
-
-# Convenience functions
-# from .main import (
-#     list_available_services,
-# )
 
 # Formatting utilities
 from .utils.formatting import (
@@ -106,11 +90,11 @@ __author__ = settings.project_author or "SyftBox Team"
 __email__ = settings.project_email or "info@openmined.org"
 __description__ = settings.project_description or "A Python SDK for discovering and using AI services across the SyftBox network."
 
-# Line 50-60: Replace config imports with syft_core
+# Replacing config with syft_core
 from syft_core import Client as SyftCoreClient
 from syft_core.config import SyftClientConfig
 
-# Line 120-140: Reimplement using syft_core
+# Reimplement using syft_core
 def check_installation() -> bool:
     """Check if SyftBox is properly installed and configured."""
     try:
@@ -123,7 +107,7 @@ def check_running() -> bool:
     """Check if SyftBox is properly running."""
     # Use the validator that checks process/port
     from .utils.validator import ProcessValidator
-    return ProcessValidator.is_syftbox_running()
+    return ProcessValidator.is_syftbox_process_running()
 
 def get_setup_instructions() -> str:
     """Get instructions for setting up SyftBox."""
@@ -137,7 +121,7 @@ def get_setup_instructions() -> str:
 
 def get_startup_instructions() -> str:
     """Get instructions for starting up SyftBox."""
-    from .utils.constants import CLI_DOCS_URL, DESKTOP_DOCS_URL
+    from .utils.constants import CLI_DOCS_URL
     return (
         f"SyftBox installed but not running.\n"
         f"Start with 'syftbox' (CLI) or launch desktop app.\n"
@@ -160,41 +144,6 @@ def create_client(**kwargs) -> Client:
         Client instance
     """
     return Client(**kwargs)
-
-
-# def check_installation() -> bool:
-#     """Check if SyftBox is properly installed and configured.
-    
-#     Returns:
-#         True if SyftBox is available, False otherwise
-#     """
-#     return is_syftbox_installed()
-
-
-# def get_setup_instructions() -> str:
-#     """Get instructions for setting up SyftBox.
-    
-#     Returns:
-#         Setup instructions as string
-#     """
-#     return get_installation_instructions()
-
-# def check_running() -> bool:
-#     """Check if SyftBox is properly running.
-
-#     Returns:
-#         True if SyftBox is running, False otherwise
-#     """
-#     return is_syftbox_running()
-
-
-# def get_startup_instructions() -> str:
-#     """Get instructions for starting up SyftBox.
-
-#     Returns:
-#         Startup instructions as string
-#     """
-#     return get_startup_instructions()
 
 # Package info for introspection
 def get_package_info():
@@ -299,7 +248,8 @@ __all__ = [
     "HealthMonitor",
     
     # Client components
-    "SyftBoxAuthClient",
+    "AuthClient",
+    "AccountingClient",
     
     # Filtering
     "ServiceFilter",

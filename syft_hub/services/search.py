@@ -5,10 +5,11 @@ import asyncio
 import logging
 from typing import Dict, Any
 
+from syft_core import Client as SyftClient
 from syft_rpc.rpc import send, make_url
 from syft_rpc.protocol import SyftStatus
 
-from ..clients import SyftBoxRPCClient
+from ..clients import AccountingClient, AuthClient
 from ..core.types import ServiceType
 from ..core.exceptions import RPCError, TransactionTokenCreationError, ValidationError, ServiceNotSupportedError
 from ..models.responses import SearchResponse
@@ -21,19 +22,32 @@ logger = logging.getLogger(__name__)
 class SearchService:
     """Service client for search services."""
     
-    def __init__(self, service_info: ServiceInfo, rpc_client: SyftBoxRPCClient):
+    def __init__(
+        self, 
+        service_info: ServiceInfo,
+        syft_client: SyftClient,
+        accounting_client: AccountingClient,
+        auth_client: AuthClient
+    ):
         """Initialize search service.
         
         Args:
             service_info: Information about the service
-            rpc_client: SyftBoxRPCClient instance
+            syft_client: syft_core.Client instance
+            accounting_client: AccountingClient instance
+            auth_client: AuthClient instance
         """
         self.service_info = service_info
-        self.rpc_client = rpc_client
+        self.syft_client = syft_client
+        self.accounting_client = accounting_client
+        self.auth_client = auth_client
         
         if not service_info.supports_service(ServiceType.SEARCH):
             raise ServiceNotSupportedError(service_info.name, "search", service_info)
-    
+        
+        # Get user email from SyftBox auth (with guest fallback)
+        self.from_email = self.auth_client.get_user_email()
+
     async def search_with_params(self, params: Dict[str, Any], encrypt: bool = False) -> SearchResponse:
         """Send search request with parameters.
         
@@ -49,7 +63,7 @@ class SearchService:
             raise ValidationError("'message' parameter is required")
         
         # Build syft URL
-        url = make_url(
+        syft_url = make_url(
             datasite=self.service_info.datasite,
             app_name=self.service_info.name,
             endpoint="search"
@@ -62,9 +76,8 @@ class SearchService:
         similarity_threshold = params.pop("similarity_threshold", None)
         
         # Build RPC payload with consistent authentication
-        account_email = self.rpc_client.accounting_client.get_email()
         payload = {
-            "user_email": account_email,
+            "user_email": self.accounting_client.get_email(),
             "query": message,
             "model": "tinyllama:latest" or self.service_info.name,
             "options": {"limit": topK}
@@ -80,38 +93,56 @@ class SearchService:
         search_service = self.service_info.get_service_info(ServiceType.SEARCH)
         is_free_service = search_service and search_service.pricing == 0.0
 
-        if not is_free_service and self.rpc_client.accounting_client.is_configured():
+        if not is_free_service and self.accounting_client.is_configured():
             try:
-                recipient_email = self.service_info.datasite
-                transaction_token = await self.rpc_client.accounting_client.create_transaction_token(
-                    recipient_email=recipient_email
+                # Use accounting email as sender when we have accounting tokens
+                transaction_token = await self.accounting_client.create_transaction_token(
+                    recipient_email=self.service_info.datasite
                 )
                 payload["transaction_token"] = transaction_token
+                logger.debug(f"Added accounting token for {self.service_info.datasite}/{self.service_info.name}")
             except Exception as e:
                 raise TransactionTokenCreationError(
                     f"Failed to create accounting token: {e}",
-                    recipient_email=recipient_email
+                    recipient_email=self.service_info.datasite
                 )
+        else:
+            # Guest mode - use the current from_email
+            payload["user_email"] = self.from_email
+            logger.debug(f"Guest mode request to {self.service_info.datasite}/{self.service_info.name} - no accounting token available")
 
-        # Send request using syft-rpc
-        future = send(
-            url=url,
-            method="POST",
-            body=payload,
-            client=self.rpc_client.syft_client,
-            encrypt=encrypt,
-            cache=False  # Don't cache search requests
-        )
-        
-        # Wait for response - use asyncio.to_thread to avoid blocking the event loop
+        # Add SyftBox authentication if available
+        headers = {}
+        auth_token = await self.auth_client.get_auth_token()
+        if auth_token:
+            headers["Authorization"] = f"Bearer {auth_token}"
+            headers["Accept"] = f"application/json"
+            headers["suffix-sender"] = "true"
+            headers["x-syft-url"] = f"{syft_url}"
+            headers["x-syft-from"] = f"{self.from_email}"
+
+        # Wait for response
         spinner = AsyncSpinner("Waiting for service response")
         await spinner.start_async()
         try:
-            # Run the blocking wait() in a thread pool to enable true parallelism
-            response = await asyncio.to_thread(future.wait, timeout=120.0, poll_interval=0.5)
-            logger.info(f"Search response received from {self.service_info.datasite}/{self.service_info.name} (status: {response.status_code})")
+            # Send request using syft-rpc
+            future = send(
+                url=syft_url,
+                method="POST",
+                body=payload,
+                headers=headers,
+                client=self.syft_client,
+                encrypt=encrypt,
+                cache=False  # Don't cache search requests
+            )
+            
+            # response = future.wait(timeout=120.0, poll_interval=1.5)
+            response = await asyncio.to_thread(
+                future.wait, 
+                timeout=120.0, 
+                poll_interval=0.5
+            )
         finally:
-            # spinner.stop()
             await spinner.stop_async("Response received")
         
         # Check status

@@ -13,7 +13,7 @@ from .request_client import HTTPClient
 logger = logging.getLogger(__name__)
 
 
-class SyftBoxAuthClient:
+class AuthClient:
     """Client for SyftBox authentication using refresh tokens."""
     
     def __init__(self, syft_client: Optional[SyftClient] = None):
@@ -78,13 +78,15 @@ class SyftBoxAuthClient:
         if not self.client or not self.client.config.refresh_token:
             raise AuthenticationError("No refresh token")
         
-        refresh_url = f"{self.client.config.server_url}/auth/refresh"
-        
+        refresh_url = f"{self.client.config.server_url}auth/refresh"
         response = await self.http_client.post(
-            refresh_url,
-            json={"refreshToken": self.client.config.refresh_token},
-            headers={"Content-Type": "application/json"}
-        )
+                refresh_url,
+                json={"refreshToken": self.client.config.refresh_token},
+                headers={
+                    "Content-Type": "application/json",
+                    "Accept": "application/json"
+                }
+            )
         
         if response.status_code == 200:
             data = response.json()
@@ -106,7 +108,7 @@ class SyftBoxAuthClient:
         self._token_expires_at = None
     
     @classmethod
-    def setup_auth_discovery(cls, syft_client: SyftClient) -> tuple['SyftBoxAuthClient', bool]:
+    def setup_auth_discovery(cls, syft_client: SyftClient) -> tuple['AuthClient', bool]:
         """Auto-discover authentication."""
         auth_client = cls(syft_client)
         return auth_client, auth_client.is_authenticated()

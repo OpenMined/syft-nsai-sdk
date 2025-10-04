@@ -2,12 +2,19 @@
 Shared validation utilities for SyftBox components
 """
 import re
-import json
+import socket
+import psutil
 from pathlib import Path
-from typing import Dict, Any, List, Optional, Union
 from urllib.parse import urlparse
 
 from syft_core.url import SyftBoxURL
+from .constants import (
+    EMAIL_PATTERN, 
+    SYFTBOX_PROCESS_NAMES,
+    DEFAULT_APP_PORT,
+    DEFAULT_HOST,
+    DEFAULT_SOCKET_TIMEOUT,
+)
 
 # Simple patterns - no need for constants file
 EMAIL_PATTERN = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
@@ -91,7 +98,48 @@ class PathValidator:
         if not path.is_file():
             raise ValidationError(f"{description} path is not a file: {path}")
 
-
+class ProcessValidator:
+    """Process and system validation utilities."""
+    
+    @staticmethod
+    def is_port_open(host: str = DEFAULT_HOST, port: int = DEFAULT_APP_PORT, 
+                     timeout: float = DEFAULT_SOCKET_TIMEOUT) -> bool:
+        """Check if a port is open and listening."""
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+                sock.settimeout(timeout)
+                return sock.connect_ex((host, port)) == 0
+        except Exception:
+            return False
+    
+    @staticmethod
+    def is_syftbox_process_running() -> bool:
+        """Check if SyftBox process is running."""
+        try:
+            for proc in psutil.process_iter(['name', 'exe', 'cmdline']):
+                try:
+                    name = proc.info.get('name', '').lower()
+                    exe = proc.info.get('exe', '').lower() if proc.info.get('exe') else ''
+                    cmdline = proc.info.get('cmdline', [])
+                    
+                    # Check if any SyftBox process name matches
+                    for process_name in SYFTBOX_PROCESS_NAMES:
+                        if process_name in name or process_name in exe:
+                            return True
+                    
+                    # Also check command line for syftbox
+                    if cmdline:
+                        cmdline_str = ' '.join(cmdline).lower()
+                        if 'syftbox' in cmdline_str and not 'grep' in cmdline_str:
+                            return True
+                            
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    continue
+        except Exception:
+            pass
+        
+        return False
+    
 def validate_email(email: str) -> bool:
     """Validate email address format."""
     if not email or not isinstance(email, str):

@@ -4,16 +4,17 @@ Service class for object-oriented service interaction
 from typing import List, TYPE_CHECKING
 
 from ..core.types import ServiceType
-from ..models.service_info import ServiceInfo
+# from ..models.service_info import ServiceInfo
 from .exceptions import ServiceNotSupportedError
 
 if TYPE_CHECKING:
     from ..main import Client
+    from ..models.service_info import ServiceInfo
 
 class Service:
     """Object-oriented interface for a loaded SyftBox service."""
     
-    def __init__(self, service_info: ServiceInfo, client: 'Client'):
+    def __init__(self, service_info: 'ServiceInfo', client: 'Client'):
         self._service_info = service_info
         self._client = client
     
